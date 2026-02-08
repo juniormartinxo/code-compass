@@ -1,0 +1,97 @@
+# ===== Sistema operacional / editor =====
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+.idea/
+*.iml
+
+.vscode/*
+!.vscode/settings.json
+
+# Workspace local do VS Code
+*.code-workspace
+
+# ===== Segredos e configuração local =====
+.env
+.env.*
+!.env.example
+
+*.pem
+*.key
+*.crt
+
+# ===== Logs e runtime =====
+logs/
+*.log
+*.pid
+*.seed
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ===== Node / NestJS =====
+**/node_modules/
+**/dist/
+**/.nestjs-cache/
+**/.next/
+**/.turbo/
+**/coverage/
+
+*.tsbuildinfo
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+.venv/
+venv/
+**/.venv/
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.hypothesis/
+.ipynb_checkpoints/
+
+.coverage
+.coverage.*
+htmlcov/
+
+build/
+site/
+.eggs/
+*.egg-info/
+pip-wheel-metadata/
+
+# ===== Qdrant / dados locais =====
+.qdrant_storage/
+infra/qdrant/snapshots/
+!infra/qdrant/snapshots/.gitkeep
+
+# ===== Docker overrides locais =====
+docker-compose.override.yml
+docker-compose.local.yml
+
+# ===== Artefatos temporários =====
+tmp/
+temp/
+.cache/
+*.tmp
+
+# ===== Estado local do Codex (não versionar) =====
+.codex/config.toml
+.codex/auth.json
+.codex/history.jsonl
+.codex/log/
+.codex/sessions/
+.codex/cache/
+

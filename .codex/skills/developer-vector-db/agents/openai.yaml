@@ -1,0 +1,5 @@
+interface:
+  display_name: "Developer Vector DB"
+  short_description: "Modela coleções Qdrant e filtros de payload"
+  brand_color: "#8B5CF6"
+  default_prompt: "Aplique workflow de vetor: discovery, plano, implementação, validação e entrega."
