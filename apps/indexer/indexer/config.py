@@ -13,6 +13,12 @@ DEFAULT_IGNORE_DIRS: set[str] = {
     ".next",
     ".qdrant_storage",
     "coverage",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
 }
 
 DEFAULT_ALLOW_EXTS: set[str] = {
