@@ -52,7 +52,7 @@ Crie `.env` a partir de `.env.example`.
 
 ### 2) Suba o Qdrant
 ```bash
-docker compose -f infra/docker-compose.yml up -d
+make up
 ```
 
 Endpoint local do Qdrant: `http://localhost:6333`.
@@ -79,56 +79,27 @@ make dev
 
 ## Comandos (Makefile)
 
-> Você pode rodar tudo com `make`. Se preferir, execute os comandos manualmente nos diretórios.
+O `Makefile` da raiz já traz os alvos operacionais mínimos para infra + indexer:
 
-Crie um `Makefile` na raiz do projeto com:
-
-```makefile
-SHELL := /bin/bash
-
-.PHONY: help up down logs dev index index-full index-incremental clean
-
-help:
-	@echo "Targets:"
-	@echo "  make up               -> sobe Qdrant (docker compose)"
-	@echo "  make down             -> derruba Qdrant"
-	@echo "  make logs             -> logs do Qdrant"
-	@echo "  make index            -> indexação full (primeira carga)"
-	@echo "  make index-incremental-> indexação incremental"
-	@echo "  make dev              -> sobe MCP Server (NestJS)"
-	@echo "  make clean            -> limpa storage local do Qdrant (CUIDADO)"
-
-up:
-	docker compose -f infra/docker-compose.yml up -d
-
-down:
-	docker compose -f infra/docker-compose.yml down
-
-logs:
-	docker compose -f infra/docker-compose.yml logs -f qdrant
-
-index: index-full
-
-index-full:
-	cd apps/indexer && \
-	python -m venv .venv >/dev/null 2>&1 || true && \
-	source .venv/bin/activate && \
-	pip install -r requirements.txt && \
-	python -m code_compass.index full
-
-index-incremental:
-	cd apps/indexer && \
-	source .venv/bin/activate && \
-	python -m code_compass.index incremental
-
-dev:
-	cd apps/mcp-server && \
-	npm install && \
-	npm run dev
-
-clean:
-	rm -rf .qdrant_storage
+```bash
+make up                # sobe qdrant e aguarda readiness
+make health            # valida /readyz
+make index             # alias de indexação full
+make index-full        # full em apps/indexer
+make index-incremental # incremental em apps/indexer
+make index-docker      # full via container (profile indexer)
+make index-docker-incremental # incremental via container
+make dev               # sobe apps/mcp-server em dev
+make logs              # logs do qdrant
+make down              # derruba serviços
 ```
+
+Observações importantes do estado atual deste repositório:
+
+- Se `apps/indexer` ainda não existir, `make index*` falha com erro explícito de pré-requisito.
+- Se `apps/mcp-server` ainda não existir, `make dev` falha com erro explícito de pré-requisito.
+- O `make up` usa `.env` (ou defaults seguros) para portas/imagem/path de storage.
+- `make index-docker*` exige Docker e instala dependências do indexer dentro do container a cada execução.
 
 ---
 
@@ -137,17 +108,18 @@ clean:
 `infra/docker-compose.yml`:
 
 ```yaml
-name: code-compass
+name: ${COMPOSE_PROJECT_NAME:-code-compass}
 
 services:
   qdrant:
-    image: qdrant/qdrant:latest
+    container_name: code-compass-qdrant
+    image: ${QDRANT_IMAGE:-qdrant/qdrant:latest}
     restart: unless-stopped
     ports:
-      - "6333:6333"   # HTTP
-      - "6334:6334"   # gRPC
+      - "${QDRANT_HTTP_PORT:-6333}:6333"   # HTTP
+      - "${QDRANT_GRPC_PORT:-6334}:6334"   # gRPC
     volumes:
-      - ../.qdrant_storage:/qdrant/storage
+      - "${QDRANT_STORAGE_PATH:-../.qdrant_storage}:/qdrant/storage"
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333'"]
       interval: 10s
@@ -171,9 +143,22 @@ Exemplo (`.env.example`):
 
 ```env
 # -----------------------------
+# Docker Compose
+# -----------------------------
+COMPOSE_PROJECT_NAME=code-compass
+
+# -----------------------------
+# Qdrant (infra local)
+# -----------------------------
+QDRANT_IMAGE=qdrant/qdrant:latest
+QDRANT_HTTP_PORT=6333
+QDRANT_GRPC_PORT=6334
+QDRANT_STORAGE_PATH=../.qdrant_storage
+
+# -----------------------------
 # Repos / ingestão
 # -----------------------------
-REPO_ROOT=/abs/path/para/monorepo
+REPO_ROOT=/abs/path/para/repositorio
 REPO_ALLOWLIST=src,packages,apps,docs
 REPO_BLOCKLIST=node_modules,dist,build,.next,.git,coverage
 
@@ -183,7 +168,17 @@ REPO_BLOCKLIST=node_modules,dist,build,.next,.git,coverage
 QDRANT_URL=http://localhost:6333
 QDRANT_COLLECTION=code_chunks
 QDRANT_DISTANCE=Cosine
-QDRANT_VECTOR_SIZE=3072
+
+# -----------------------------
+# Indexer (apps/indexer)
+# -----------------------------
+INDEXER_DIR=apps/indexer
+INDEXER_PYTHON=python3
+INDEXER_RUN_MODULE=code_compass.index
+INDEXER_DOCKER_PROFILE=indexer
+INDEXER_DOCKER_IMAGE=python:3.11-slim
+QDRANT_URL_DOCKER=http://qdrant:6333
+REPO_ROOT_DOCKER=/workspace
 
 # -----------------------------
 # Embeddings
