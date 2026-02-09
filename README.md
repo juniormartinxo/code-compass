@@ -123,7 +123,7 @@ Configuração por ambiente:
 
 Ignorados por padrão:
 
-`.git,node_modules,dist,build,.next,.qdrant_storage,coverage`
+`.git,node_modules,dist,build,.next,.qdrant_storage,coverage,.venv,venv,__pycache__,.pytest_cache,.mypy_cache,.ruff_cache`
 
 Allowlist padrão de extensões:
 
@@ -246,7 +246,7 @@ QDRANT_STORAGE_PATH=../.qdrant_storage
 REPO_ROOT=/abs/path/para/repositorio
 REPO_ALLOWLIST=src,packages,apps,docs
 REPO_BLOCKLIST=node_modules,dist,build,.next,.git,coverage
-SCAN_IGNORE_DIRS=.git,node_modules,dist,build,.next,.qdrant_storage,coverage
+SCAN_IGNORE_DIRS=.git,node_modules,dist,build,.next,.qdrant_storage,coverage,.venv,venv,__pycache__,.pytest_cache,.mypy_cache,.ruff_cache
 SCAN_ALLOW_EXTS=.ts,.tsx,.js,.jsx,.py,.md,.json,.yaml,.yml
 
 # -----------------------------
