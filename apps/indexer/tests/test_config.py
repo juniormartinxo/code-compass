@@ -54,6 +54,23 @@ class ScanConfigTests(unittest.TestCase):
             self.assertIn("node_modules", config.ignore_dirs)
             self.assertEqual(config.allow_exts, {".py", ".md"})
 
+    def test_load_scan_config_defaults_include_python_runtime_dirs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir) / "repo"
+            repo_root.mkdir()
+
+            with patch.dict(
+                os.environ,
+                {"REPO_ROOT": str(repo_root)},
+                clear=True,
+            ):
+                config = load_scan_config()
+
+            self.assertIn(".venv", config.ignore_dirs)
+            self.assertIn("venv", config.ignore_dirs)
+            self.assertIn("__pycache__", config.ignore_dirs)
+            self.assertIn(".pytest_cache", config.ignore_dirs)
+
 
 class ChunkConfigTests(unittest.TestCase):
     def test_load_chunk_config_uses_defaults(self) -> None:
