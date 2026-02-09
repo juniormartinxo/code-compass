@@ -34,6 +34,8 @@ Este comando pode ser executado múltiplas vezes sem efeitos colaterais:
 
 ## Variáveis de Ambiente
 
+As variáveis são lidas do ambiente e carregadas automaticamente de `.env` e `.env.local` na raiz do repositório. `.env.local` sobrescreve `.env`, e variáveis já exportadas no shell têm precedência.
+
 - `OLLAMA_URL`: URL do Ollama
 - `EMBEDDING_MODEL`: Modelo de embedding
 - `QDRANT_URL`: URL do Qdrant
