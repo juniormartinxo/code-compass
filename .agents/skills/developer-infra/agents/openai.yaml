@@ -1,0 +1,5 @@
+interface:
+  display_name: "Developer Infra"
+  short_description: "Gerencia compose, env e operação local"
+  brand_color: "#F59E0B"
+  default_prompt: "Aplique workflow infra: discovery, plano, implementação, validação e entrega."
