@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 from time import perf_counter
@@ -20,6 +21,37 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+EXCLUDED_CONTEXT_PATH_PARTS: tuple[str, ...] = (
+    "/.venv/",
+    "/venv/",
+    "/__pycache__/",
+    "/.pytest_cache/",
+    "/.mypy_cache/",
+    "/.ruff_cache/",
+)
+
+
+def _should_exclude_context_path(path: str | None) -> bool:
+    if not path:
+        return False
+    normalized = f"/{path.replace('\\', '/').strip('/')}/".lower()
+    return any(marker in normalized for marker in EXCLUDED_CONTEXT_PATH_PARTS)
+
+
+def _filter_context_results(results: list[dict[str, object]]) -> tuple[list[dict[str, object]], int]:
+    filtered: list[dict[str, object]] = []
+    excluded = 0
+
+    for result in results:
+        payload = result.get("payload", {})
+        path = payload.get("path") if isinstance(payload, dict) else None
+        if isinstance(path, str) and _should_exclude_context_path(path):
+            excluded += 1
+            continue
+        filtered.append(result)
+
+    return filtered, excluded
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -97,6 +129,49 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Filtrar por linguagem (ex: python)"
     )
     search_parser.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help="Output em JSON"
+    )
+
+    # Comando ask (RAG - Retrieval Augmented Generation)
+    ask_parser = subparsers.add_parser(
+        "ask", help="Pergunta ao LLM usando contexto do código indexado (RAG)"
+    )
+    ask_parser.add_argument("question", help="Pergunta em linguagem natural")
+    ask_parser.add_argument(
+        "-k", "--top-k",
+        dest="top_k",
+        type=int,
+        default=5,
+        help="Número de chunks de contexto (default: 5)"
+    )
+    ask_parser.add_argument(
+        "--model",
+        dest="llm_model",
+        default=None,
+        help="Modelo LLM para resposta (default: env LLM_MODEL ou llama3.2)"
+    )
+    ask_parser.add_argument(
+        "--ext",
+        dest="ext",
+        help="Filtrar contexto por extensão (ex: .py)"
+    )
+    ask_parser.add_argument(
+        "--show-context",
+        dest="show_context",
+        action="store_true",
+        help="Mostrar chunks de contexto usados"
+    )
+    ask_parser.add_argument(
+        "--min-score",
+        dest="min_score",
+        type=float,
+        default=0.6,
+        help="Score mínimo de similaridade (default: 0.6). Chunks abaixo são ignorados."
+    )
+    ask_parser.add_argument(
         "--json",
         dest="json_output",
         action="store_true",
@@ -524,6 +599,238 @@ def _search_command(args: argparse.Namespace) -> int:
         return 1
 
 
+DEFAULT_LLM_MODEL = "llama3.2"
+
+
+def _call_ollama_chat(
+    ollama_url: str,
+    model: str,
+    system_prompt: str,
+    user_message: str,
+    timeout: float = 120.0,
+) -> str:
+    """
+    Chama o Ollama para gerar uma resposta.
+    
+    Usa a API /api/chat para conversa.
+    """
+    import httpx
+    
+    url = f"{ollama_url.rstrip('/')}/api/chat"
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ],
+        "stream": False,
+    }
+    
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            response = client.post(url, json=payload)
+            response.raise_for_status()
+            data = response.json()
+            return data.get("message", {}).get("content", "")
+    except httpx.HTTPStatusError as exc:
+        raise EmbedderError(f"Erro HTTP ao chamar LLM: {exc.response.status_code}") from exc
+    except Exception as exc:
+        raise EmbedderError(f"Erro ao chamar LLM: {exc}") from exc
+
+
+def _build_rag_prompt(question: str, contexts: list[dict]) -> tuple[str, str]:
+    """
+    Constrói o prompt para RAG.
+    
+    Returns:
+        Tupla (system_prompt, user_message)
+    """
+    system_prompt = """Você é um assistente especializado em analisar código-fonte.
+Responda às perguntas do usuário baseando-se APENAS no contexto fornecido.
+Se a informação não estiver no contexto, diga que não encontrou essa informação no código indexado.
+Seja conciso e direto. Responda em português brasileiro."""
+
+    # Montar contexto
+    context_parts = []
+    for i, ctx in enumerate(contexts, 1):
+        payload = ctx.get("payload", {})
+        path = payload.get("path", "desconhecido")
+        lines = f"{payload.get('start_line', '?')}-{payload.get('end_line', '?')}"
+        # Buscar o texto do chunk se disponível
+        text = payload.get("text", "[conteúdo não disponível]")
+        
+        context_parts.append(f"### Arquivo {i}: {path} (linhas {lines})\n```\n{text}\n```")
+    
+    context_text = "\n\n".join(context_parts)
+    
+    user_message = f"""## Contexto do código-fonte:
+
+{context_text}
+
+## Pergunta:
+{question}
+
+## Resposta:"""
+
+    return system_prompt, user_message
+
+
+def _ask_command(args: argparse.Namespace) -> int:
+    """
+    Comando RAG: busca contexto e gera resposta via LLM.
+    
+    1. Gera embedding da pergunta
+    2. Busca chunks relevantes no Qdrant
+    3. Lê o conteúdo dos chunks
+    4. Monta prompt com contexto
+    5. Chama LLM para gerar resposta
+    """
+    import time
+    from pathlib import Path
+    
+    start_time = time.time()
+    
+    try:
+        embedder_config = load_embedder_config()
+        qdrant_config = load_qdrant_config()
+        
+        llm_model = args.llm_model or os.getenv("LLM_MODEL", DEFAULT_LLM_MODEL)
+        ollama_url = embedder_config.ollama_url  # Reusar URL do Ollama
+
+        logger.info(f"Pergunta: {args.question}")
+        logger.info(f"LLM Model: {llm_model}")
+
+        # 1. Gerar embedding da pergunta
+        with OllamaEmbedder(embedder_config) as embedder:
+            vector_size = embedder.probe_vector_size()
+            embeddings = embedder.embed_texts([args.question])
+            query_vector = embeddings[0]
+
+        # 2. Buscar chunks relevantes
+        with QdrantStore(qdrant_config) as store:
+            collection_name = store.resolve_collection_name(
+                vector_size=vector_size,
+                model_name=embedder_config.model,
+            )
+
+            filters = {}
+            if hasattr(args, "ext") and args.ext:
+                filters["ext"] = args.ext
+
+            results = store.search(
+                query_vector=query_vector,
+                collection_name=collection_name,
+                filters=filters if filters else None,
+                top_k=args.top_k,
+            )
+
+        # Filtrar caminhos irrelevantes para contexto RAG
+        results, excluded_paths = _filter_context_results(results)
+        if excluded_paths > 0:
+            logger.info(f"Ignorados {excluded_paths} chunks de ambientes/cache (venv, __pycache__, etc.)")
+
+        # Filtrar por score mínimo
+        original_count = len(results)
+        results = [r for r in results if r["score"] >= args.min_score]
+        dropped = original_count - len(results)
+        
+        if dropped > 0:
+            logger.info(f"Ignorados {dropped} chunks com score < {args.min_score}")
+
+        if not results:
+            print(f"Nenhum contexto relevante encontrado (score >= {args.min_score}).")
+            if dropped > 0:
+                print(f"Dica: {dropped} resultados foram encontrados mas tinham baixa relevância.")
+                print("Tente reformular a pergunta ou reduzir o --min-score.")
+            return 0
+
+        logger.info(f"Chunks de contexto encontrados: {len(results)}")
+
+        # 3. Ler conteúdo dos chunks (se tiver repo_root no payload)
+        for r in results:
+            payload = r.get("payload", {})
+            path = payload.get("path")
+            repo_root = payload.get("repo_root")
+            start_line = payload.get("start_line", 1)
+            end_line = payload.get("end_line")
+            
+            if path and repo_root:
+                full_path = Path(repo_root) / path
+                if full_path.exists():
+                    try:
+                        with open(full_path, "r", encoding="utf-8", errors="replace") as f:
+                            lines = f.readlines()
+                            chunk_lines = lines[start_line - 1 : end_line] if end_line else lines[start_line - 1:]
+                            payload["text"] = "".join(chunk_lines)
+                    except Exception as exc:
+                        logger.warning(f"Não foi possível ler {full_path}: {exc}")
+                        payload["text"] = "[erro ao ler arquivo]"
+                else:
+                    payload["text"] = "[arquivo não encontrado]"
+            else:
+                payload["text"] = "[caminho não disponível]"
+
+        # 4. Construir prompt
+        system_prompt, user_message = _build_rag_prompt(args.question, results)
+
+        # 5. Chamar LLM
+        logger.info("Chamando LLM...")
+        answer = _call_ollama_chat(
+            ollama_url=ollama_url,
+            model=llm_model,
+            system_prompt=system_prompt,
+            user_message=user_message,
+        )
+
+        elapsed = time.time() - start_time
+
+        # Output
+        if args.json_output:
+            output = {
+                "question": args.question,
+                "answer": answer,
+                "model": llm_model,
+                "contexts_used": len(results),
+                "elapsed_sec": round(elapsed, 2),
+                "sources": [
+                    {
+                        "path": r["payload"].get("path"),
+                        "lines": f"{r['payload'].get('start_line')}-{r['payload'].get('end_line')}",
+                        "score": r["score"],
+                    }
+                    for r in results
+                ],
+            }
+            print(json.dumps(output, indent=2, ensure_ascii=False))
+        else:
+            print(f"\n💬 **Pergunta:** {args.question}\n")
+            print(f"🤖 **Resposta:**\n{answer}\n")
+            
+            if args.show_context:
+                print("📚 **Fontes consultadas:**")
+                for i, r in enumerate(results, 1):
+                    payload = r["payload"]
+                    path = payload.get("path", "?")
+                    lines = f"{payload.get('start_line', '?')}-{payload.get('end_line', '?')}"
+                    print(f"  {i}. {path} (linhas {lines}) - score: {r['score']:.4f}")
+                print()
+            
+            print(f"⏱️  Tempo: {elapsed:.2f}s | Modelo: {llm_model}")
+
+        return 0
+
+    except EmbedderError as exc:
+        print(f"Erro no embedder/LLM: {exc}", file=sys.stderr)
+        return 1
+    except QdrantStoreError as exc:
+        print(f"Erro no Qdrant: {exc}", file=sys.stderr)
+        return 1
+    except Exception as exc:
+        logger.exception("Erro inesperado")
+        print(f"Erro inesperado: {exc}", file=sys.stderr)
+        return 1
+
+
 def main() -> int:
     parser = _build_parser()
     args = parser.parse_args()
@@ -538,6 +845,8 @@ def main() -> int:
         return _index_command(args)
     if args.command == "search":
         return _search_command(args)
+    if args.command == "ask":
+        return _ask_command(args)
 
     parser.print_help()
     return 1
