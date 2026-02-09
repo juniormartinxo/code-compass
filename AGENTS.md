@@ -16,7 +16,7 @@ code-compass/
     ARCHITECTURE.md
     STRUCTURE.md
     ADRs/
-  .codex/
+  .agents/
     skills/
       developer-*/
 ```
@@ -44,9 +44,9 @@ code-compass/
 ## 3) Como escolher a skill certa
 
 ### 3.1 Local canônico de skills
-- Caminho canônico: `.codex/skills/<skill>/SKILL.md`.
-- Metadados de UI por skill: `.codex/skills/<skill>/agents/openai.yaml`.
-- Regra: manter cada skill autocontida em `.codex/skills/<skill>/` com `SKILL.md` obrigatório.
+- Caminho canônico: `.agents/skills/<skill>/SKILL.md`.
+- Metadados de UI por skill: `.agents/skills/<skill>/agents/openai.yaml`.
+- Regra: manter cada skill autocontida em `.agents/skills/<skill>/` com `SKILL.md` obrigatório.
 - Por quê: centraliza discovery/trigger e evita divergência de instrução.
 
 ### 3.2 Skills por domínio (nomes padrão)
