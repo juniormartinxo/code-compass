@@ -1,5 +1,0 @@
-interface:
-  display_name: "Developer MCP Server"
-  short_description: "Implementa tools MCP NestJS com segurança"
-  brand_color: "#3B82F6"
-  default_prompt: "Aplique workflow MCP: discovery, plano, implementação, validação e entrega com evidências."
