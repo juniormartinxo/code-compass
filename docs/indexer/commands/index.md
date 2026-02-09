@@ -43,6 +43,8 @@ Isso significa que reindexar o mesmo repositório:
 
 ## Variáveis de Ambiente
 
+As variáveis são lidas do ambiente e carregadas automaticamente de `.env` e `.env.local` na raiz do repositório. `.env.local` sobrescreve `.env`, e variáveis já exportadas no shell têm precedência.
+
 ### Repositório e Chunking
 - `REPO_ROOT`: Raiz do repositório
 - `SCAN_IGNORE_DIRS`: Diretórios a ignorar
