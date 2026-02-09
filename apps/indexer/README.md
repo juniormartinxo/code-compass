@@ -9,6 +9,8 @@ O Indexer é responsável por:
 2. **Chunk** - Dividir arquivos em chunks semânticos
 3. **Embed** - Gerar embeddings via Ollama
 4. **Upsert** - Armazenar vetores no Qdrant
+5. **Search** - Busca semântica nos chunks indexados
+6. **Ask** - Perguntas em linguagem natural via RAG
 
 ## Pré-requisitos
 
@@ -174,6 +176,71 @@ Opções:
 - `--chunk-lines` - Linhas por chunk (default: 120)
 - `--overlap-lines` - Overlap entre chunks (default: 20)
 
+### Search
+
+Busca semântica na collection indexada:
+
+```bash
+python -m indexer search "query de busca"
+```
+
+**Exemplo:**
+```bash
+python -m indexer search "como fazer chunking de arquivos"
+```
+
+**Saída:**
+```
+🔍 Query: "como fazer chunking de arquivos"
+📊 5 resultado(s):
+
+  1. [0.7879] docs/indexer/commands/chunk.md
+     📍 Linhas: 1-21 | Extensão: .md
+  ...
+```
+
+Opções:
+- `query` - Texto da busca (obrigatório)
+- `-k`, `--top-k` - Número de resultados (default: 5)
+- `--ext` - Filtrar por extensão (ex: `.py`)
+- `--language` - Filtrar por linguagem (ex: `python`)
+- `--json` - Output em JSON
+
+### Ask (RAG)
+
+Perguntas em linguagem natural usando RAG:
+
+```bash
+python -m indexer ask "sua pergunta aqui"
+```
+
+**Exemplo:**
+```bash
+python -m indexer ask "qual banco de dados vetorial é usado neste projeto?" --show-context
+```
+
+**Saída:**
+```
+💬 **Pergunta:** qual banco de dados vetorial é usado neste projeto?
+
+🤖 **Resposta:**
+O banco de dados vetorial usado neste projeto é o **Qdrant**.
+
+📚 **Fontes consultadas:**
+  1. docs/ADRs/ADR-02.md (linhas 1-120) - score: 0.8495
+  ...
+
+⏱️  Tempo: 15.32s | Modelo: llama3.2
+```
+
+Opções:
+- `question` - Pergunta em linguagem natural (obrigatório)
+- `-k`, `--top-k` - Número de chunks de contexto (default: 5)
+- `--model` - Modelo LLM para resposta (default: `llama3.2`)
+- `--ext` - Filtrar contexto por extensão
+- `--show-context` - Mostrar fontes consultadas
+- `--json` - Output em JSON
+
 ## Variáveis de Ambiente
 
 ### Ollama (Embeddings)
@@ -204,10 +271,16 @@ Opções:
 | Variável | Default | Descrição |
 |----------|---------|-----------|
 | `REPO_ROOT` | `..` | Raiz do repositório |
-| `SCAN_IGNORE_DIRS` | `.git,node_modules,...` | Diretórios a ignorar |
+| `SCAN_IGNORE_DIRS` | `.git,node_modules,dist,build,.next,.qdrant_storage,coverage,.venv,venv,__pycache__,.pytest_cache,.mypy_cache,.ruff_cache` | Diretórios a ignorar |
 | `SCAN_ALLOW_EXTS` | `.ts,.tsx,.py,.md,...` | Extensões permitidas |
 | `CHUNK_LINES` | `120` | Linhas por chunk |
 | `CHUNK_OVERLAP_LINES` | `20` | Overlap entre chunks |
+
+### LLM (comando ask)
+
+| Variável | Default | Descrição |
+|----------|---------|-----------|
+| `LLM_MODEL` | `llama3.2` | Modelo LLM para gerar respostas no `ask` |
 
 ## Payload do Ponto
 
