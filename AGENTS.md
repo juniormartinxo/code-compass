@@ -12,16 +12,16 @@ Use as skills por domínio para detalhes de implementação; este documento fica
 code-compass/
   AGENTS.md
   README.md
-  ARCHITECTURE.md
-  STRUCTURE.md
   docs/
+    ARCHITECTURE.md
+    STRUCTURE.md
     ADRs/
   .codex/
     skills/
       developer-*/
 ```
 
-### 2.2 Estrutura alvo (fonte: `STRUCTURE.md`)
+### 2.2 Estrutura alvo (fonte: `docs/STRUCTURE.md`)
 ```text
 code-compass/
   apps/
@@ -39,7 +39,7 @@ code-compass/
 - Vector DB: `infra/qdrant` + contratos de payload em `packages/shared`.
 - Infra: `infra/`, `.env.example`, `Makefile`, `scripts/dev`, `scripts/ops`.
 - Quality: testes/lint/typecheck em `apps/*/test*`, `scripts/ci`, `.github/workflows`.
-- Docs: `README.md`, `ARCHITECTURE.md`, `docs/**`, `docs/ADRs/**`.
+- Docs: `README.md`, `docs/ARCHITECTURE.md`, `docs/STRUCTURE.md`, `docs/**`, `docs/ADRs/**`.
 
 ## 3) Como escolher a skill certa
 
