@@ -1,6 +1,6 @@
 ---
 name: developer-quality
-description: Planejar e executar qualidade técnica transversal (testes unit/integration/e2e, contratos, lint, typecheck, cobertura e regressão) com foco em prevenir quebras; usar quando o pedido envolver validação, confiabilidade e gates de entrega e não usar para implementar features de domínio específicas.
+description: Governar qualidade técnica transversal do Code Compass (gates de entrega, política de testes/contratos, lint, typecheck, cobertura e estabilidade de CI) quando o objetivo principal for elevar confiabilidade sistêmica entre módulos; não usar para bugfix com repro antes/depois, regressão localizada de mudança pontual ou smoke e2e de alteração específica (usar `developer-tester`) nem para implementação de feature de domínio.
 ---
 
 # Developer Quality
@@ -59,9 +59,12 @@ Garantir que mudanças em MCP server, indexer, infra e docs técnicas passem por
 - "Ajuste lint e typecheck do módulo alterado sem mexer em áreas não relacionadas."
 - "Adicione testes de integração para indexação incremental e operação no Qdrant."
 - "Defina gates de qualidade para PR com foco em feedback rápido e confiável."
+- "Padronize critérios globais de qualidade do CI e explicite quando acionar `developer-tester` para bugfix e regressão localizada."
 
 ## 8) Anti-exemplos (quando não usar)
 - "Implementar endpoint/tool nova no NestJS" -> usar `developer-mcp-server`.
 - "Refatorar algoritmo de chunking" -> usar `developer-indexer`.
 - "Mudar configuração da collection Qdrant" -> usar `developer-vector-db`.
 - "Escrever guia de onboarding técnico" -> usar `developer-docs`.
+- "Reproduzir bug específico e criar teste antes/depois" -> usar `developer-tester`.
+- "Executar smoke e2e de uma mudança pontual" -> usar `developer-tester`.
