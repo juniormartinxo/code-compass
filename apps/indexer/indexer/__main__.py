@@ -768,6 +768,11 @@ def _ask_command(args: argparse.Namespace) -> int:
     from pathlib import Path
     
     start_time = time.time()
+    question = args.question.strip()
+
+    if not question:
+        print("Erro: pergunta vazia.", file=sys.stderr)
+        return 1
     
     try:
         embedder_config = load_embedder_config()
@@ -776,13 +781,13 @@ def _ask_command(args: argparse.Namespace) -> int:
         llm_model = args.llm_model or os.getenv("LLM_MODEL", DEFAULT_LLM_MODEL)
         ollama_url = embedder_config.ollama_url  # Reusar URL do Ollama
 
-        logger.info(f"Pergunta: {args.question}")
+        logger.info(f"Pergunta: {question}")
         logger.info(f"LLM Model: {llm_model}")
 
         # 1. Gerar embedding da pergunta
         with OllamaEmbedder(embedder_config) as embedder:
             vector_size = embedder.probe_vector_size()
-            embeddings = embedder.embed_texts([args.question])
+            embeddings = embedder.embed_texts([question])
             query_vector = embeddings[0]
 
         # 2. Buscar chunks relevantes
@@ -850,7 +855,7 @@ def _ask_command(args: argparse.Namespace) -> int:
                 payload["text"] = "[caminho não disponível]"
 
         # 4. Construir prompt
-        system_prompt, user_message = _build_rag_prompt(args.question, results)
+        system_prompt, user_message = _build_rag_prompt(question, results)
 
         # 5. Chamar LLM
         logger.info("Chamando LLM...")
@@ -866,7 +871,7 @@ def _ask_command(args: argparse.Namespace) -> int:
         # Output
         if args.json_output:
             output = {
-                "question": args.question,
+                "question": question,
                 "answer": answer,
                 "model": llm_model,
                 "contexts_used": len(results),
@@ -882,7 +887,7 @@ def _ask_command(args: argparse.Namespace) -> int:
             }
             print(json.dumps(output, indent=2, ensure_ascii=False))
         else:
-            print(f"\n💬 **Pergunta:** {args.question}\n")
+            print(f"\n💬 **Pergunta:** {question}\n")
             print(f"🤖 **Resposta:**\n{answer}\n")
             
             if args.show_context:
