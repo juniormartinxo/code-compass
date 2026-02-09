@@ -32,6 +32,8 @@ EXCLUDED_CONTEXT_PATH_PARTS: tuple[str, ...] = (
     "/.ruff_cache/",
 )
 
+SEARCH_SNIPPET_MAX_CHARS = 300
+
 
 def _should_exclude_context_path(path: str | None) -> bool:
     if not path:
@@ -53,6 +55,58 @@ def _filter_context_results(results: list[dict[str, object]]) -> tuple[list[dict
         filtered.append(result)
 
     return filtered, excluded
+
+
+def _normalize_snippet(text: str, max_chars: int = SEARCH_SNIPPET_MAX_CHARS) -> str:
+    normalized = " ".join(text.split())
+    if not normalized:
+        return ""
+    if len(normalized) <= max_chars:
+        return normalized
+    return f"{normalized[: max_chars - 3].rstrip()}..."
+
+
+def _build_search_header(payload: dict[str, object]) -> str:
+    path = payload.get("path", "?")
+    start_line = payload.get("start_line", payload.get("startLine", "?"))
+    end_line = payload.get("end_line", payload.get("endLine", "?"))
+    return f"{path}:{start_line}-{end_line}"
+
+
+def _format_search_result_block(
+    *,
+    index: int,
+    score: float,
+    payload: dict[str, object],
+    vector: object | None = None,
+) -> str:
+    snippet_raw = payload.get("text")
+    snippet = "(no text payload)"
+    if isinstance(snippet_raw, str) and snippet_raw.strip():
+        snippet = _normalize_snippet(snippet_raw).replace('"', "'")
+
+    lines = [
+        f"[{index}] score={score:.4f}  {_build_search_header(payload)}",
+        f'    snippet: "{snippet}"',
+    ]
+
+    if vector is not None:
+        lines.append(f"    vector: {vector}")
+
+    return "\n".join(lines)
+
+
+def _build_search_filters(args: argparse.Namespace) -> dict[str, object] | None:
+    filters: dict[str, object] = {}
+
+    if getattr(args, "ext", None):
+        filters["ext"] = args.ext
+    if getattr(args, "language", None):
+        filters["language"] = args.language
+    if getattr(args, "path_prefix", None):
+        filters["path_prefix"] = args.path_prefix
+
+    return filters or None
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -113,11 +167,23 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     search_parser.add_argument("query", help="Texto da busca")
     search_parser.add_argument(
-        "-k", "--top-k",
+        "-k", "--top-k", "--topk",
         dest="top_k",
         type=int,
-        default=5,
-        help="Número de resultados (default: 5)"
+        default=10,
+        help="Número de resultados (default: 10)"
+    )
+    search_parser.add_argument(
+        "--path_prefix",
+        dest="path_prefix",
+        default=None,
+        help="Filtra por prefixo de path no payload"
+    )
+    search_parser.add_argument(
+        "--with_vector",
+        dest="with_vector",
+        action="store_true",
+        help="Inclui vetor no output"
     )
     search_parser.add_argument(
         "--ext",
@@ -538,14 +604,19 @@ def _search_command(args: argparse.Namespace) -> int:
     3. Exibe resultados
     """
     try:
+        query = args.query.strip()
+        if not query:
+            print("Erro: query vazia.", file=sys.stderr)
+            return 1
+
         embedder_config = load_embedder_config()
         qdrant_config = load_qdrant_config()
 
         # Gerar embedding da query
         with OllamaEmbedder(embedder_config) as embedder:
-            vector_size = embedder.probe_vector_size()
-            embeddings = embedder.embed_texts([args.query])
+            embeddings = embedder.embed_texts([query])
             query_vector = embeddings[0]
+            vector_size = len(query_vector)
 
         # Buscar no Qdrant
         with QdrantStore(qdrant_config) as store:
@@ -554,36 +625,43 @@ def _search_command(args: argparse.Namespace) -> int:
                 model_name=embedder_config.model,
             )
 
-            # Montar filtros
-            filters = {}
-            if hasattr(args, "ext") and args.ext:
-                filters["ext"] = args.ext
-            if hasattr(args, "language") and args.language:
-                filters["language"] = args.language
+            filters = _build_search_filters(args)
 
             results = store.search(
                 query_vector=query_vector,
                 collection_name=collection_name,
-                filters=filters if filters else None,
+                filters=filters,
                 top_k=args.top_k,
+                with_vector=args.with_vector,
             )
+
+        if not results:
+            print(
+                f"Nenhum resultado na collection '{collection_name}' "
+                "(collection ausente/vazia ou sem matches)."
+            )
+            return 0
 
         # Output
         if args.json_output:
             print(json.dumps(results, indent=2, ensure_ascii=False))
         else:
-            print(f"\n🔍 Query: \"{args.query}\"")
-            print(f"📊 {len(results)} resultado(s):\n")
+            print(f"Query: \"{query}\"")
+            print(f"Resultados: {len(results)}")
+            print()
 
             for i, r in enumerate(results, 1):
-                payload = r["payload"]
-                score = r["score"]
-                path = payload.get("path", "?")
-                ext = payload.get("ext", "?")
-                lines = f"{payload.get('start_line', '?')}-{payload.get('end_line', '?')}"
+                payload = r.get("payload", {})
+                if not isinstance(payload, dict):
+                    payload = {}
 
-                print(f"  {i}. [{score:.4f}] {path}")
-                print(f"     📍 Linhas: {lines} | Extensão: {ext}")
+                block = _format_search_result_block(
+                    index=i,
+                    score=float(r.get("score", 0.0)),
+                    payload=payload,
+                    vector=r.get("vector") if args.with_vector else None,
+                )
+                print(block)
                 print()
 
         return 0
@@ -592,7 +670,7 @@ def _search_command(args: argparse.Namespace) -> int:
         print(f"Erro no embedder: {exc}", file=sys.stderr)
         return 1
     except QdrantStoreError as exc:
-        print(f"Erro no Qdrant: {exc}", file=sys.stderr)
+        print(f"Qdrant indisponível: {exc}", file=sys.stderr)
         return 1
     except Exception as exc:
         logger.exception("Erro inesperado")
