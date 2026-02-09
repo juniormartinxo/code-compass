@@ -11,6 +11,7 @@ from pathlib import Path
 # Adicionar o diretório do indexer ao path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from indexer.env import load_env_files
 from indexer.embedder import OllamaEmbedder, load_embedder_config
 from indexer.qdrant_store import QdrantStore, load_qdrant_config
 
@@ -58,6 +59,7 @@ def search(
 
 
 def main() -> int:
+    load_env_files()
     parser = argparse.ArgumentParser(
         description="Busca semântica na collection do Qdrant"
     )
