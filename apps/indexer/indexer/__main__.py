@@ -11,6 +11,7 @@ from time import perf_counter
 
 from .chunk import chunk_file
 from .config import ChunkConfig, ScanConfig, load_chunk_config, load_scan_config
+from .env import load_env_files
 from .embedder import EmbedderError, OllamaEmbedder, load_embedder_config
 from .qdrant_store import QdrantStore, QdrantStoreError, load_qdrant_config
 from .scan import scan_repo
@@ -832,6 +833,12 @@ def _ask_command(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
+    loaded_env_files = load_env_files()
+    if loaded_env_files:
+        logger.info(
+            "Env files carregados: %s",
+            ", ".join(str(path) for path in loaded_env_files),
+        )
     parser = _build_parser()
     args = parser.parse_args()
 
