@@ -139,6 +139,53 @@ SCAN_IGNORE_DIRS=node_modules,dist,build,.git \
 python -m indexer scan --max-files 50
 ```
 
+## Chunking MVP por arquivo (CARD 05)
+
+O comando `chunk` gera chunks determinísticos por linhas com overlap, `chunkId` estável e `contentHash` no payload.
+
+Execução mínima:
+
+```bash
+cd apps/indexer
+python -m indexer chunk --file path/to/file
+```
+
+Variáveis de ambiente:
+
+- `REPO_ROOT`: raiz para path canônico relativo (padrão: `..`).
+- `CHUNK_LINES`: tamanho máximo de cada chunk em linhas (padrão: `120`).
+- `CHUNK_OVERLAP_LINES`: overlap entre chunks consecutivos (padrão: `20`).
+
+Flags relevantes:
+
+- `--chunk-lines`: override de `CHUNK_LINES`.
+- `--overlap-lines`: override de `CHUNK_OVERLAP_LINES`.
+- `--repo-root`: override de `REPO_ROOT`.
+- `--as-posix` / `--no-as-posix`: controla separador do path canônico; o padrão é `--as-posix` para estabilidade cross-OS e menor atrito em filtros/payload no Qdrant.
+
+Exemplo:
+
+```bash
+cd apps/indexer
+python -m indexer chunk \
+  --file apps/indexer/indexer/chunk.py \
+  --repo-root .. \
+  --chunk-lines 120 \
+  --overlap-lines 20 \
+  --as-posix
+```
+
+Formato de saída (resumo):
+
+- `path`: path canônico relativo ao `repoRoot` (quando possível).
+- `pathIsRelative`: `true` quando o arquivo está sob `REPO_ROOT`.
+- `chunks[]`:
+  - `chunkId`: hash estável de `path:startLine:endLine:contentHash`.
+  - `contentHash`: SHA-256 do conteúdo completo do arquivo (debug/dedupe/incremental).
+  - `startLine`/`endLine`: range 1-based inclusivo.
+  - `language`: inferido por extensão.
+  - `content`: conteúdo textual do chunk.
+
 ---
 
 ## Infra (Qdrant local)
