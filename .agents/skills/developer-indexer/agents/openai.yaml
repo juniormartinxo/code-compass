@@ -1,0 +1,5 @@
+interface:
+  display_name: "Developer Indexer"
+  short_description: "Orquestra indexação Python e embeddings RAG"
+  brand_color: "#10B981"
+  default_prompt: "Aplique workflow de indexação: discovery, plano, implementação, validação e entrega."
