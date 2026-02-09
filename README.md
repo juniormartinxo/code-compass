@@ -52,8 +52,16 @@ Crie `.env` a partir de `.env.example`.
 
 ### 2) Suba o Qdrant
 ```bash
-make up
-````
+docker compose -f infra/docker-compose.yml up -d
+```
+
+Endpoint local do Qdrant: `http://localhost:6333`.
+
+Healthcheck rápido:
+
+```bash
+curl -s http://localhost:6333/readyz
+```
 
 ### 3) Rode indexação (primeira carga)
 
@@ -126,23 +134,33 @@ clean:
 
 ## Infra (Qdrant local)
 
-`infra/docker-compose.yml` (exemplo):
+`infra/docker-compose.yml`:
 
 ```yaml
+name: code-compass
+
 services:
   qdrant:
     image: qdrant/qdrant:latest
+    restart: unless-stopped
     ports:
       - "6333:6333"   # HTTP
       - "6334:6334"   # gRPC
     volumes:
       - ../.qdrant_storage:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 ```
 
 Verificar:
 
 ```bash
-curl -s http://localhost:6333/ | head
+curl -s http://localhost:6333/
+curl -s http://localhost:6333/readyz
 ```
 
 ---
