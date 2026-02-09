@@ -146,5 +146,27 @@ class ChunkCliTests(unittest.TestCase):
             self.assertIn("overlap deve ser menor que chunk_lines", completed.stderr)
 
 
+class AskCliTests(unittest.TestCase):
+    def test_cli_ask_rejects_empty_question(self) -> None:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "indexer",
+                "ask",
+                "",
+                "--model",
+                "gpt-oss",
+            ],
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 1)
+        self.assertIn("Erro: pergunta vazia.", completed.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
