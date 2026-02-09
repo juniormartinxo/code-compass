@@ -1,0 +1,4 @@
+interface:
+  display_name: "Developer Tester"
+  short_description: "Executa repro, testes e validação de mudanças específicas."
+  default_prompt: "Aplique workflow tester: discovery->plan->implement->validate->deliver com DoD e guardrails."
