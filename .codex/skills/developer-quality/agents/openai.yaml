@@ -1,5 +1,0 @@
-interface:
-  display_name: "Developer Quality"
-  short_description: "Garante testes, lint, typecheck e regressão"
-  brand_color: "#EF4444"
-  default_prompt: "Aplique workflow qualidade: discovery, plano, implementação, validação e entrega."
