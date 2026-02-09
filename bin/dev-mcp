@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Função de log enviando TUDO para o stderr (canal 2)
+log() {
+  echo "[dev-mcp] $*" >&2
+}
+
+find_repo_root_upward() {
+  local current="$1"
+  while true; do
+    if [[ -f "$current/pnpm-workspace.yaml" || -d "$current/.git" || -f "$current/.git" ]]; then
+      echo "$current"
+      return 0
+    fi
+
+    local parent
+    parent="$(dirname "$current")"
+    if [[ "$parent" == "$current" ]]; then
+      return 1
+    fi
+    current="$parent"
+  done
+}
+
+resolve_repo_root() {
+  local script_dir
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+  local script_parent
+  script_parent="$(cd "$script_dir/.." && pwd -P)"
+
+  if command -v git >/dev/null 2>&1; then
+    local git_root
+    if git_root="$(git -C "$script_parent" rev-parse --show-toplevel 2>/dev/null)"; then
+      echo "$git_root"
+      return 0
+    fi
+  fi
+
+  if find_repo_root_upward "$script_parent"; then
+    return 0
+  fi
+
+  if find_repo_root_upward "$(pwd -P)"; then
+    return 0
+  fi
+
+  log "Error: could not resolve repo root (missing .git or pnpm-workspace.yaml)."
+  return 1
+}
+
+# Versão melhorada da checagem para garantir que o node não fale no stdout
+can_use_dev_stdio_script() {
+  local package_json="$1"
+  # Redirecionamos o erro do node para o limbo para não sujar o handshake
+  node -e '
+const fs = require("node:fs");
+try {
+  const pkg = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+  const script = pkg?.scripts?.["mcp:dev"];
+  if (!script) process.exit(1);
+  const normalized = String(script).toLowerCase();
+  if (!normalized.includes("stdio")) process.exit(1);
+  if (normalized.includes("--watch")) process.exit(2);
+  process.exit(0);
+} catch (e) { process.exit(1); }
+' "$package_json" 2>/dev/null
+}
+
+ROOT="$(resolve_repo_root)"
+MCP_SERVER_DIR="$ROOT/apps/mcp-server"
+MCP_SERVER_PACKAGE_JSON="$MCP_SERVER_DIR/package.json"
+
+if ! command -v pnpm >/dev/null 2>&1; then
+  log "Error: pnpm not found in PATH."
+  exit 1
+fi
+
+if [[ ! -f "$MCP_SERVER_PACKAGE_JSON" ]]; then
+  log "Error: apps/mcp-server/package.json not found in $ROOT"
+  exit 1
+fi
+
+# Variáveis de ambiente com fallback
+export REPO_ROOT="${REPO_ROOT:-$ROOT}"
+export QDRANT_URL="${QDRANT_URL:-http://localhost:6333}"
+export QDRANT_COLLECTION="${QDRANT_COLLECTION:-golyzer_3584_manutic_nomic_embed_code}"
+
+START_SCRIPT="mcp:stdio"
+
+if can_use_dev_stdio_script "$MCP_SERVER_PACKAGE_JSON"; then
+  START_SCRIPT="mcp:dev"
+else
+  check_status=$?
+  if [[ "$check_status" -eq 2 ]]; then
+    log "Notice: mcp:dev found with --watch; using mcp:stdio to avoid stdout pollution."
+  fi
+
+  if [[ ! -f "$MCP_SERVER_DIR/dist/main.js" ]]; then
+    log "Action: build missing; running pnpm build..."
+    pnpm -C "$MCP_SERVER_DIR" build >&2
+  fi
+fi
+
+cd "$ROOT"
+log "Starting MCP stdio in $MCP_SERVER_DIR (Script: $START_SCRIPT)"
+
+# --- O PULO DO GATO ---
+# Usamos 'exec' para substituir o processo do shell pelo do pnpm.
+# O '--silent' evita logs do pnpm, mas o segredo é que o script
+# chamado dentro do package.json NÃO PODE ter logs no stdout.
+exec pnpm --silent -C "$MCP_SERVER_DIR" "$START_SCRIPT"
