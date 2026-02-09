@@ -50,6 +50,7 @@ Manter documentação técnica acionável, atualizada e consistente com o compor
 - Não ocultar pré-requisitos importantes (versões, env vars, serviços).
 - Não copiar conteúdo redundante quando referência cruzada resolve melhor.
 - Não criar `scripts/` nesta skill sem necessidade determinística comprovada.
+- **Localização dos arquivos**: Toda documentação deve residir em `docs/<projeto>/` (ex: `docs/indexer/`, `docs/mcp-server/`). Não espalhar docs soltas pelas pastas dos apps.
 
 ## 6) Convenções de saída
 - Sempre devolver: (1) plano editorial, (2) arquivos alterados por objetivo, (3) validações realizadas, (4) pendências abertas.
