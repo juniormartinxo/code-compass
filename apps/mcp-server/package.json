@@ -1,0 +1,34 @@
+{
+  "name": "@code-compass/mcp-server",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.4.1",
+  "scripts": {
+    "build": "nest build && tsc -p tsconfig.scripts.json",
+    "start": "node dist/main.js",
+    "start:http": "node dist/main.js --transport http",
+    "dev": "nest start --watch",
+    "mcp:stdio": "node dist/main.js --transport stdio",
+    "mcp:dev": "nest start --watch -- --transport stdio",
+    "test": "pnpm build && vitest run",
+    "test:unit": "vitest run test/search-code.tool.spec.ts test/qdrant.service.spec.ts test/file.service.spec.ts",
+    "test:integration": "pnpm build && vitest run test/stdio-harness.spec.ts",
+    "test:stdio": "pnpm build && node dist/scripts/test-stdio-search-code.js",
+    "test:open-file": "pnpm build && vitest run test/file.service.spec.ts test/stdio-harness.spec.ts"
+  },
+  "dependencies": {
+    "@nestjs/common": "^10.4.15",
+    "@nestjs/core": "^10.4.15",
+    "@nestjs/platform-express": "^10.4.15",
+    "axios": "^1.8.4",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^10.4.9",
+    "@types/node": "^22.13.1",
+    "nock": "^14.0.10",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}
