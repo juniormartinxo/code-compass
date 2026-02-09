@@ -1,0 +1,5 @@
+interface:
+  display_name: "Architect"
+  short_description: "Decisões e padrões cross-cutting: contratos, boundaries, rollout, performance, segurança e operabilidade."
+  default_prompt: "Aplique workflow arquitetural: discovery->plan->validate->deliver com ADR e golden paths."
+
