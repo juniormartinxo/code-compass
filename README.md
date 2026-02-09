@@ -101,6 +101,44 @@ Observações importantes do estado atual deste repositório:
 - O `make up` usa `.env` (ou defaults seguros) para portas/imagem/path de storage.
 - `make index-docker*` exige Docker e instala dependências do indexer dentro do container a cada execução.
 
+## Scanner base do Indexer (CARD 04)
+
+O scanner recursivo do indexador fica em `apps/indexer/indexer` e retorna JSON com:
+
+- `files`: arquivos elegíveis (relativos ao `repo_root`, em formato posix)
+- `stats`: métricas do scan (`total_files_seen`, `files_kept`, `elapsed_ms`, etc.)
+
+Execução mínima:
+
+```bash
+cd apps/indexer
+python -m indexer scan
+```
+
+Configuração por ambiente:
+
+- `REPO_ROOT`: raiz do scan. Padrão: `..` (um nível acima de `apps/indexer`).
+- `SCAN_ALLOW_EXTS`: CSV opcional para sobrescrever extensões permitidas.
+- `SCAN_IGNORE_DIRS`: CSV opcional para adicionar diretórios ignorados.
+
+Ignorados por padrão:
+
+`.git,node_modules,dist,build,.next,.qdrant_storage,coverage`
+
+Allowlist padrão de extensões:
+
+`.ts,.tsx,.js,.jsx,.py,.md,.json,.yaml,.yml`
+
+Exemplo com env inline:
+
+```bash
+cd apps/indexer
+REPO_ROOT=/home/juniormartinxo/code-compass \
+SCAN_ALLOW_EXTS=.py,.md,.ts,.tsx \
+SCAN_IGNORE_DIRS=node_modules,dist,build,.git \
+python -m indexer scan --max-files 50
+```
+
 ---
 
 ## Infra (Qdrant local)
@@ -161,6 +199,8 @@ QDRANT_STORAGE_PATH=../.qdrant_storage
 REPO_ROOT=/abs/path/para/repositorio
 REPO_ALLOWLIST=src,packages,apps,docs
 REPO_BLOCKLIST=node_modules,dist,build,.next,.git,coverage
+SCAN_IGNORE_DIRS=.git,node_modules,dist,build,.next,.qdrant_storage,coverage
+SCAN_ALLOW_EXTS=.ts,.tsx,.js,.jsx,.py,.md,.json,.yaml,.yml
 
 # -----------------------------
 # Qdrant
