@@ -5,7 +5,8 @@ import json
 import sys
 from pathlib import Path
 
-from .config import ScanConfig, load_scan_config
+from .chunk import chunk_file
+from .config import ChunkConfig, ScanConfig, load_chunk_config, load_scan_config
 from .scan import scan_repo
 
 
@@ -19,6 +20,18 @@ def _build_parser() -> argparse.ArgumentParser:
     scan_parser.add_argument("--ignore-dirs", dest="ignore_dirs", default=None)
     scan_parser.add_argument("--max-files", dest="max_files", type=int, default=None)
 
+    chunk_parser = subparsers.add_parser("chunk", help="Gera chunks de um arquivo")
+    chunk_parser.add_argument("--file", dest="file", required=True)
+    chunk_parser.add_argument("--chunk-lines", dest="chunk_lines", type=int, default=None)
+    chunk_parser.add_argument("--overlap-lines", dest="overlap_lines", type=int, default=None)
+    chunk_parser.add_argument("--repo-root", dest="repo_root", default=None)
+    chunk_parser.add_argument(
+        "--as-posix",
+        dest="as_posix",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+
     return parser
 
 
@@ -27,6 +40,14 @@ def _resolve_scan_config(args: argparse.Namespace) -> ScanConfig:
         repo_root=args.repo_root,
         ignore_dirs=args.ignore_dirs,
         allow_exts=args.allow_exts,
+    )
+
+
+def _resolve_chunk_config(args: argparse.Namespace) -> ChunkConfig:
+    return load_chunk_config(
+        repo_root=args.repo_root,
+        chunk_lines=args.chunk_lines,
+        overlap_lines=args.overlap_lines,
     )
 
 
@@ -59,12 +80,47 @@ def _scan_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _chunk_command(args: argparse.Namespace) -> int:
+    try:
+        config = _resolve_chunk_config(args)
+        result = chunk_file(
+            file_path=Path(args.file),
+            repo_root=config.repo_root,
+            chunk_lines=config.chunk_lines,
+            overlap=config.overlap_lines,
+            as_posix=args.as_posix,
+        )
+    except (OSError, ValueError) as exc:
+        print(f"Erro: {exc}", file=sys.stderr)
+        return 1
+
+    payload = {
+        "file": str(Path(args.file).expanduser().resolve()),
+        "repoRoot": str(config.repo_root),
+        "path": result["path"],
+        "pathIsRelative": result["pathIsRelative"],
+        "asPosix": args.as_posix,
+        "chunkLines": config.chunk_lines,
+        "overlapLines": config.overlap_lines,
+        "totalLines": result["totalLines"],
+        "encoding": result["encoding"],
+        "chunks": result["chunks"],
+        "stats": {"chunks": len(result["chunks"])},
+        "warnings": result["warnings"],
+    }
+
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0
+
+
 def main() -> int:
     parser = _build_parser()
     args = parser.parse_args()
 
     if args.command == "scan":
         return _scan_command(args)
+    if args.command == "chunk":
+        return _chunk_command(args)
 
     parser.print_help()
     return 1
@@ -72,4 +128,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
