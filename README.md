@@ -97,16 +97,16 @@ Referências rápidas: `docs/mcp-antigravity.md` e `docs/antigravity-mcp.json`.
 O `Makefile` da raiz já traz os alvos operacionais mínimos para infra + indexer:
 
 ```bash
-make up                # sobe qdrant e aguarda readiness
-make health            # valida /readyz
-make index             # alias de indexação full
-make index-full        # full em apps/indexer
-make index-incremental # incremental em apps/indexer
-make index-docker      # full via container (profile indexer)
-make index-docker-incremental # incremental via container
-make dev               # sobe apps/mcp-server em dev
-make logs              # logs do qdrant
-make down              # derruba serviços
+make up                        # sobe qdrant e aguarda readiness
+make health                    # valida /readyz
+make index                     # alias de indexação full
+make index-full                # full em apps/indexer
+make index-incremental         # incremental em apps/indexer
+make index-docker              # full via container (profile indexer)
+make index-docker-incremental  # incremental via container
+make dev                       # sobe apps/mcp-server em dev
+make logs                      # logs do qdrant
+make down                      # derruba serviços
 ```
 
 Observações importantes do estado atual deste repositório:
@@ -116,7 +116,7 @@ Observações importantes do estado atual deste repositório:
 - O `make up` usa `.env` (ou defaults seguros) para portas/imagem/path de storage.
 - `make index-docker*` exige Docker e instala dependências do indexer dentro do container a cada execução.
 
-## Scanner base do Indexer (CARD 04)
+## Scanner base do Indexer
 
 O scanner recursivo do indexador fica em `apps/indexer/indexer` e retorna JSON com:
 
@@ -154,7 +154,7 @@ SCAN_IGNORE_DIRS=node_modules,dist,build,.git \
 python -m indexer scan --max-files 50
 ```
 
-## Chunking MVP por arquivo (CARD 05)
+## Chunking MVP por arquivo
 
 O comando `chunk` gera chunks determinísticos por linhas com overlap, `chunkId` estável e `contentHash` no payload.
 
