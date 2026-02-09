@@ -27,12 +27,22 @@ DEFAULT_ALLOW_EXTS: set[str] = {
     ".yml",
 }
 
+DEFAULT_CHUNK_LINES = 120
+DEFAULT_CHUNK_OVERLAP_LINES = 20
+
 
 @dataclass(frozen=True)
 class ScanConfig:
     repo_root: Path
     ignore_dirs: set[str]
     allow_exts: set[str]
+
+
+@dataclass(frozen=True)
+class ChunkConfig:
+    repo_root: Path
+    chunk_lines: int
+    overlap_lines: int
 
 
 def _parse_csv(value: str | None) -> list[str]:
@@ -69,6 +79,26 @@ def _resolve_repo_root(raw: str | None) -> Path:
     return target.resolve()
 
 
+def _resolve_int_config(
+    value: int | str | None,
+    env_value: str | None,
+    default: int,
+    label: str,
+) -> int:
+    selected: int | str
+    if value is not None:
+        selected = value
+    elif env_value is not None:
+        selected = env_value
+    else:
+        selected = default
+
+    try:
+        return int(selected)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{label} deve ser um inteiro válido") from exc
+
+
 def load_scan_config(
     repo_root: str | None = None,
     ignore_dirs: str | Iterable[str] | None = None,
@@ -101,3 +131,28 @@ def load_scan_config(
         allow_exts=resolved_allow_exts,
     )
 
+
+def load_chunk_config(
+    repo_root: str | None = None,
+    chunk_lines: int | str | None = None,
+    overlap_lines: int | str | None = None,
+) -> ChunkConfig:
+    repo_root_raw = repo_root if repo_root is not None else os.getenv("REPO_ROOT")
+    chunk_lines_value = _resolve_int_config(
+        value=chunk_lines,
+        env_value=os.getenv("CHUNK_LINES"),
+        default=DEFAULT_CHUNK_LINES,
+        label="CHUNK_LINES",
+    )
+    overlap_lines_value = _resolve_int_config(
+        value=overlap_lines,
+        env_value=os.getenv("CHUNK_OVERLAP_LINES"),
+        default=DEFAULT_CHUNK_OVERLAP_LINES,
+        label="CHUNK_OVERLAP_LINES",
+    )
+
+    return ChunkConfig(
+        repo_root=_resolve_repo_root(repo_root_raw),
+        chunk_lines=chunk_lines_value,
+        overlap_lines=overlap_lines_value,
+    )
