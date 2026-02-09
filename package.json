@@ -3,7 +3,9 @@
   "private": true,
   "packageManager": "pnpm@10.4.1",
   "scripts": {
+    "dev": "pnpm mcp:start",
     "indexer:activate": ". apps/indexer/.venv/bin/activate",
+    "mcp:start": "bash ./bin/dev-mcp",
     "mcp:stdio": "pnpm -C apps/mcp-server mcp:stdio",
     "mcp:dev": "pnpm -C apps/mcp-server mcp:dev",
     "mcp:build": "pnpm -C apps/mcp-server build",
