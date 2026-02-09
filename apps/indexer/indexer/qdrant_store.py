@@ -61,6 +61,53 @@ class QdrantCollectionError(QdrantStoreError):
     """Erro relacionado a collection (criação, validação)."""
 
 
+def build_qdrant_filter(filters: dict[str, Any] | None) -> models.Filter | None:
+    """Converte filtros simples para o formato nativo do Qdrant.
+
+    Nota: para `path_prefix`, usa `MatchText` no campo `path` por ser o
+    mecanismo disponível neste cliente. É um filtro textual aproximado,
+    não um operador de prefixo estrito.
+    """
+    if not filters:
+        return None
+
+    must_conditions: list[models.Condition] = []
+
+    for key, value in filters.items():
+        if value is None:
+            continue
+
+        if key == "path_prefix" and isinstance(value, str) and value.strip():
+            must_conditions.append(
+                models.FieldCondition(
+                    key="path",
+                    match=models.MatchText(text=value.strip()),
+                )
+            )
+            continue
+
+        if isinstance(value, list):
+            must_conditions.append(
+                models.FieldCondition(
+                    key=key,
+                    match=models.MatchAny(any=value),
+                )
+            )
+            continue
+
+        must_conditions.append(
+            models.FieldCondition(
+                key=key,
+                match=models.MatchValue(value=value),
+            )
+        )
+
+    if not must_conditions:
+        return None
+
+    return models.Filter(must=must_conditions)
+
+
 def _slugify(text: str) -> str:
     """Converte texto para slug (lowercase, underscores)."""
     slug = text.lower()
@@ -311,6 +358,7 @@ class QdrantStore:
         collection_name: str | None = None,
         filters: dict[str, Any] | None = None,
         top_k: int = 10,
+        with_vector: bool = False,
     ) -> list[dict[str, Any]]:
         """
         Busca vetores similares no Qdrant.
@@ -328,45 +376,38 @@ class QdrantStore:
         if not collection:
             raise QdrantStoreError("Collection name não definido")
 
-        # Construir filtro Qdrant se fornecido
-        qdrant_filter = None
-        if filters:
-            must_conditions = []
-            for key, value in filters.items():
-                if isinstance(value, list):
-                    must_conditions.append(
-                        models.FieldCondition(
-                            key=key,
-                            match=models.MatchAny(any=value),
-                        )
-                    )
-                else:
-                    must_conditions.append(
-                        models.FieldCondition(
-                            key=key,
-                            match=models.MatchValue(value=value),
-                        )
-                    )
-            if must_conditions:
-                qdrant_filter = models.Filter(must=must_conditions)
+        qdrant_filter = build_qdrant_filter(filters)
 
         # Usar query_points (API v1.16+)
-        results = self.client.query_points(
-            collection_name=collection,
-            query=query_vector,
-            query_filter=qdrant_filter,
-            limit=top_k,
-            with_payload=True,
-        )
+        try:
+            results = self.client.query_points(
+                collection_name=collection,
+                query=query_vector,
+                query_filter=qdrant_filter,
+                limit=top_k,
+                with_payload=True,
+                with_vectors=with_vector,
+            )
+        except UnexpectedResponse as exc:
+            if exc.status_code == 404:
+                logger.info(f"Collection '{collection}' não encontrada")
+                return []
+            raise QdrantStoreError(f"Erro ao buscar na collection {collection}: {exc}") from exc
+        except Exception as exc:
+            raise QdrantStoreError(f"Erro ao buscar na collection {collection}: {exc}") from exc
 
-        return [
-            {
-                "id": str(r.id),
-                "score": r.score,
-                "payload": r.payload or {},
+        response: list[dict[str, Any]] = []
+        for point in results.points:
+            item: dict[str, Any] = {
+                "id": str(point.id),
+                "score": point.score,
+                "payload": point.payload or {},
             }
-            for r in results.points
-        ]
+            if with_vector:
+                item["vector"] = getattr(point, "vector", None)
+            response.append(item)
+
+        return response
 
     def count(self, collection_name: str | None = None) -> int:
         """Retorna contagem de pontos na collection."""
