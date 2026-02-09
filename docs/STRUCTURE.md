@@ -87,7 +87,7 @@ code-compass/
       ci.yml
       release.yml
 
-  .codex/                        # se você for usar no repo (opcional)
+  .agents/                       # se você for usar no repo (opcional)
     skills/
       developer/
         SKILL.md
