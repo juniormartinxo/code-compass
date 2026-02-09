@@ -75,6 +75,21 @@ make index
 make dev
 ```
 
+## MCP Local Quickstart (Antigravity)
+
+1. `pnpm install`
+2. `make up`
+3. `make index`
+4. `pnpm mcp:start`
+5. Abra Antigravity → **MCP Servers** → **Manage MCP Servers** → **View raw config**
+6. Cole `docs/antigravity-mcp.json` (substitua `<REPO_ROOT_AQUI>`)
+7. Salve e recarregue o server MCP na UI, se solicitado
+8. Teste `search_code` com termo existente no repositório
+9. Teste `open_file` usando `path/startLine/endLine` de um hit
+10. Valide segurança com `open_file` em `../../etc/passwd` (deve bloquear)
+
+Referências rápidas: `docs/mcp-antigravity.md` e `docs/antigravity-mcp.json`.
+
 ---
 
 ## Comandos (Makefile)
