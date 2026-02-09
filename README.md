@@ -186,6 +186,29 @@ Formato de saída (resumo):
   - `language`: inferido por extensão.
   - `content`: conteúdo textual do chunk.
 
+## Debug search (CLI)
+
+Após indexar, use o comando `search` do indexer para debug rápido no Qdrant:
+
+```bash
+cd apps/indexer
+python -m indexer search "minha query" --topk 10
+```
+
+Com filtro por prefixo de path no payload:
+
+```bash
+cd apps/indexer
+python -m indexer search "minha query" --topk 10 --path_prefix src/
+```
+
+Saída humana esperada por resultado:
+
+```text
+[1] score=0.7821  src/foo/bar.ts:120-168
+    snippet: "..."
+```
+
 ---
 
 ## Infra (Qdrant local)
