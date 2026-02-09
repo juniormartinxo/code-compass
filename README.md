@@ -236,11 +236,11 @@ Lista árvore de arquivos dentro do allowlist.
 
 ## Como conectar no Claude/Gemini/Codex via MCP
 
-> **Importante:** clientes MCP podem suportar diferentes transportes. Alguns preferem **STDIO** (server local executado como processo), outros suportam **HTTP/SSE**. Sempre siga a doc do cliente. ([Model Context Protocol][1])
+> **Importante:** clientes MCP podem suportar diferentes transportes. Alguns preferem **STDIO** (server local executado como processo), outros suportam **HTTP/SSE**. Sempre siga a doc do cliente.
 
 ### A) Claude (Claude Desktop)
 
-A forma mais comum é registrar um **servidor local** no Claude Desktop (o cliente lança o processo do server). A doc oficial de “connect local servers” mostra o fluxo geral com Claude Desktop. ([Model Context Protocol][1])
+A forma mais comum é registrar um **servidor local** no Claude Desktop (o cliente lança o processo do server). A doc oficial de “connect local servers” mostra o fluxo geral com Claude Desktop.
 
 **Padrão recomendado para Claude Desktop:**
 
@@ -258,7 +258,7 @@ A forma mais comum é registrar um **servidor local** no Claude Desktop (o clien
 
 ### B) Codex (OpenAI Codex CLI / IDE)
 
-Codex lê a config em `~/.codex/config.toml` (ou em `.codex/config.toml` por projeto). ([OpenAI Developers][2])
+Codex lê a config em `~/.codex/config.toml` (ou em `.codex/config.toml` por projeto).
 
 **Exemplo de configuração (STDIO) — `.codex/config.toml`:**
 
@@ -269,7 +269,7 @@ args = ["apps/mcp-server/dist/main.js"]
 env = { "MCP_SERVER_MODE" = "stdio" }
 ```
 
-> Ajuste `command/args` conforme seu build. A doc do Codex detalha como registrar MCP servers no `config.toml`. ([OpenAI Developers][2])
+> Ajuste `command/args` conforme seu build. A doc do Codex detalha como registrar MCP servers no `config.toml`.
 
 **Workflow sugerido:**
 
@@ -285,14 +285,15 @@ env = { "MCP_SERVER_MODE" = "stdio" }
 
 #### C1) Gemini CLI
 
-O Gemini CLI tem suporte a MCP servers e documenta como configurar. ([Gemini CLI][3])
+O Gemini CLI tem suporte a MCP servers e documenta como configurar.
+
 Aqui também é comum usar **STDIO** para servidor local.
 
 > Recomendação: se sua intenção é “Gemini no terminal”, Gemini CLI é o caminho mais previsível.
 
 #### C2) Gemini no Android Studio (Agent mode)
 
-O Android Studio tem fluxo próprio para **adicionar MCP server** ao agente do Gemini. ([Android Developers][4])
+O Android Studio tem fluxo próprio para **adicionar MCP server** ao agente do Gemini.
 Útil se o time está muito preso em Android Studio/JetBrains e quer toolchain “na IDE”.
 
 ---
