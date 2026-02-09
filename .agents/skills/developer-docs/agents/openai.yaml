@@ -1,0 +1,5 @@
+interface:
+  display_name: "Developer Docs"
+  short_description: "Mantém README, ADRs e exemplos operacionais"
+  brand_color: "#14B8A6"
+  default_prompt: "Aplique workflow docs: discovery, plano, implementação, validação e entrega."
