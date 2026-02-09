@@ -1,0 +1,14 @@
+{
+  "name": "code-compass",
+  "private": true,
+  "packageManager": "pnpm@10.4.1",
+  "scripts": {
+    "indexer:activate": ". apps/indexer/.venv/bin/activate",
+    "mcp:stdio": "pnpm -C apps/mcp-server mcp:stdio",
+    "mcp:dev": "pnpm -C apps/mcp-server mcp:dev",
+    "mcp:build": "pnpm -C apps/mcp-server build",
+    "mcp:test": "pnpm -C apps/mcp-server test",
+    "mcp:test:stdio": "pnpm -C apps/mcp-server test:stdio",
+    "mcp:test:open-file": "pnpm -C apps/mcp-server test:open-file"
+  }
+}
