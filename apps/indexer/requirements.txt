@@ -1,0 +1,6 @@
+# Core dependencies
+httpx>=0.28.0
+qdrant-client>=1.16.0
+
+# Development/Testing
+pytest>=9.0.0
