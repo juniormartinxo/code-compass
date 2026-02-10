@@ -11,6 +11,9 @@
     "mcp:build": "pnpm -C apps/mcp-server build",
     "mcp:test": "pnpm -C apps/mcp-server test",
     "mcp:test:stdio": "pnpm -C apps/mcp-server test:stdio",
-    "mcp:test:open-file": "pnpm -C apps/mcp-server test:open-file"
+    "mcp:test:open-file": "pnpm -C apps/mcp-server test:open-file",
+    "cli:build": "pnpm -C apps/cli build",
+    "cli:ask": "pnpm -C apps/cli ask",
+    "ask": "pnpm -C apps/cli ask"
   }
 }
