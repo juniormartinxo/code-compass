@@ -218,7 +218,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--model",
         dest="llm_model",
         default=None,
-        help="Modelo LLM para resposta (default: env LLM_MODEL ou llama3.2)"
+        help="Modelo LLM para resposta (default: env LLM_MODEL ou gpt-oss:latest)"
     )
     ask_parser.add_argument(
         "--ext",
@@ -678,7 +678,7 @@ def _search_command(args: argparse.Namespace) -> int:
         return 1
 
 
-DEFAULT_LLM_MODEL = "llama3.2"
+DEFAULT_LLM_MODEL = "gpt-oss:latest"
 
 
 def _call_ollama_chat(
