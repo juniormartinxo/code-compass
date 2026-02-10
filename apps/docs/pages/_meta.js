@@ -3,6 +3,7 @@ export default {
   ARCHITECTURE: 'Arquitetura',
   STRUCTURE: 'Estrutura do Projeto',
   indexer: 'Indexer & RAG',
+  tutoriais: 'Tutoriais',
   cli: 'CLI',
   ADRs: 'ADRs (Decisões)',
   'mcp-antigravity': 'MCP Antigravity',
