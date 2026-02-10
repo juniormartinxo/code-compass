@@ -1,3 +1,4 @@
 packages:
   - apps/mcp-server
   - apps/cli
+  - apps/docs
