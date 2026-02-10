@@ -1,6 +1,6 @@
 # MCP Server (`apps/mcp-server`)
 
-Servidor MCP em NestJS com transporte `stdio` (NDJSON) e tools `search_code` e `open_file`.
+Servidor MCP em NestJS com transporte `stdio` (NDJSON) e tools `search_code`, `open_file` e `ask_code`.
 
 ## Rodando
 
@@ -119,6 +119,36 @@ Resposta de erro:
 - `snippet` vem **somente** de `payload.text` no retorno do Qdrant.
 - Se não houver `payload.text`, retorna `"(no snippet)"`.
 - Este servidor **não lê arquivos do disco** para montar snippet.
+
+## Tool `ask_code`
+
+Executa o fluxo RAG completo no MCP: embedding da pergunta, busca no Qdrant, enriquecimento de contexto com `open_file` e chamada da LLM.
+
+### Input
+
+- `query` (string, obrigatório)
+- `topK` (number opcional, default `5`, clamp `1..20`)
+- `pathPrefix` (string opcional)
+- `language` (string opcional, ex: `ts`, `py`, `.tsx`)
+- `minScore` (number opcional, default `0.6`)
+- `llmModel` (string opcional, default `LLM_MODEL`)
+
+### Output
+
+- `answer` (string)
+- `evidences` (array de evidências no mesmo formato do `search_code`)
+- `meta`:
+  - `topK`, `minScore`, `llmModel`
+  - `collection`
+  - `totalMatches` e `contextsUsed`
+  - `elapsedMs`
+  - `pathPrefix?`, `language?`
+
+### Regras importantes
+
+- Usa `OLLAMA_URL` + `EMBEDDING_MODEL` para gerar embedding da pergunta.
+- Usa `OLLAMA_URL` + `llmModel` para gerar resposta final.
+- A política de prompt e seleção de contexto fica centralizada no MCP.
 
 ## Qdrant (env vars)
 
