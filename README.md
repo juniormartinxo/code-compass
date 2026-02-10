@@ -92,6 +92,19 @@ Referências rápidas: `docs/mcp-antigravity.md` e `docs/antigravity-mcp.json`.
 
 ---
 
+## CLI (ask)
+
+Para usar o chat no terminal (TUI) e o modo one-shot, veja `docs/cli/ask-cli.md`.
+
+Exemplo rapido:
+
+```bash
+pnpm ask
+pnpm ask "onde fica o handler do search_code?"
+```
+
+---
+
 ## Comandos (Makefile)
 
 O `Makefile` da raiz já traz os alvos operacionais mínimos para infra + indexer:
