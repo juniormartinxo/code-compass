@@ -8,13 +8,15 @@ import { OpenFileTool } from '../src/open-file.tool';
 import { SearchCodeTool } from '../src/search-code.tool';
 import { QdrantService } from '../src/qdrant.service';
 import { FileService } from '../src/file.service';
+import { AskCodeTool } from '../src/ask-code.tool';
 
 function createServer(): McpStdioServer {
   const qdrantService = new QdrantService();
   const searchCodeTool = new SearchCodeTool(qdrantService);
   const fileService = new FileService();
   const openFileTool = new OpenFileTool(fileService);
-  return new McpStdioServer(searchCodeTool, openFileTool);
+  const askCodeTool = new AskCodeTool(searchCodeTool, openFileTool);
+  return new McpStdioServer(searchCodeTool, openFileTool, askCodeTool);
 }
 
 async function run(): Promise<void> {
