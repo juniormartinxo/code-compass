@@ -10,6 +10,7 @@ import { McpStdioServer } from '../src/mcp-stdio.server';
 import { OpenFileTool } from '../src/open-file.tool';
 import { QdrantService } from '../src/qdrant.service';
 import { SearchCodeTool } from '../src/search-code.tool';
+import { AskCodeTool } from '../src/ask-code.tool';
 
 function createWritableMemorySink(): {
   write: (chunk: string) => void;
@@ -33,7 +34,8 @@ function createServer(): McpStdioServer {
   const searchCodeTool = new SearchCodeTool(qdrantService);
   const fileService = new FileService();
   const openFileTool = new OpenFileTool(fileService);
-  return new McpStdioServer(searchCodeTool, openFileTool);
+  const askCodeTool = new AskCodeTool(searchCodeTool, openFileTool);
+  return new McpStdioServer(searchCodeTool, openFileTool, askCodeTool);
 }
 
 describe('MCP stdio harness', () => {
