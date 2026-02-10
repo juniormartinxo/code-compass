@@ -24,7 +24,7 @@ python -m indexer ask "sua pergunta aqui"
 |-------|---------|-----------|
 | `question` | - | Pergunta em linguagem natural (obrigatório) |
 | `-k`, `--top-k` | `5` | Número de chunks de contexto |
-| `--model` | `llama3.2` | Modelo LLM para resposta |
+| `--model` | `gpt-oss:latest` | Modelo LLM para resposta |
 | `--ext` | - | Filtrar contexto por extensão (ex: `.py`) |
 | `--min-score` | `0.6` | Score mínimo de similaridade para usar chunk no contexto |
 | `--show-context` | `false` | Mostrar fontes consultadas |
@@ -35,7 +35,7 @@ python -m indexer ask "sua pergunta aqui"
 **LLM:**
 | Variável | Default | Descrição |
 |----------|---------|-----------|
-| `LLM_MODEL` | `llama3.2` | Modelo LLM para gerar respostas |
+| `LLM_MODEL` | `gpt-oss:latest` | Modelo LLM para gerar respostas |
 
 **Embeddings (Ollama):**
 | Variável | Default | Descrição |
@@ -64,7 +64,7 @@ python -m indexer ask "qual banco de dados vetorial é usado neste projeto?"
 🤖 **Resposta:**
 O banco de dados vetorial usado neste projeto é o **Qdrant**.
 
-⏱️  Tempo: 15.32s | Modelo: llama3.2
+⏱️  Tempo: 15.32s | Modelo: gpt-oss:latest
 ```
 
 ### Com Modelo Específico
@@ -91,7 +91,7 @@ O projeto Code Compass é organizado em...
   2. .agents/skills/architect/SKILL.md (linhas 1-67) - score: 0.8321
   ...
 
-⏱️  Tempo: 22.15s | Modelo: llama3.2
+⏱️  Tempo: 22.15s | Modelo: gpt-oss:latest
 ```
 
 ### Filtrar por Extensão
@@ -117,7 +117,7 @@ python -m indexer ask "qual o propósito do indexer?" --json
 {
   "question": "qual o propósito do indexer?",
   "answer": "O indexer é responsável por...",
-  "model": "llama3.2",
+  "model": "gpt-oss:latest",
   "contexts_used": 5,
   "elapsed_sec": 18.45,
   "sources": [
@@ -173,7 +173,7 @@ Qualquer modelo instalado no Ollama pode ser usado:
 ollama list
 
 # Exemplos de uso
-python -m indexer ask "pergunta" --model llama3.2
+python -m indexer ask "pergunta" --model gpt-oss:latest
 python -m indexer ask "pergunta" --model deepseek-r1:32b
 python -m indexer ask "pergunta" --model qwen3-coder:30b
 ```
@@ -191,7 +191,7 @@ python -m indexer ask "pergunta" --model qwen3-coder:30b
 
 ### Recomendações
 
-- Para respostas rápidas: use modelos menores (`llama3.2`, `qwen:7b`)
+- Para respostas rápidas: use modelos menores (`gpt-oss:latest`, `qwen:7b`)
 - Para respostas melhores: use modelos maiores (`deepseek-r1:32b`, `qwen3-coder:30b`)
 - Para código: use modelos especializados (`qwen3-coder`, `deepseek-coder`)
 
@@ -215,7 +215,7 @@ O modelo LLM especificado não está instalado.
 ollama list
 
 # Instalar modelo
-ollama pull llama3.2
+ollama pull gpt-oss:latest
 ```
 
 ### Resposta muito genérica ou "não encontrei"
@@ -225,7 +225,7 @@ ollama pull llama3.2
 
 ### Timeout na resposta
 Modelos grandes podem demorar. Alternativas:
-- Use um modelo menor: `--model llama3.2`
+- Use um modelo menor: `--model gpt-oss:latest`
 - Reduza o contexto: `-k 3`
 
 ### Contexto não relevante
