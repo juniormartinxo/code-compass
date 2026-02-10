@@ -19,6 +19,24 @@ export type SearchCodeResponse = {
   meta?: Record<string, unknown>;
 };
 
+export type AskCodeMeta = {
+  topK: number;
+  minScore: number;
+  llmModel: string;
+  collection: string;
+  totalMatches: number;
+  contextsUsed: number;
+  elapsedMs: number;
+  pathPrefix?: string;
+  language?: string;
+};
+
+export type AskCodeResponse = {
+  answer: string;
+  evidences: Evidence[];
+  meta: AskCodeMeta;
+};
+
 export type OpenFileResponse = {
   path: string;
   startLine: number;
@@ -33,9 +51,8 @@ export type AskConfig = {
   pathPrefix?: string;
   language?: string;
   repo?: string;
+  minScore: number;
   debug: boolean;
-  ollamaUrl: string;
-  embeddingModel: string;
   llmModel: string;
   mcpCommand: string[];
   requestTimeoutMs: number;
