@@ -194,7 +194,7 @@ python -m indexer search "como fazer chunking de arquivos"
 🔍 Query: "como fazer chunking de arquivos"
 📊 5 resultado(s):
 
-  1. [0.7879] docs/indexer/commands/chunk.md
+  1. [0.7879] apps/docs/pages/indexer/commands/chunk.md
      📍 Linhas: 1-21 | Extensão: .md
   ...
 ```
@@ -227,7 +227,7 @@ python -m indexer ask "qual banco de dados vetorial é usado neste projeto?" --s
 O banco de dados vetorial usado neste projeto é o **Qdrant**.
 
 📚 **Fontes consultadas:**
-  1. docs/ADRs/ADR-02.md (linhas 1-120) - score: 0.8495
+  1. apps/docs/pages/ADRs/ADR-02.md (linhas 1-120) - score: 0.8495
   ...
 
 ⏱️  Tempo: 15.32s | Modelo: gpt-oss:latest
