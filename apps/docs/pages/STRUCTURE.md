@@ -39,6 +39,13 @@ code-compass/
       requirements.txt
       pyproject.toml             # (recomendado) ou mantenha só requirements
       Dockerfile
+    docs/                        # Portal de documentação (Nextra/Next.js)
+      pages/
+      public/
+      styles/
+      theme.config.jsx
+      next.config.mjs
+      package.json
 
   packages/
     shared/                      # contratos compartilhados (schemas, tipos)
@@ -67,20 +74,7 @@ code-compass/
       backup-qdrant.sh
       restore-qdrant.sh
 
-  docs/
-    architecture/
-      overview.md
-      decisions/
-        ADR-0001-stack.md
-    operations/
-      runbook.md
-      troubleshooting.md
-    security/
-      threat-model.md
-      allowlist-blocklist.md
-      secrets-redaction.md
-    api/
-      mcp-tools.md               # doc das tools (search_code/open_file/list_tree)
+  # Documentação agora é fonte de verdade em apps/docs/pages
 
   .github/
     workflows/
