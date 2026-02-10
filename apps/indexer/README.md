@@ -230,13 +230,13 @@ O banco de dados vetorial usado neste projeto é o **Qdrant**.
   1. docs/ADRs/ADR-02.md (linhas 1-120) - score: 0.8495
   ...
 
-⏱️  Tempo: 15.32s | Modelo: llama3.2
+⏱️  Tempo: 15.32s | Modelo: gpt-oss:latest
 ```
 
 Opções:
 - `question` - Pergunta em linguagem natural (obrigatório)
 - `-k`, `--top-k` - Número de chunks de contexto (default: 5)
-- `--model` - Modelo LLM para resposta (default: `llama3.2`)
+- `--model` - Modelo LLM para resposta (default: `gpt-oss:latest`)
 - `--ext` - Filtrar contexto por extensão
 - `--show-context` - Mostrar fontes consultadas
 - `--json` - Output em JSON
@@ -280,7 +280,7 @@ Opções:
 
 | Variável | Default | Descrição |
 |----------|---------|-----------|
-| `LLM_MODEL` | `llama3.2` | Modelo LLM para gerar respostas no `ask` |
+| `LLM_MODEL` | `gpt-oss:latest` | Modelo LLM para gerar respostas no `ask` |
 
 ## Payload do Ponto
 
