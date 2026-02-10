@@ -12,25 +12,27 @@ Use as skills por domínio para detalhes de implementação; este documento fica
 code-compass/
   AGENTS.md
   README.md
-  docs/
-    ARCHITECTURE.md
-    STRUCTURE.md
-    ADRs/
+  apps/
+    docs/
+      pages/
+        ARCHITECTURE.md
+        STRUCTURE.md
+        ADRs/
   .agents/
     skills/
       developer-*/
 ```
 
-### 2.2 Estrutura alvo (fonte: `docs/STRUCTURE.md`)
+### 2.2 Estrutura alvo (fonte: `apps/docs/pages/STRUCTURE.md`)
 ```text
 code-compass/
   apps/
     mcp-server/      # ownership: MCP Server
     indexer/         # ownership: Indexer/Worker
+    docs/            # ownership: documentação técnica/ADR/runbooks
   packages/shared/   # ownership: contratos/schemas
   infra/             # ownership: infra + qdrant + observabilidade
   scripts/           # ownership: bootstrap/ci/ops
-  docs/              # ownership: documentação técnica/ADR/runbooks
 ```
 
 ### 2.3 Ownership por área
@@ -39,7 +41,7 @@ code-compass/
 - Vector DB: `infra/qdrant` + contratos de payload em `packages/shared`.
 - Infra: `infra/`, `.env.example`, `Makefile`, `scripts/dev`, `scripts/ops`.
 - Quality: testes/lint/typecheck em `apps/*/test*`, `scripts/ci`, `.github/workflows`.
-- Docs: `README.md`, `docs/ARCHITECTURE.md`, `docs/STRUCTURE.md`, `docs/**`, `docs/ADRs/**`.
+- Docs: `README.md`, `apps/docs/pages/ARCHITECTURE.md`, `apps/docs/pages/STRUCTURE.md`, `apps/docs/pages/**`, `apps/docs/pages/ADRs/**`, `apps/docs/assets/**`.
 
 ## 3) Como escolher a skill certa
 
@@ -96,7 +98,7 @@ Handoff para <skill-destino>
 ## 5) Definition of Done (DoD) global
 - Build/lint/typecheck do escopo passam (quando existirem no repo).
 - Testes relevantes (unit/integration/e2e) do escopo passam (quando existirem).
-- Documentação mínima atualizada (`README.md`, `docs/**`, `docs/ADRs/**`) quando houver mudança de comportamento/arquitetura.
+- Documentação mínima atualizada (`README.md`, `apps/docs/pages/**`, `apps/docs/pages/ADRs/**`) quando houver mudança de comportamento/arquitetura.
 - Contratos públicos (API/schemas/payloads/tools) permanecem compatíveis ou têm plano explícito de migração.
 - Não há regressão conhecida sem registro claro de risco e próximo passo.
 
@@ -113,7 +115,7 @@ Handoff para <skill-destino>
 - Branches: na ausência de padrão versionado, usar `feat/*`, `fix/*`, `chore/*`, `docs/*`; por quê: facilita triagem no remoto.
 - Naming: `kebab-case` para arquivos/pastas, `UPPER_SNAKE_CASE` para env vars, nomes de módulos explícitos; por quê: previsibilidade de busca.
 - Configs: manter valores de exemplo em `.env.example` na raiz; por quê: bootstrap consistente sem vazar segredo.
-- Mudanças arquiteturais: registrar em `docs/ADRs/ADR-XX.md`; por quê: preservar contexto de decisão.
+- Mudanças arquiteturais: registrar em `apps/docs/pages/ADRs/ADR-XX.md`; por quê: preservar contexto de decisão.
 
 ## 8) Comandos padrão (copiáveis)
 
