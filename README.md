@@ -105,6 +105,46 @@ pnpm ask "onde fica o handler do search_code?"
 
 ---
 
+## 📚 Portal de Documentação
+
+O projeto agora conta com um **portal de documentação interativo** construído com [Nextra](https://nextra.site), acessível em `http://localhost:3000`.
+
+### Features do Portal
+
+- ✅ **Busca Full-Text** nativa com FlexSearch
+- ✅ **Dark Mode** habilitado por padrão
+- ✅ **Navegação automática** entre páginas
+- ✅ **Syntax highlighting** para código
+- ✅ **Mobile-responsive**
+- ✅ **Performance otimizado** com geração estática (SSG)
+
+### Comandos Disponíveis
+
+```bash
+# Desenvolvimento (localhost:3000)
+pnpm docs:dev
+
+# Build de produção
+pnpm docs:build
+
+# Preview do build
+pnpm docs:start
+```
+
+### Conteúdo Documentado
+
+O portal organiza toda a documentação técnica do projeto:
+
+- **Arquitetura** - Visão detalhada da arquitetura do sistema
+- **ADRs** - 6 decisões arquiteturais documentadas
+- **Indexer & RAG** - Pipeline de indexação e embeddings
+- **CLI** - Interface de linha de comando
+- **MCP Integration** - Integração com Model Context Protocol
+
+Para mais detalhes, consulte o [`apps/docs/README.md`](apps/docs/README.md).
+
+---
+
 ## Comandos (Makefile)
 
 O `Makefile` da raiz já traz os alvos operacionais mínimos para infra + indexer:
