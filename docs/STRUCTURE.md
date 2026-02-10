@@ -39,6 +39,13 @@ code-compass/
       requirements.txt
       pyproject.toml             # (recomendado) ou mantenha só requirements
       Dockerfile
+    docs/                        # Portal de documentação (Nextra/Next.js)
+      pages/
+      public/
+      styles/
+      theme.config.jsx
+      next.config.mjs
+      package.json
 
   packages/
     shared/                      # contratos compartilhados (schemas, tipos)
