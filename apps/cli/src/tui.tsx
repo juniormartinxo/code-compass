@@ -2,18 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Box, Spacer, Text, useApp, useInput } from "ink";
 
 import { McpClient } from "./mcp-client.js";
-import { embedText, streamChat } from "./ollama.js";
-import { buildRagPrompt } from "./rag.js";
 import type { AskConfig, Evidence, OpenFileResponse } from "./types.js";
-import {
-  clamp,
-  curateEvidences,
-  formatLines,
-  hasUsableSnippet,
-  isSafeRelativePath,
-  matchesLanguage,
-  splitSnippet,
-} from "./utils.js";
+import { isSafeRelativePath } from "./utils.js";
 
 type Message = {
   id: string;
@@ -37,10 +27,6 @@ type SlashCommand = {
   template: string;
 };
 
-const MAX_EVIDENCE_LINES = 16;
-const MIN_EVIDENCE_SCORE = 0.6;
-const MAX_VISIBLE_EVIDENCES = 3;
-const MAX_SNIPPET_ENRICH = 5;
 const SLASH_COMMANDS: SlashCommand[] = [
   { command: "/help", description: "Mostrar ajuda", template: "/help" },
   { command: "/clear", description: "Limpar chat", template: "/clear" },
@@ -274,96 +260,33 @@ export function ChatApp({ config }: ChatAppProps): JSX.Element {
     setStreamText("");
 
     try {
-      setActivity("embedding");
-      const vector = await embedText(
-        config.ollamaUrl,
-        config.embeddingModel,
-        question,
-        { timeoutMs: config.requestTimeoutMs },
-      );
+      setActivity("ask_code");
 
-      setActivity("search");
-      const searchResponse = await client.searchCode(
+      if (config.repo) {
+        pushSystemMessage("Aviso: filtro --repo ainda nao e suportado pelo MCP ask_code.");
+      }
+
+      const response = await client.askCode(
         {
           query: question,
-          topK: clamp(config.topK, 1, 20),
+          topK: config.topK,
           pathPrefix: config.pathPrefix,
-          vector,
+          language: config.language,
+          minScore: config.minScore,
+          llmModel: config.llmModel,
         },
         config.requestTimeoutMs,
       );
 
-      const rawResults = searchResponse?.results ?? [];
-      const filteredResults = rawResults.filter((result) =>
-        matchesLanguage(result.path ?? "", config.language),
-      );
-
-      if (config.repo) {
-        pushSystemMessage("Aviso: filtro --repo ainda nao e suportado pelo MCP search_code.");
-      }
-
-      if (filteredResults.length === 0) {
-        setStatus((prev) => ({ ...prev, rag: "ok" }));
-        pushMessage({
-          id: `assistant-${Date.now()}`,
-          role: "assistant",
-          text:
-            "Sem evidencia suficiente. Tente refinar a pergunta ou usar --pathPrefix/--language.",
-        });
-        return;
-      }
-
-      const evidences: Evidence[] = filteredResults.map((result) => ({
-        path: result.path,
-        startLine: result.startLine ?? null,
-        endLine: result.endLine ?? null,
-        score: result.score,
-        snippet: splitSnippet(result.snippet ?? "", MAX_EVIDENCE_LINES),
-      }));
-
-      await enrichMissingSnippets(evidences, client, config.requestTimeoutMs);
-
-      const curated = curateEvidences(evidences, {
-        minScore: MIN_EVIDENCE_SCORE,
-        maxVisible: MAX_VISIBLE_EVIDENCES,
-      });
-
-      setLastEvidences(curated.all);
-
-      if (curated.visible.length === 0) {
-        setStatus((prev) => ({ ...prev, rag: "ok" }));
-        pushMessage({
-          id: `assistant-${Date.now()}`,
-          role: "assistant",
-          text:
-            "Sem evidencia suficiente para responder com confianca. Tente refinar a pergunta, usar --pathPrefix/--language, ou rode /sources para inspecionar os resultados brutos.",
-        });
-        return;
-      }
-
+      const evidences = response.evidences ?? [];
+      setLastEvidences(evidences);
       setStatus((prev) => ({ ...prev, rag: "ok" }));
-
-      setActivity("answer");
-      const { system, user } = buildRagPrompt(question, curated.visible);
-
-      let answer = "";
-      await streamChat(
-        config.ollamaUrl,
-        config.llmModel,
-        system,
-        user,
-        (chunk) => {
-          answer += chunk;
-          setStreamText(answer);
-        },
-        { timeoutMs: config.requestTimeoutMs },
-      );
 
       pushMessage({
         id: `assistant-${Date.now()}`,
         role: "assistant",
-        text: answer.trim() || "(sem resposta)",
-        evidences: curated.visible,
+        text: response.answer?.trim() || "(sem resposta)",
+        evidences,
       });
     } catch (error) {
       setStatus((prev) => ({ ...prev, rag: "error" }));
@@ -561,6 +484,7 @@ export function ChatApp({ config }: ChatAppProps): JSX.Element {
   const sliceStart = Math.max(0, sliceEnd - bodyHeight);
   
   const visibleSlice = allLines.slice(sliceStart, sliceEnd);
+  const llmLabel = formatModelLabel(config.llmModel, Math.max(16, Math.floor(columns * 0.25)));
 
   return (
     <Box flexDirection="column" height={rows} width={columns}>
@@ -585,6 +509,9 @@ export function ChatApp({ config }: ChatAppProps): JSX.Element {
               <Text color={status.rag === "ok" ? "green" : status.rag === "error" ? "red" : "gray"}>
                 {status.rag}
               </Text>
+              <Text color="gray"> | </Text>
+              <Text>LLM: </Text>
+              <Text color="cyan">{llmLabel}</Text>
             </>
           )}
         </Box>
@@ -644,50 +571,6 @@ export function ChatApp({ config }: ChatAppProps): JSX.Element {
   );
 }
 
-async function enrichMissingSnippets(
-  evidences: Evidence[],
-  client: McpClient,
-  timeoutMs: number,
-): Promise<void> {
-  let enrichedCount = 0;
-
-  for (const evidence of evidences) {
-    if (enrichedCount >= MAX_SNIPPET_ENRICH) {
-      break;
-    }
-    if (hasUsableSnippet(evidence.snippet)) {
-      continue;
-    }
-    if (!isSafeRelativePath(evidence.path)) {
-      continue;
-    }
-
-    const startLine = evidence.startLine ?? 1;
-    const endLine = evidence.endLine ?? startLine + 50;
-
-    try {
-      const file = await client.openFile(
-        {
-          path: evidence.path,
-          startLine,
-          endLine,
-        },
-        timeoutMs,
-      );
-
-      const snippet = splitSnippet(file.text ?? "", MAX_EVIDENCE_LINES).trim();
-      if (snippet) {
-        evidence.snippet = snippet;
-        evidence.startLine = file.startLine;
-        evidence.endLine = file.endLine;
-        enrichedCount += 1;
-      }
-    } catch {
-      // Mantem snippet original quando open_file falhar
-    }
-  }
-}
-
 function renderMessageToLines(message: Message, columns: number, msgIndex: number): React.ReactNode[] {
     const isUser = message.role === "user";
     const isSystem = message.role === "system";
@@ -709,8 +592,8 @@ function renderMessageToLines(message: Message, columns: number, msgIndex: numbe
     const title = isUser ? "Dev 🧑‍💻" : "🤖 Compass ";
     const prefix = "╭─";
     const suffix = "─╮";
-    const dashCount = Math.max(0, maxContentWidth - title.length - prefix.length - suffix.length + 2); 
-    const align = isUser ? "flex-end" : "flex-start";
+    //const dashCount = Math.max(0, maxContentWidth - title.length - prefix.length - suffix.length + 2); 
+    const align = "flex-start" //isUser ? "flex-end" : "flex-start";
     
     // Header
     lines.push(
@@ -753,32 +636,32 @@ function renderMessageToLines(message: Message, columns: number, msgIndex: numbe
              });
              
              // Divider inside box
-             lines.push(
-                <Box key={`ev-${msgIndex}-${i}-div`} justifyContent={align} width="100%" paddingX={2}>
-                     <Text color="cyanBright">{"─".repeat(maxContentWidth - 2)}</Text>
-                </Box>
-            );
+             //lines.push(
+               // <Box key={`ev-${msgIndex}-${i}-div`} justifyContent={align} width="100%" paddingX={2}>
+                 //    <Text color="cyanBright">{"─".repeat(maxContentWidth - 2)}</Text>
+                //</Box>
+            //);
 
-             const snippetLines = (ev.snippet || "").split('\n');
-             snippetLines.forEach((sl, sli) => {
-                 const wrappedSl = wrapText(sl, maxContentWidth - 2);
-                 wrappedSl.forEach((wsl, wsli) => {
-                    lines.push(
-                        <Box key={`ev-${msgIndex}-${i}-s-${sli}-${wsli}`} justifyContent={align} width="100%" paddingX={2}>
-                            <Text color="whiteBright" dimColor>{wsl.padEnd(maxContentWidth - 2, " ")}</Text>
-                        </Box>
-                    );
-                 });
-             });
+             //const snippetLines = (ev.snippet || "").split('\n');
+             //snippetLines.forEach((sl, sli) => {
+              //   const wrappedSl = wrapText(sl, maxContentWidth - 2);
+               //  wrappedSl.forEach((wsl, wsli) => {
+                //    lines.push(
+                 //       <Box key={`ev-${msgIndex}-${i}-s-${sli}-${wsli}`} justifyContent={align} width="100%" paddingX={2}>
+                  //          <Text color="whiteBright" dimColor>{wsl.padEnd(maxContentWidth - 2, " ")}</Text>
+                   //     </Box>
+                    //);
+                 //});
+             //});
         });
     }
 
     // Footer
-    lines.push(
-         <Box key={`f-${msgIndex}`} justifyContent={align} width="100%">
-             <Text color={borderColor}>╰{"─".repeat(maxContentWidth)}╯</Text>
-        </Box>
-    );
+    //lines.push(
+         //<Box key={`f-${msgIndex}`} justifyContent={align} width="100%">
+        //     <Text color={borderColor}>╰{"─".repeat(maxContentWidth)}╯</Text>
+      //  </Box>
+    //);
 
     return lines;
 }
@@ -810,13 +693,20 @@ function formatConfig(config: AskConfig): string {
   return [
     "Config ativa:",
     `MCP command: ${config.mcpCommand.join(" ")}`,
-    `OLLAMA_URL: ${config.ollamaUrl}`,
-    `EMBEDDING_MODEL: ${config.embeddingModel}`,
     `LLM_MODEL: ${config.llmModel}`,
     `TOPK: ${config.topK}`,
+    `MIN_SCORE: ${config.minScore}`,
     `PATH_PREFIX: ${config.pathPrefix ?? "(nenhum)"}`,
     `LANGUAGE: ${config.language ?? "(nenhum)"}`,
     `REPO: ${config.repo ?? "(nenhum)"}`,
     `DEBUG: ${config.debug ? "on" : "off"}`,
   ].join("\n");
+}
+
+function formatModelLabel(model: string, maxLen: number): string {
+  const normalized = model.trim();
+  if (!normalized) return "(desconhecido)";
+  if (normalized.length <= maxLen) return normalized;
+  if (maxLen <= 3) return normalized.slice(0, maxLen);
+  return `${normalized.slice(0, maxLen - 3)}...`;
 }
