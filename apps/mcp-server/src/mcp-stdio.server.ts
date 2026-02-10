@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 
 import { ToolExecutionError, ToolInputError } from './errors';
+import { AskCodeTool } from './ask-code.tool';
 import { OpenFileTool } from './open-file.tool';
 import { SearchCodeTool } from './search-code.tool';
 import {
@@ -23,6 +24,7 @@ export class McpStdioServer {
   constructor(
     private readonly searchCodeTool: SearchCodeTool,
     private readonly openFileTool: OpenFileTool,
+    private readonly askCodeTool: AskCodeTool,
   ) {}
 
   run(): void {
@@ -39,6 +41,23 @@ export class McpStdioServer {
       process.stderr.write('[mcp] stdin encerrado\n');
       this.running = false;
     });
+  }
+
+  async handleLine(line: string): Promise<void> {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(trimmed) as unknown;
+    } catch {
+      this.writeProtocolError('BAD_REQUEST', 'Linha não é JSON válido', 'unknown');
+      return;
+    }
+
+    await this.handleParsed(parsed);
   }
 
   private handleChunk(chunk: Buffer): void {
@@ -225,6 +244,10 @@ export class McpStdioServer {
       return this.openFileTool.execute(request.input);
     }
 
+    if (request.tool === 'ask_code') {
+      return this.askCodeTool.execute(request.input);
+    }
+
     throw new ToolExecutionError('BAD_REQUEST', `Tool não suportada: ${request.tool}`);
   }
 
@@ -409,6 +432,23 @@ export class McpStdioServer {
             startLine: { type: 'number' },
             endLine: { type: 'number' },
             maxBytes: { type: 'number' },
+          },
+        },
+      },
+      {
+        name: 'ask_code',
+        description: 'Executa RAG completo (embed + busca + contexto + LLM) com política centralizada.',
+        inputSchema: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['query'],
+          properties: {
+            query: { type: 'string' },
+            topK: { type: 'number' },
+            pathPrefix: { type: 'string' },
+            language: { type: 'string' },
+            minScore: { type: 'number' },
+            llmModel: { type: 'string' },
           },
         },
       },
