@@ -5,6 +5,8 @@ import hashlib
 import json
 import logging
 import os
+import shlex
+import subprocess
 import sys
 from pathlib import Path
 from time import perf_counter
@@ -681,209 +683,146 @@ def _search_command(args: argparse.Namespace) -> int:
 DEFAULT_LLM_MODEL = "gpt-oss:latest"
 
 
-def _call_ollama_chat(
-    ollama_url: str,
-    model: str,
-    system_prompt: str,
-    user_message: str,
-    timeout: float = 120.0,
-) -> str:
-    """
-    Chama o Ollama para gerar uma resposta.
-    
-    Usa a API /api/chat para conversa.
-    """
-    import httpx
-    
-    url = f"{ollama_url.rstrip('/')}/api/chat"
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message},
-        ],
-        "stream": False,
+def _resolve_mcp_command() -> list[str]:
+    raw_command = os.getenv("MCP_COMMAND", "").strip()
+    if raw_command:
+        try:
+            parsed = shlex.split(raw_command)
+        except ValueError as exc:
+            raise RuntimeError(f"MCP_COMMAND inválido: {exc}") from exc
+
+        if not parsed:
+            raise RuntimeError("MCP_COMMAND vazio")
+
+        return parsed
+
+    repo_root = Path(__file__).resolve().parents[3]
+    entry = repo_root / "apps" / "mcp-server" / "dist" / "main.js"
+    return ["node", str(entry), "--transport", "stdio"]
+
+
+def _call_mcp_ask_code(
+    *,
+    question: str,
+    top_k: int,
+    min_score: float,
+    llm_model: str,
+    ext: str | None,
+    timeout_sec: float,
+) -> dict[str, object]:
+    command = _resolve_mcp_command()
+
+    input_payload: dict[str, object] = {
+        "query": question,
+        "topK": top_k,
+        "minScore": min_score,
+        "llmModel": llm_model,
     }
-    
+    if ext:
+        input_payload["language"] = ext
+
+    request = {
+        "id": "indexer-ask",
+        "tool": "ask_code",
+        "input": input_payload,
+    }
+
+    process = subprocess.run(
+        command,
+        input=f"{json.dumps(request, ensure_ascii=False)}\n",
+        capture_output=True,
+        text=True,
+        timeout=timeout_sec,
+        check=False,
+    )
+
+    stdout_lines = [line.strip() for line in process.stdout.splitlines() if line.strip()]
+
+    if not stdout_lines:
+        stderr_message = process.stderr.strip() or "sem detalhes"
+        raise RuntimeError(
+            f"MCP ask_code não retornou resposta (exit={process.returncode}): {stderr_message}"
+        )
+
     try:
-        with httpx.Client(timeout=timeout) as client:
-            response = client.post(url, json=payload)
-            response.raise_for_status()
-            data = response.json()
-            return data.get("message", {}).get("content", "")
-    except httpx.HTTPStatusError as exc:
-        raise EmbedderError(f"Erro HTTP ao chamar LLM: {exc.response.status_code}") from exc
-    except Exception as exc:
-        raise EmbedderError(f"Erro ao chamar LLM: {exc}") from exc
+        parsed = json.loads(stdout_lines[0])
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Resposta do MCP inválida: {stdout_lines[0]}") from exc
 
+    if not isinstance(parsed, dict):
+        raise RuntimeError("Resposta do MCP inválida: esperado objeto")
 
-def _build_rag_prompt(question: str, contexts: list[dict]) -> tuple[str, str]:
-    """
-    Constrói o prompt para RAG.
-    
-    Returns:
-        Tupla (system_prompt, user_message)
-    """
-    system_prompt = """Você é um assistente especializado em analisar código-fonte.
-Responda às perguntas do usuário baseando-se APENAS no contexto fornecido.
-Se a informação não estiver no contexto, diga que não encontrou essa informação no código indexado.
-Seja conciso e direto. Responda em português brasileiro."""
+    if parsed.get("ok") is not True:
+        error = parsed.get("error")
+        if isinstance(error, dict):
+            message = str(error.get("message", "Erro MCP"))
+        else:
+            message = "Erro MCP"
+        raise RuntimeError(message)
 
-    # Montar contexto
-    context_parts = []
-    for i, ctx in enumerate(contexts, 1):
-        payload = ctx.get("payload", {})
-        path = payload.get("path", "desconhecido")
-        lines = f"{payload.get('start_line', '?')}-{payload.get('end_line', '?')}"
-        # Buscar o texto do chunk se disponível
-        text = payload.get("text", "[conteúdo não disponível]")
-        
-        context_parts.append(f"### Arquivo {i}: {path} (linhas {lines})\n```\n{text}\n```")
-    
-    context_text = "\n\n".join(context_parts)
-    
-    user_message = f"""## Contexto do código-fonte:
+    output = parsed.get("output")
+    if not isinstance(output, dict):
+        raise RuntimeError("Resposta do MCP sem output válido")
 
-{context_text}
-
-## Pergunta:
-{question}
-
-## Resposta:"""
-
-    return system_prompt, user_message
+    return output
 
 
 def _ask_command(args: argparse.Namespace) -> int:
     """
-    Comando RAG: busca contexto e gera resposta via LLM.
-    
-    1. Gera embedding da pergunta
-    2. Busca chunks relevantes no Qdrant
-    3. Lê o conteúdo dos chunks
-    4. Monta prompt com contexto
-    5. Chama LLM para gerar resposta
+    Comando RAG centralizado no MCP (`ask_code`).
     """
-    import time
-    from pathlib import Path
-    
-    start_time = time.time()
+    start_time = perf_counter()
     question = args.question.strip()
 
     if not question:
         print("Erro: pergunta vazia.", file=sys.stderr)
         return 1
-    
+
     try:
-        embedder_config = load_embedder_config()
-        qdrant_config = load_qdrant_config()
-        
         llm_model = args.llm_model or os.getenv("LLM_MODEL", DEFAULT_LLM_MODEL)
-        ollama_url = embedder_config.ollama_url  # Reusar URL do Ollama
 
         logger.info(f"Pergunta: {question}")
         logger.info(f"LLM Model: {llm_model}")
 
-        # 1. Gerar embedding da pergunta
-        with OllamaEmbedder(embedder_config) as embedder:
-            vector_size = embedder.probe_vector_size()
-            embeddings = embedder.embed_texts([question])
-            query_vector = embeddings[0]
-
-        # 2. Buscar chunks relevantes
-        with QdrantStore(qdrant_config) as store:
-            collection_name = store.resolve_collection_name(
-                vector_size=vector_size,
-                model_name=embedder_config.model,
-            )
-
-            filters = {}
-            if hasattr(args, "ext") and args.ext:
-                filters["ext"] = args.ext
-
-            results = store.search(
-                query_vector=query_vector,
-                collection_name=collection_name,
-                filters=filters if filters else None,
-                top_k=args.top_k,
-            )
-
-        # Filtrar caminhos irrelevantes para contexto RAG
-        results, excluded_paths = _filter_context_results(results)
-        if excluded_paths > 0:
-            logger.info(f"Ignorados {excluded_paths} chunks de ambientes/cache (venv, __pycache__, etc.)")
-
-        # Filtrar por score mínimo
-        original_count = len(results)
-        results = [r for r in results if r["score"] >= args.min_score]
-        dropped = original_count - len(results)
-        
-        if dropped > 0:
-            logger.info(f"Ignorados {dropped} chunks com score < {args.min_score}")
-
-        if not results:
-            print(f"Nenhum contexto relevante encontrado (score >= {args.min_score}).")
-            if dropped > 0:
-                print(f"Dica: {dropped} resultados foram encontrados mas tinham baixa relevância.")
-                print("Tente reformular a pergunta ou reduzir o --min-score.")
-            return 0
-
-        logger.info(f"Chunks de contexto encontrados: {len(results)}")
-
-        # 3. Ler conteúdo dos chunks (se tiver repo_root no payload)
-        for r in results:
-            payload = r.get("payload", {})
-            path = payload.get("path")
-            repo_root = payload.get("repo_root")
-            start_line = payload.get("start_line", 1)
-            end_line = payload.get("end_line")
-            
-            if path and repo_root:
-                full_path = Path(repo_root) / path
-                if full_path.exists():
-                    try:
-                        with open(full_path, "r", encoding="utf-8", errors="replace") as f:
-                            lines = f.readlines()
-                            chunk_lines = lines[start_line - 1 : end_line] if end_line else lines[start_line - 1:]
-                            payload["text"] = "".join(chunk_lines)
-                    except Exception as exc:
-                        logger.warning(f"Não foi possível ler {full_path}: {exc}")
-                        payload["text"] = "[erro ao ler arquivo]"
-                else:
-                    payload["text"] = "[arquivo não encontrado]"
-            else:
-                payload["text"] = "[caminho não disponível]"
-
-        # 4. Construir prompt
-        system_prompt, user_message = _build_rag_prompt(question, results)
-
-        # 5. Chamar LLM
-        logger.info("Chamando LLM...")
-        answer = _call_ollama_chat(
-            ollama_url=ollama_url,
-            model=llm_model,
-            system_prompt=system_prompt,
-            user_message=user_message,
+        response = _call_mcp_ask_code(
+            question=question,
+            top_k=args.top_k,
+            min_score=args.min_score,
+            llm_model=llm_model,
+            ext=args.ext,
+            timeout_sec=120.0,
         )
 
-        elapsed = time.time() - start_time
+        answer = str(response.get("answer", ""))
+        evidences = response.get("evidences", [])
+        if not isinstance(evidences, list):
+            evidences = []
+
+        meta = response.get("meta", {})
+        if not isinstance(meta, dict):
+            meta = {}
+
+        elapsed = perf_counter() - start_time
+        model_used = str(meta.get("llmModel", llm_model))
 
         # Output
         if args.json_output:
             output = {
                 "question": question,
                 "answer": answer,
-                "model": llm_model,
-                "contexts_used": len(results),
+                "model": model_used,
+                "contexts_used": int(meta.get("contextsUsed", len(evidences))),
                 "elapsed_sec": round(elapsed, 2),
                 "sources": [
                     {
-                        "path": r["payload"].get("path"),
-                        "lines": f"{r['payload'].get('start_line')}-{r['payload'].get('end_line')}",
-                        "score": r["score"],
+                        "path": e.get("path"),
+                        "lines": f"{e.get('startLine')}-{e.get('endLine')}",
+                        "score": e.get("score"),
                     }
-                    for r in results
+                    for e in evidences
+                    if isinstance(e, dict)
                 ],
+                "meta": meta,
             }
             print(json.dumps(output, indent=2, ensure_ascii=False))
         else:
@@ -892,22 +831,21 @@ def _ask_command(args: argparse.Namespace) -> int:
             
             if args.show_context:
                 print("📚 **Fontes consultadas:**")
-                for i, r in enumerate(results, 1):
-                    payload = r["payload"]
-                    path = payload.get("path", "?")
-                    lines = f"{payload.get('start_line', '?')}-{payload.get('end_line', '?')}"
-                    print(f"  {i}. {path} (linhas {lines}) - score: {r['score']:.4f}")
+                for i, evidence in enumerate(evidences, 1):
+                    if not isinstance(evidence, dict):
+                        continue
+                    path = evidence.get("path", "?")
+                    lines = f"{evidence.get('startLine', '?')}-{evidence.get('endLine', '?')}"
+                    score = float(evidence.get("score", 0.0) or 0.0)
+                    print(f"  {i}. {path} (linhas {lines}) - score: {score:.4f}")
                 print()
             
-            print(f"⏱️  Tempo: {elapsed:.2f}s | Modelo: {llm_model}")
+            print(f"⏱️  Tempo: {elapsed:.2f}s | Modelo: {model_used}")
 
         return 0
 
-    except EmbedderError as exc:
-        print(f"Erro no embedder/LLM: {exc}", file=sys.stderr)
-        return 1
-    except QdrantStoreError as exc:
-        print(f"Erro no Qdrant: {exc}", file=sys.stderr)
+    except subprocess.TimeoutExpired:
+        print("Erro: timeout ao chamar MCP ask_code.", file=sys.stderr)
         return 1
     except Exception as exc:
         logger.exception("Erro inesperado")
