@@ -113,7 +113,7 @@ Entrada: prompt montado com contexto
 Saída:   resposta em linguagem natural
 ```
 
-O LLM (ex: `qwen3-coder:30b`, `llama3.2`):
+O LLM (ex: `qwen3-coder:30b`, `gpt-oss:latest`):
 - Lê o contexto fornecido
 - Entende a pergunta
 - Sintetiza uma resposta baseada apenas no que viu
@@ -202,7 +202,7 @@ python -m indexer ask "qual banco de dados vetorial é usado neste projeto?"
 **Logs (o que acontece):**
 ```
 [INFO] Pergunta: qual banco de dados vetorial é usado neste projeto?
-[INFO] LLM Model: llama3.2
+[INFO] LLM Model: gpt-oss:latest
 
 # 1. Embedding da pergunta
 [INFO] HTTP POST http://localhost:11434/api/embed → 200 OK
@@ -230,7 +230,7 @@ O banco de dados vetorial usado neste projeto é o **Qdrant**.
   1. docs/ADRs/ADR-02.md (linhas 1-120) - score: 0.8495
   2. .agents/skills/developer-vector-db/SKILL.md (linhas 1-67) - score: 0.8321
 
-⏱️  Tempo: 15.32s | Modelo: llama3.2
+⏱️  Tempo: 15.32s | Modelo: gpt-oss:latest
 ```
 
 ## Ver Também
