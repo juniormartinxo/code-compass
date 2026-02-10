@@ -9,7 +9,7 @@ description: Planejar e manter documentação técnica do projeto (README, quick
 Manter documentação técnica acionável, atualizada e consistente com o comportamento real do Code Compass.
 
 ### Trigger policy
-- Disparar quando o pedido mencionar `README`, `docs/`, ADRs, quickstart, runbook, exemplos de tool calls, troubleshooting ou atualização de documentação após mudança técnica.
+- Disparar quando o pedido mencionar `README`, `apps/docs/pages`, ADRs, quickstart, runbook, exemplos de tool calls, troubleshooting ou atualização de documentação após mudança técnica.
 - Disparar quando houver divergência entre comportamento do sistema e instruções documentadas.
 - Não disparar para implementação de feature em runtime (`developer-mcp-server`, `developer-indexer`, `developer-vector-db`, `developer-infra`) sem foco documental explícito.
 
@@ -50,7 +50,7 @@ Manter documentação técnica acionável, atualizada e consistente com o compor
 - Não ocultar pré-requisitos importantes (versões, env vars, serviços).
 - Não copiar conteúdo redundante quando referência cruzada resolve melhor.
 - Não criar `scripts/` nesta skill sem necessidade determinística comprovada.
-- **Localização dos arquivos**: Toda documentação deve residir em `docs/<projeto>/` (ex: `docs/indexer/`, `docs/mcp-server/`). Não espalhar docs soltas pelas pastas dos apps.
+- **Localização dos arquivos**: Toda documentação deve residir em `apps/docs/pages/` (ex: `apps/docs/pages/indexer/`, `apps/docs/pages/mcp-server/`, `apps/docs/pages/ADRs/`). Não espalhar docs soltas fora desse diretório; assets de apoio devem ficar em `apps/docs/assets/`.
 
 ## 6) Convenções de saída
 - Sempre devolver: (1) plano editorial, (2) arquivos alterados por objetivo, (3) validações realizadas, (4) pendências abertas.
