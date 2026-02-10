@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "code-compass-local": {
+      "command": "bash",
+      "args": ["-lc", "cd <REPO_ROOT_AQUI> && pnpm --silent mcp:start"]
+    }
+  }
+}
