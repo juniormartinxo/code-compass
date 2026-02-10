@@ -9,14 +9,14 @@ Este projeto suporta integração local com o cliente Antigravity usando configu
 3. Vá em **MCP Servers**.
 4. Clique em **Manage MCP Servers**.
 5. Abra **View raw config**.
-6. Cole o conteúdo de `docs/antigravity-mcp.json`.
+6. Cole o conteúdo de `apps/docs/assets/antigravity-mcp.json`.
 7. Substitua `<REPO_ROOT_AQUI>` pelo caminho absoluto do clone local.
 8. Salve a configuração.
 9. Reinicie o server MCP no Antigravity se a UI solicitar.
 
 ## Template de config
 
-Use `docs/antigravity-mcp.json` como base:
+Use `apps/docs/assets/antigravity-mcp.json` como base:
 
 ```json
 {
