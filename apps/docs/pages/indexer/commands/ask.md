@@ -87,7 +87,7 @@ python -m indexer ask "qual a estrutura do projeto?" --show-context
 O projeto Code Compass é organizado em...
 
 📚 **Fontes consultadas:**
-  1. docs/ADRs/ADR-02.md (linhas 1-120) - score: 0.8495
+  1. apps/docs/pages/ADRs/ADR-02.md (linhas 1-120) - score: 0.8495
   2. .agents/skills/architect/SKILL.md (linhas 1-67) - score: 0.8321
   ...
 
