@@ -94,7 +94,7 @@ def chunk_lines(lines: list[str], chunk_size: int, overlap: int) -> list[tuple]:
     ...
 ```
 
-### Arquivo 2: docs/indexer/commands/chunk.md (linhas 1-50)
+### Arquivo 2: apps/docs/pages/indexer/commands/chunk.md (linhas 1-50)
 ```markdown
 # Comando Chunk
 O comando chunk divide arquivos em pedaços...
@@ -227,7 +227,7 @@ python -m indexer ask "qual banco de dados vetorial é usado neste projeto?"
 O banco de dados vetorial usado neste projeto é o **Qdrant**.
 
 📚 **Fontes consultadas:**
-  1. docs/ADRs/ADR-02.md (linhas 1-120) - score: 0.8495
+  1. apps/docs/pages/ADRs/ADR-02.md (linhas 1-120) - score: 0.8495
   2. .agents/skills/developer-vector-db/SKILL.md (linhas 1-67) - score: 0.8321
 
 ⏱️  Tempo: 15.32s | Modelo: gpt-oss:latest
