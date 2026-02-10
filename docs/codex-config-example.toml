@@ -1,6 +1,0 @@
-# Exemplo para ~/.codex/config.toml (ajuste o path absoluto)
-
-[mcp_servers.code_compass]
-command = "/ABS/PATH/code-compass/bin/dev-mcp"
-args = []
-env = { QDRANT_URL = "http://localhost:6333", QDRANT_COLLECTION = "code_chunks" }
