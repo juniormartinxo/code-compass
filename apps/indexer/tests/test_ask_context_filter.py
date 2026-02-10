@@ -14,7 +14,7 @@ class AskContextFilterTests(unittest.TestCase):
 
     def test_should_not_exclude_regular_project_paths(self) -> None:
         self.assertFalse(_should_exclude_context_path("apps/indexer/indexer/__main__.py"))
-        self.assertFalse(_should_exclude_context_path("docs/indexer/commands/ask.md"))
+        self.assertFalse(_should_exclude_context_path("apps/docs/pages/indexer/commands/ask.md"))
         self.assertFalse(_should_exclude_context_path(None))
 
     def test_filter_context_results_excludes_environment_paths(self) -> None:
