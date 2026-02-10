@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 
-import type { OpenFileResponse, SearchCodeResponse } from "./types.js";
+import type { AskCodeResponse, OpenFileResponse, SearchCodeResponse } from "./types.js";
 
 export type McpClientOptions = {
   command: string;
@@ -91,6 +91,10 @@ export class McpClient extends EventEmitter {
 
   async openFile(input: Record<string, unknown>, timeoutMs?: number): Promise<OpenFileResponse> {
     return this.request<OpenFileResponse>("open_file", input, timeoutMs);
+  }
+
+  async askCode(input: Record<string, unknown>, timeoutMs?: number): Promise<AskCodeResponse> {
+    return this.request<AskCodeResponse>("ask_code", input, timeoutMs);
   }
 
   close(): void {
