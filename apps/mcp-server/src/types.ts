@@ -5,6 +5,15 @@ export interface SearchCodeInput {
   vector?: number[];
 }
 
+export interface AskCodeInput {
+  query: string;
+  topK?: number;
+  pathPrefix?: string;
+  language?: string;
+  minScore?: number;
+  llmModel?: string;
+}
+
 export interface OpenFileInput {
   path: string;
   startLine?: number;
@@ -38,7 +47,23 @@ export interface OpenFileOutput {
   truncated: boolean;
 }
 
-export type StdioToolOutput = SearchCodeOutput | OpenFileOutput;
+export interface AskCodeOutput {
+  answer: string;
+  evidences: SearchCodeResult[];
+  meta: {
+    topK: number;
+    minScore: number;
+    llmModel: string;
+    collection: string;
+    totalMatches: number;
+    contextsUsed: number;
+    elapsedMs: number;
+    pathPrefix?: string;
+    language?: string;
+  };
+}
+
+export type StdioToolOutput = SearchCodeOutput | OpenFileOutput | AskCodeOutput;
 
 export type StdioErrorCode =
   | 'BAD_REQUEST'
