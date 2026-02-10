@@ -27,7 +27,7 @@ O script `bin/dev-mcp` define defaults seguros:
 
 ## Configuração do cliente (Codex)
 
-Use o template em `docs/codex-config-example.toml` e ajuste o path absoluto para o seu clone local.
+Use o template em `apps/docs/assets/codex-config-example.toml` e ajuste o path absoluto para o seu clone local.
 
 ## Fluxo E2E recomendado
 
