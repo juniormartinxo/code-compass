@@ -29,7 +29,7 @@ python -m indexer chunk --file <caminho_do_arquivo> [opções]
 |-------|---------|-----------|
 | `--chunk-lines` | 120 | Número máximo de linhas por chunk. |
 | `--overlap-lines` | 20 | Número de linhas sobrepostas entre chunks adjacentes. |
-| `--repo-root` | `cwd` | Diretório raiz do repositório para cálculo de caminhos relativos. |
+| `--repo-root` | `..` | Diretório raiz do repositório para cálculo de caminhos relativos. |
 | `--no-as-posix` | `false` | Desabilita a normalização de caminhos para o formato POSIX (útil em Windows se necessário). |
 
 ## Exemplo de Saída (JSON)
