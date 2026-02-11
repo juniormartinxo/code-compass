@@ -24,7 +24,7 @@ Ele indexa repositórios (código + docs), gera embeddings e armazena tudo em um
    - faz `upsert` no Qdrant com payload rico (metadados)
 
 2. **Vector Store (Qdrant)**
-   - coleção `code_chunks` com vetores + payload (repo, commit, path, linguagem, linhas, etc.)
+   - coleção (nome explícito via `QDRANT_COLLECTION` ou auto-gerado por base/modelo) com vetores + payload (repo, commit, path, linguagem, linhas, etc.)
    - filtros por payload (repo/pathPrefix/lang/branch/commit)
    - busca semântica + (opcional) híbrida
 
@@ -47,8 +47,10 @@ Ele indexa repositórios (código + docs), gera embeddings e armazena tudo em um
 
 ## Quickstart (plug and play)
 
-### 1) Configure `.env`
-Crie `.env` a partir de `.env.example`.
+### 1) Configure `.env.local`
+Crie `.env.local` a partir de `.env.example`.
+
+> O `Makefile` prioriza `.env.local` quando o arquivo existe.
 
 ### 2) Suba o Qdrant
 ```bash
@@ -99,9 +101,11 @@ Para usar o chat no terminal (TUI) e o modo one-shot, veja `apps/docs/pages/cli/
 Exemplo rapido:
 
 ```bash
-pnpm ask
-pnpm ask "onde fica o handler do search_code?"
+pnpm ask --repo code-compass
+pnpm ask "onde fica o handler do search_code?" --repo code-compass
 ```
+
+No fluxo atual, informe `--repo` para `ask` (ou use `scope` nas chamadas MCP diretas).
 
 ---
 
@@ -154,9 +158,10 @@ make up                        # sobe qdrant e aguarda readiness
 make health                    # valida /readyz
 make index                     # alias de indexação full
 make index-full                # full em apps/indexer
-make index-incremental         # incremental em apps/indexer
+make index-incremental         # fallback para full (incremental ainda não implementado no CLI)
 make index-docker              # full via container (profile indexer)
-make index-docker-incremental  # incremental via container
+make index-docker-incremental  # fallback para full via container
+make index-all                 # indexa todos os repos de code-base/
 make dev                       # sobe apps/mcp-server em dev
 make logs                      # logs do qdrant
 make down                      # derruba serviços
@@ -166,8 +171,28 @@ Observações importantes do estado atual deste repositório:
 
 - Se `apps/indexer` ainda não existir, `make index*` falha com erro explícito de pré-requisito.
 - Se `apps/mcp-server` ainda não existir, `make dev` falha com erro explícito de pré-requisito.
-- O `make up` usa `.env` (ou defaults seguros) para portas/imagem/path de storage.
+- O `make up` usa `.env.local` (quando existir) ou `.env` para portas/imagem/path de storage.
 - `make index-docker*` exige Docker e instala dependências do indexer dentro do container a cada execução.
+- `make index-incremental` e `make index-docker-incremental` fazem fallback para indexação full atualmente.
+
+## Flags e env vars essenciais (estado atual)
+
+### Flags de CLI
+
+- `pnpm ask --repo <repo>`: escopo de um repositório para `ask_code`.
+- `python -m indexer ask --repo <repo>`: modo compatível com MCP (`scope.type=repo`).
+- `python -m indexer ask --scope-repo <repo>`: escopo explícito de 1 repo.
+- `python -m indexer ask --scope-repos "repo-a,repo-b"`: escopo explícito multi-repo.
+- `python -m indexer ask --scope-all`: escopo global (requer `ALLOW_GLOBAL_SCOPE=true`).
+
+### Env vars operacionais
+
+- `QDRANT_COLLECTION`: coleção alvo usada por indexador e MCP (defina explicitamente para evitar mismatch).
+- `CODEBASE_ROOT`: habilita roteamento multi-repo no MCP (`<CODEBASE_ROOT>/<repo>`).
+- `ALLOW_GLOBAL_SCOPE=true`: habilita `scope: { type: "all" }` em `search_code` e `ask_code`.
+- `INDEXER_RUN_MODULE=indexer`: módulo Python usado pelo `Makefile`/docker para indexação.
+- `MCP_COMMAND`: comando customizado para `python -m indexer ask` chamar o MCP server.
+- `CODE_COMPASS_TIMEOUT_MS`: timeout (ms) para `pnpm ask` (CLI/TUI).
 
 ## Scanner base do Indexer
 
@@ -279,6 +304,67 @@ Saída humana esperada por resultado:
 
 ---
 
+## Indexação Multi-Repo (`code-base/`)
+
+O diretório `code-base/` é o ponto central para indexar **múltiplos repositórios** de uma só vez. Cada subdiretório dentro dele é tratado como um repositório independente pelo pipeline de indexação.
+
+### Estrutura
+
+```
+code-base/
+├── .gitkeep          # garante que o diretório exista no git
+├── repo-frontend/    # git clone do projeto frontend
+├── repo-backend/     # git clone do projeto backend
+└── shared-lib/       # git clone de uma lib compartilhada
+```
+
+> ⚠️ O conteúdo de `code-base/` é ignorado pelo git (veja `.gitignore`). Apenas o `.gitkeep` é versionado.
+
+### Preparação
+
+Clone os repositórios que deseja indexar dentro de `code-base/`:
+
+```bash
+git clone git@gitlab.empresa.com:team/repo-frontend.git code-base/repo-frontend
+git clone git@gitlab.empresa.com:team/repo-backend.git  code-base/repo-backend
+```
+
+### Script `scripts/index-all.sh`
+
+Script bash que automatiza a indexação de todos os repositórios dentro de `code-base/`.
+
+**O que faz:**
+
+1. Carrega as variáveis de ambiente de `.env.local`
+2. Ativa o virtualenv do indexer (`apps/indexer/.venv`)
+3. Itera sobre cada subdiretório de `code-base/`
+4. Define `REPO_ROOT` e executa `python -m indexer index` para cada repo
+5. Exibe um resumo final com contagem de sucessos e falhas
+
+**Uso:**
+
+```bash
+# Indexar todos os repos dentro de code-base/
+./scripts/index-all.sh
+
+# Indexar apenas repos específicos (por nome do diretório)
+./scripts/index-all.sh repo-frontend shared-lib
+
+# Ou via Makefile (garante Qdrant + venv antes)
+make index-all
+```
+
+**Pré-requisitos:**
+
+- Qdrant rodando (`make up`)
+- Ollama rodando com o modelo de embedding configurado
+- Virtualenv do indexer criado (`make setup-indexer`)
+- Pelo menos um repositório clonado em `code-base/`
+
+**Exit code:** retorna `0` se todos os repos foram indexados com sucesso, `1` se algum falhou (útil para CI/CD).
+
+---
+
 ## Infra (Qdrant local)
 
 `infra/docker-compose.yml`:
@@ -313,9 +399,15 @@ curl -s http://localhost:6333/readyz
 
 ---
 
-## Configuração (.env)
+## Configuração (`.env.local` / `.env`)
 
-Exemplo (`.env.example`):
+Prioridade de carregamento no fluxo atual:
+
+1. variáveis já exportadas no shell
+2. `.env.local`
+3. `.env`
+
+Exemplo (base em `.env.example`):
 
 ```env
 # -----------------------------
@@ -332,6 +424,16 @@ QDRANT_GRPC_PORT=6334
 QDRANT_STORAGE_PATH=../.qdrant_storage
 
 # -----------------------------
+# Qdrant
+# -----------------------------
+QDRANT_URL=http://localhost:6333
+QDRANT_API_KEY=
+QDRANT_COLLECTION_BASE=compass
+QDRANT_COLLECTION=compass__3584__manutic_nomic_embed_code
+QDRANT_DISTANCE=COSINE
+QDRANT_UPSERT_BATCH=64
+
+# -----------------------------
 # Repos / ingestão
 # -----------------------------
 REPO_ROOT=/abs/path/para/repositorio
@@ -341,41 +443,42 @@ SCAN_IGNORE_DIRS=.git,node_modules,dist,build,.next,.qdrant_storage,coverage,.ve
 SCAN_ALLOW_EXTS=.ts,.tsx,.js,.jsx,.py,.md,.json,.yaml,.yml
 
 # -----------------------------
-# Qdrant
-# -----------------------------
-QDRANT_URL=http://localhost:6333
-QDRANT_COLLECTION=code_chunks
-QDRANT_DISTANCE=Cosine
-
-# -----------------------------
 # Indexer (apps/indexer)
 # -----------------------------
 INDEXER_DIR=apps/indexer
 INDEXER_PYTHON=python3
-INDEXER_RUN_MODULE=code_compass.index
+INDEXER_RUN_MODULE=indexer
 INDEXER_DOCKER_PROFILE=indexer
 INDEXER_DOCKER_IMAGE=python:3.11-slim
 QDRANT_URL_DOCKER=http://qdrant:6333
 REPO_ROOT_DOCKER=/workspace
 
 # -----------------------------
-# Embeddings
+# Embeddings (Ollama)
 # -----------------------------
-EMBEDDINGS_PROVIDER=openai          # openai | local
-EMBEDDINGS_MODEL=text-embedding-3-large
-OPENAI_API_KEY=YOUR_KEY
+EMBEDDING_PROVIDER=ollama
+OLLAMA_URL=http://localhost:11434
+EMBEDDING_MODEL=manutic/nomic-embed-code
+EMBEDDING_BATCH_SIZE=16
+EMBEDDING_MAX_RETRIES=5
+EMBEDDING_BACKOFF_BASE_MS=500
+EMBEDDING_TIMEOUT_SECONDS=120
+LLM_MODEL=gpt-oss:latest
 
 # -----------------------------
 # Chunking
 # -----------------------------
-CHUNK_MAX_TOKENS=800
-CHUNK_OVERLAP_TOKENS=120
+CHUNK_LINES=120
+CHUNK_OVERLAP_LINES=20
 
 # -----------------------------
 # MCP Server
 # -----------------------------
 MCP_SERVER_NAME=code-compass
 MCP_SERVER_PORT=3333
+REPO_ROOT=/abs/path/para/repositorio
+# CODEBASE_ROOT=/abs/path/para/code-base
+ALLOW_GLOBAL_SCOPE=false
 
 # -----------------------------
 # Segurança / Governança
@@ -391,7 +494,7 @@ PATH_TRAVERSAL_GUARD=true
 
 ### Collection
 
-* `code_chunks`
+* `compass__3584__manutic_nomic_embed_code` (exemplo)
 
 ### Point
 
@@ -417,9 +520,9 @@ Busca semântica no Qdrant com filtros por payload.
 
 Abre um trecho do arquivo (fonte de verdade) por range de linhas.
 
-### `list_tree`
+### `ask_code`
 
-Lista árvore de arquivos dentro do allowlist.
+Executa o fluxo RAG completo (embedding + busca + contexto + LLM) no servidor MCP.
 
 > V1 (opcional): `find_symbol`, `git_log`, `git_blame`, rerank.
 
@@ -515,8 +618,8 @@ O Android Studio tem fluxo próprio para **adicionar MCP server** ao agente do G
 ### MVP
 
 * Qdrant local via Docker
-* Indexer Python: full + incremental
-* MCP Server NestJS: `search_code`, `open_file`, `list_tree`
+* Indexer Python: full (incremental em evolução)
+* MCP Server NestJS: `search_code`, `open_file`, `ask_code`
 * Retorno com evidência (path/linha) sempre
 
 ### V1
