@@ -113,6 +113,7 @@ Cada ponto no Qdrant contém o seguinte payload:
 
 ```json
 {
+  "repo": "my-repo",
   "path": "src/main.py",
   "chunk_index": 0,
   "content_hash": "abc123...",
@@ -130,6 +131,7 @@ Cada ponto no Qdrant contém o seguinte payload:
 
 Estes metadados permitem:
 - **Filtros**: por extensão, linguagem, caminho
+- **Escopo no MCP**: filtro por `repo` em `search_code`/`ask_code`
 - **Rastreabilidade**: identificar origem do chunk
 - **Debug**: verificar conteúdo e posição
 
@@ -140,6 +142,17 @@ Estes metadados permitem:
 ```bash
 export REPO_ROOT=/path/to/my/project
 python -m indexer index
+```
+
+### Multi-repo (code-base)
+
+Para indexar todos os repos dentro de `code-base/`:
+
+```bash
+for repo in code-base/*; do
+  [ -d "$repo" ] || continue
+  python -m indexer index --repo-root "$repo"
+done
 ```
 
 ### Com limite de arquivos (para testes)
