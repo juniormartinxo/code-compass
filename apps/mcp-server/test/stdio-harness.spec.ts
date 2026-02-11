@@ -52,11 +52,12 @@ describe('MCP stdio harness', () => {
 
   it('deve validar fluxo NDJSON para search_code', async () => {
     process.env.QDRANT_URL = 'http://localhost:6333';
-    process.env.QDRANT_COLLECTION = 'code_chunks';
+    process.env.QDRANT_COLLECTION = 'compass__3584__manutic_nomic_embed_code';
     process.env.MCP_QDRANT_MOCK_RESPONSE = JSON.stringify([
       {
         score: 0.88,
         payload: {
+          repo: 'acme-repo',
           path: 'apps/mcp-server/src/main.ts',
           startLine: 1,
           endLine: 30,
@@ -105,9 +106,70 @@ describe('MCP stdio harness', () => {
     };
 
     expect(Array.isArray(responseOutput.results)).toBe(true);
+    expect(responseOutput.results[0].repo).toBe('acme-repo');
     expect(responseOutput.results[0].path).toBe('apps/mcp-server/src/main.ts');
     expect(responseOutput.meta.repo).toBe('acme-repo');
-    expect(responseOutput.meta.collection).toBe('code_chunks');
+    expect(responseOutput.meta.scope).toEqual({ type: 'repo', repos: ['acme-repo'] });
+    expect(responseOutput.meta.collection).toBe('compass__3584__manutic_nomic_embed_code');
+  });
+
+  it('deve aceitar scope repo no fluxo NDJSON de search_code', async () => {
+    process.env.QDRANT_URL = 'http://localhost:6333';
+    process.env.QDRANT_COLLECTION = 'compass__3584__manutic_nomic_embed_code';
+    process.env.MCP_QDRANT_MOCK_RESPONSE = JSON.stringify([
+      {
+        score: 0.88,
+        payload: {
+          repo: 'shared-lib',
+          path: 'src/shared.ts',
+          startLine: 1,
+          endLine: 10,
+          text: 'export const shared = true;',
+        },
+      },
+    ]);
+
+    const server = createServer();
+    const sink = createWritableMemorySink();
+    const stdoutWrite = process.stdout.write;
+
+    process.stdout.write = ((chunk: string | Uint8Array): boolean => {
+      sink.write(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'));
+      return true;
+    }) as typeof process.stdout.write;
+
+    try {
+      await (server as unknown as { handleLine: (line: string) => Promise<void> }).handleLine(
+        JSON.stringify({
+          id: 'req-scope-1',
+          tool: 'search_code',
+          input: {
+            scope: { type: 'repo', repo: 'shared-lib' },
+            query: 'shared',
+            topK: 10,
+            vector: [0.1, 0.2],
+          },
+        }),
+      );
+    } finally {
+      process.stdout.write = stdoutWrite;
+    }
+
+    const firstLine = sink.getLines()[0];
+    expect(firstLine).toBeDefined();
+
+    const parsed = JSON.parse(firstLine) as Record<string, unknown>;
+    expect(parsed.id).toBe('req-scope-1');
+    expect(parsed.ok).toBe(true);
+
+    const responseOutput = parsed.output as {
+      results: Array<Record<string, unknown>>;
+      meta: Record<string, unknown>;
+    };
+
+    expect(responseOutput.results[0].repo).toBe('shared-lib');
+    expect(responseOutput.meta.scope).toEqual({ type: 'repo', repos: ['shared-lib'] });
+    expect(responseOutput.meta.repo).toBe('shared-lib');
   });
 
   it('deve validar fluxo NDJSON para open_file', async () => {
