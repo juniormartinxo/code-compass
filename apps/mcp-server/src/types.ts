@@ -1,5 +1,29 @@
+export type Scope =
+  | {
+      type: 'repo';
+      repo: string;
+    }
+  | {
+      type: 'repos';
+      repos: string[];
+    }
+  | {
+      type: 'all';
+    };
+
+export interface ScopeMeta {
+  type: 'repo' | 'repos' | 'all';
+  repos?: string[];
+}
+
+export interface ResolvedScope {
+  type: 'repo' | 'repos' | 'all';
+  repos: string[];
+}
+
 export interface SearchCodeInput {
-  repo: string;
+  repo?: string;
+  scope?: Scope;
   query: string;
   topK?: number;
   pathPrefix?: string;
@@ -7,7 +31,8 @@ export interface SearchCodeInput {
 }
 
 export interface AskCodeInput {
-  repo: string;
+  repo?: string;
+  scope?: Scope;
   query: string;
   topK?: number;
   pathPrefix?: string;
@@ -25,6 +50,7 @@ export interface OpenFileInput {
 }
 
 export interface SearchCodeResult {
+  repo: string;
   score: number;
   path: string;
   startLine: number | null;
@@ -35,7 +61,8 @@ export interface SearchCodeResult {
 export interface SearchCodeOutput {
   results: SearchCodeResult[];
   meta: {
-    repo: string;
+    repo?: string;
+    scope: ScopeMeta;
     topK: number;
     pathPrefix?: string;
     collection: string;
@@ -55,7 +82,8 @@ export interface AskCodeOutput {
   answer: string;
   evidences: SearchCodeResult[];
   meta: {
-    repo: string;
+    repo?: string;
+    scope: ScopeMeta;
     topK: number;
     minScore: number;
     llmModel: string;
