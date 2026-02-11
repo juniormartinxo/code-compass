@@ -40,6 +40,7 @@ describe('FileService integration-ish', () => {
   const tempRoots: string[] = [];
 
   afterEach(async () => {
+    delete process.env.CODEBASE_ROOT;
     delete process.env.REPO_ROOT;
     await Promise.all(tempRoots.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
   });
@@ -54,6 +55,7 @@ describe('FileService integration-ish', () => {
     const service = new FileService();
 
     const output = await service.openRange({
+      repo: 'single-repo',
       path: 'safe.txt',
       startLine: 10,
       endLine: 20,
@@ -75,7 +77,7 @@ describe('FileService integration-ish', () => {
     process.env.REPO_ROOT = repoRoot;
     const service = new FileService();
 
-    await expect(service.openRange({ path: '../../etc/passwd' })).rejects.toMatchObject({
+    await expect(service.openRange({ repo: 'single-repo', path: '../../etc/passwd' })).rejects.toMatchObject({
       name: 'ToolExecutionError',
       code: 'FORBIDDEN',
     });
@@ -93,7 +95,7 @@ describe('FileService integration-ish', () => {
     process.env.REPO_ROOT = repoRoot;
     const service = new FileService();
 
-    await expect(service.openRange({ path: 'link-out' })).rejects.toMatchObject({
+    await expect(service.openRange({ repo: 'single-repo', path: 'link-out' })).rejects.toMatchObject({
       name: 'ToolExecutionError',
       code: 'FORBIDDEN',
     });
@@ -110,9 +112,91 @@ describe('FileService integration-ish', () => {
     process.env.REPO_ROOT = repoRoot;
     const service = new FileService();
 
-    await expect(service.openRange({ path: 'binary.txt' })).rejects.toMatchObject({
+    await expect(service.openRange({ repo: 'single-repo', path: 'binary.txt' })).rejects.toMatchObject({
       name: 'ToolExecutionError',
       code: 'UNSUPPORTED_MEDIA',
     });
+  });
+
+  it('deve rejeitar repo com separador em modo CODEBASE_ROOT', async () => {
+    const codebaseRoot = mkdtempSync(join(tmpdir(), 'mcp-codebase-'));
+    tempRoots.push(codebaseRoot);
+
+    process.env.CODEBASE_ROOT = codebaseRoot;
+    const service = new FileService();
+
+    await expect(service.openRange({ repo: 'team/repo', path: 'safe.txt' })).rejects.toMatchObject({
+      name: 'ToolExecutionError',
+      code: 'BAD_REQUEST',
+    });
+  });
+
+  it('deve rejeitar repo com .. em modo CODEBASE_ROOT', async () => {
+    const codebaseRoot = mkdtempSync(join(tmpdir(), 'mcp-codebase-'));
+    tempRoots.push(codebaseRoot);
+
+    process.env.CODEBASE_ROOT = codebaseRoot;
+    const service = new FileService();
+
+    await expect(service.openRange({ repo: '..repo', path: 'safe.txt' })).rejects.toMatchObject({
+      name: 'ToolExecutionError',
+      code: 'BAD_REQUEST',
+    });
+  });
+
+  it('deve retornar NOT_FOUND quando repo não existe em CODEBASE_ROOT', async () => {
+    const codebaseRoot = mkdtempSync(join(tmpdir(), 'mcp-codebase-'));
+    tempRoots.push(codebaseRoot);
+
+    process.env.CODEBASE_ROOT = codebaseRoot;
+    const service = new FileService();
+
+    await expect(service.openRange({ repo: 'inexistente', path: 'safe.txt' })).rejects.toMatchObject({
+      name: 'ToolExecutionError',
+      code: 'NOT_FOUND',
+    });
+  });
+
+  it('deve bloquear symlink escape para fora do repo em CODEBASE_ROOT', async () => {
+    const codebaseRoot = mkdtempSync(join(tmpdir(), 'mcp-codebase-'));
+    const outsideRoot = mkdtempSync(join(tmpdir(), 'mcp-open-file-outside-'));
+    tempRoots.push(codebaseRoot, outsideRoot);
+
+    const repoRoot = join(codebaseRoot, 'repo-a');
+    mkdirSync(repoRoot, { recursive: true });
+
+    const outsideFile = join(outsideRoot, 'outside.txt');
+    writeFileSync(outsideFile, 'outside\n', 'utf8');
+    symlinkSync(outsideFile, join(repoRoot, 'link-out'));
+
+    process.env.CODEBASE_ROOT = codebaseRoot;
+    const service = new FileService();
+
+    await expect(service.openRange({ repo: 'repo-a', path: 'link-out' })).rejects.toMatchObject({
+      name: 'ToolExecutionError',
+      code: 'FORBIDDEN',
+    });
+  });
+
+  it('deve abrir arquivo dentro de CODEBASE_ROOT/repo', async () => {
+    const codebaseRoot = mkdtempSync(join(tmpdir(), 'mcp-codebase-'));
+    tempRoots.push(codebaseRoot);
+
+    const repoRoot = join(codebaseRoot, 'repo-b');
+    mkdirSync(repoRoot, { recursive: true });
+    writeFileSync(join(repoRoot, 'safe.txt'), 'a\nb\nc\nd\n', 'utf8');
+
+    process.env.CODEBASE_ROOT = codebaseRoot;
+    const service = new FileService();
+
+    const output = await service.openRange({
+      repo: 'repo-b',
+      path: 'safe.txt',
+      startLine: 2,
+      endLine: 3,
+    });
+
+    expect(output.path).toBe('safe.txt');
+    expect(output.text).toBe('b\nc\n');
   });
 });
