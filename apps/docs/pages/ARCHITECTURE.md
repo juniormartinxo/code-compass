@@ -15,7 +15,7 @@
 
 ### 2.1 MCP Server (Node/NestJS)
 Responsável por:
-- Expor **tools MCP**: `search_code`, `open_file`, `list_tree` (MVP).
+- Expor **tools MCP**: `search_code`, `open_file`, `ask_code` (MVP).
 - Validar inputs (anti path traversal), aplicar allowlist/blocklist.
 - Consultar Qdrant, enriquecer com contexto do filesystem/git quando necessário.
 - Emitir **audit logs** para rastreabilidade.
@@ -58,7 +58,7 @@ Recomendado para MVP/Dev:
    - varre `REPO_ROOT` respeitando allowlist/blocklist.
    - gera chunks.
    - gera embeddings.
-   - upsert no Qdrant (collection `code_chunks`).
+   - upsert no Qdrant (collection configurável via `QDRANT_COLLECTION`).
 4. Resultado: repositório indexado e pronto para consultas via MCP.
 
 ### 3.2 Indexação incremental
@@ -93,7 +93,7 @@ Ações:
 
 ## 4) Modelo de dados
 
-### 4.1 Qdrant: collection `code_chunks`
+### 4.1 Qdrant: collection configurável (`QDRANT_COLLECTION`)
 **Vector**
 - `size`: conforme embeddings (ex.: 1536/3072)
 - `distance`: `Cosine` (default recomendado)
@@ -151,12 +151,21 @@ Tabelas sugeridas:
   - `content`
   - `startLine`, `endLine`
 
-### 5.3 `list_tree`
-**Objetivo:** navegação e descoberta.
+### 5.3 `ask_code`
+**Objetivo:** responder perguntas sobre o código com evidências (RAG no MCP).
 - Input:
+  - `query: string`
+  - `scope?: { type: "repo"|"repos"|"all", ... }`
+  - `repo?: string` (modo compatível quando `scope` não é enviado)
+  - `topK?: number`
   - `pathPrefix?: string`
+  - `language?: string`
+  - `minScore?: number`
+  - `llmModel?: string`
 - Output:
-  - `entries: Array<{ type: "file"|"dir", path }>`
+  - `answer: string`
+  - `evidences: Array<{ repo, path, startLine, endLine, score, snippet }>`
+  - `meta: { scope, topK, minScore, llmModel, collection, totalMatches, contextsUsed, elapsedMs }`
 
 > V1: `find_symbol`, `git_log`, `git_blame`, `search_docs`, rerank.
 
@@ -262,7 +271,7 @@ MCP server precisa ser estável e previsível; indexer é batch pesado e evolui 
 ## 12) Backlog técnico recomendado (próximos passos)
 
 MVP:
-- Implementar `search_code/open_file/list_tree`
+- Implementar `search_code/open_file/ask_code`
 - Indexer full + incremental
 - Payload padrão no Qdrant
 - Guardrails (allowlist, traversal, read-only)
