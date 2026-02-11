@@ -31,7 +31,7 @@ program
   .option("--topk <n>", "Numero de evidencias", String(DEFAULT_TOPK))
   .option("--pathPrefix <prefix>", "Filtro por prefixo de path")
   .option("--language <lang>", "Filtro por linguagem/extensao")
-  .option("--repo <name>", "Filtro por repo (nao suportado no MVP)")
+  .option("--repo <name>", "Filtro por repo (equivale a scope.repo no MCP)")
   .option("--minScore <n>", "Score minimo para considerar evidencias", String(DEFAULT_MIN_SCORE))
   .option("--debug", "Debug do MCP e HTTP", false)
   .option("--mcp-command <cmd>", "Comando para iniciar MCP (ex: 'node apps/mcp-server/dist/main.js --transport stdio')")
@@ -103,6 +103,7 @@ async function runOneShot(question: string, config: AskConfig): Promise<void> {
   try {
     const response = await client.askCode(
       {
+        repo: config.repo,
         query: question,
         topK: config.topK,
         pathPrefix: config.pathPrefix,
@@ -112,10 +113,6 @@ async function runOneShot(question: string, config: AskConfig): Promise<void> {
       },
       config.requestTimeoutMs,
     );
-
-    if (config.repo) {
-      process.stderr.write("Aviso: filtro --repo ainda nao e suportado pelo MCP ask_code.\n");
-    }
 
     process.stdout.write("Resposta:\n");
     process.stdout.write(`${response.answer}\n`);
