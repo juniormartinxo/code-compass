@@ -474,14 +474,24 @@ export function ChatApp({ config }: ChatAppProps): JSX.Element {
 
   // Calculate slice
   const totalLines = allLines.length;
+  const maxOffset = Math.max(0, totalLines - bodyHeight);
   // scrollOffset = 0 means show BOTTOM (latest). 
   // scrollOffset > 0 means show older.
   // slice end = totalLines - scrollOffset
   // slice start = slice end - bodyHeight
   
-  const safeOffset = Math.max(0, Math.min(scrollOffset, totalLines - bodyHeight));
+  const safeOffset = Math.max(0, Math.min(scrollOffset, maxOffset));
   const sliceEnd = totalLines - safeOffset;
   const sliceStart = Math.max(0, sliceEnd - bodyHeight);
+
+  const canScroll = maxOffset > 0 && bodyHeight > 0;
+  const thumbSize = canScroll
+    ? Math.max(1, Math.min(bodyHeight, Math.round((bodyHeight * bodyHeight) / totalLines)))
+    : bodyHeight;
+  const offsetFromTop = maxOffset - safeOffset;
+  const thumbStart = canScroll && bodyHeight > thumbSize
+    ? Math.round((offsetFromTop / maxOffset) * (bodyHeight - thumbSize))
+    : 0;
   
   const visibleSlice = allLines.slice(sliceStart, sliceEnd);
   const llmLabel = formatModelLabel(config.llmModel, Math.max(16, Math.floor(columns * 0.25)));
@@ -518,15 +528,32 @@ export function ChatApp({ config }: ChatAppProps): JSX.Element {
       </Box>
 
       {/* Message History */}
-      <Box flexDirection="column" height={bodyHeight} paddingX={1} justifyContent="flex-start" overflow="hidden">
-          {visibleSlice.length === 0 && messages.length === 0 && !streaming && (
-            <Box alignItems="center" justifyContent="center" height="100%">
-              <Text color="grey">Digite uma pergunta para começar...</Text>
-            </Box>
-          )}
-          {visibleSlice.map((lineNode, i) => (
-             <Box key={i}>{lineNode}</Box>
-          ))}
+      <Box flexDirection="row" height={bodyHeight} paddingX={1} justifyContent="flex-start" overflow="hidden">
+        <Box flexDirection="column" flexGrow={1} overflow="hidden">
+            {visibleSlice.length === 0 && messages.length === 0 && !streaming && (
+              <Box alignItems="center" justifyContent="center" height="100%">
+                <Text color="grey">Digite uma pergunta para começar...</Text>
+              </Box>
+            )}
+            {visibleSlice.map((lineNode, i) => (
+               <Box key={i}>{lineNode}</Box>
+            ))}
+        </Box>
+
+        <Box flexDirection="column" width={1} marginLeft={1} flexShrink={0}>
+          {Array.from({ length: bodyHeight }).map((_, lineIndex) => {
+            const inThumb = lineIndex >= thumbStart && lineIndex < thumbStart + thumbSize;
+            return (
+              <Text
+                key={`scrollbar-${lineIndex}`}
+                color={inThumb && canScroll ? "cyan" : "gray"}
+                dimColor={!inThumb || !canScroll}
+              >
+                {inThumb && canScroll ? "█" : "│"}
+              </Text>
+            );
+          })}
+        </Box>
       </Box>
 
       {/* Input Area */}
