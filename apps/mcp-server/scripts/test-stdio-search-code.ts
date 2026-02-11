@@ -16,11 +16,13 @@ function createServer(): McpStdioServer {
 
 async function run(): Promise<void> {
   process.env.QDRANT_URL = process.env.QDRANT_URL || 'http://localhost:6333';
-  process.env.QDRANT_COLLECTION = process.env.QDRANT_COLLECTION || 'code_chunks';
+  process.env.QDRANT_COLLECTION =
+    process.env.QDRANT_COLLECTION || 'compass__3584__manutic_nomic_embed_code';
   process.env.MCP_QDRANT_MOCK_RESPONSE = JSON.stringify([
     {
       score: 0.88,
       payload: {
+        repo: 'acme-repo',
         path: 'apps/mcp-server/src/main.ts',
         startLine: 1,
         endLine: 30,
