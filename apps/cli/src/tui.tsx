@@ -262,12 +262,9 @@ export function ChatApp({ config }: ChatAppProps): JSX.Element {
     try {
       setActivity("ask_code");
 
-      if (config.repo) {
-        pushSystemMessage("Aviso: filtro --repo ainda nao e suportado pelo MCP ask_code.");
-      }
-
       const response = await client.askCode(
         {
+          repo: config.repo,
           query: question,
           topK: config.topK,
           pathPrefix: config.pathPrefix,
