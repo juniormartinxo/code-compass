@@ -110,18 +110,16 @@ function resolveRange(input: OpenFileInput): {
 
 @Injectable()
 export class FileService {
-  private repoRootRealPromise?: Promise<string>;
-
   async openRange(rawInput: unknown): Promise<OpenFileOutput> {
     if (!rawInput || typeof rawInput !== 'object') {
       throw new ToolExecutionError('BAD_REQUEST', 'Input must be an object.');
     }
 
     const input = rawInput as OpenFileInput;
+    const { repoRoot: repoRootReal } = await resolveRepoRoot(input.repo, process.env);
     const normalizedPath = sanitizeAndNormalizePath(input.path);
     const { startLine, endLine, maxBytes } = resolveRange(input);
 
-    const repoRootReal = await this.getRepoRootReal();
     const candidateResolved = resolve(repoRootReal, normalizedPath);
     if (!isWithinRoot(repoRootReal, candidateResolved)) {
       throw new ToolExecutionError('FORBIDDEN', 'Path escapes repository root.');
@@ -156,17 +154,6 @@ export class FileService {
       endLine,
       maxBytes,
     });
-  }
-
-  private getRepoRootReal(): Promise<string> {
-    if (!this.repoRootRealPromise) {
-      this.repoRootRealPromise = (async () => {
-        const repoRoot = resolveRepoRoot(process.env);
-        return fs.realpath(repoRoot);
-      })();
-    }
-
-    return this.repoRootRealPromise;
   }
 
   private async ensureTextFile(realPath: string): Promise<void> {
