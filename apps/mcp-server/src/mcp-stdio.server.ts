@@ -411,8 +411,9 @@ export class McpStdioServer {
         inputSchema: {
           type: 'object',
           additionalProperties: false,
-          required: ['query'],
+          required: ['repo', 'query'],
           properties: {
+            repo: { type: 'string' },
             query: { type: 'string' },
             topK: { type: 'number' },
             pathPrefix: { type: 'string' },
@@ -426,8 +427,9 @@ export class McpStdioServer {
         inputSchema: {
           type: 'object',
           additionalProperties: false,
-          required: ['path'],
+          required: ['repo', 'path'],
           properties: {
+            repo: { type: 'string' },
             path: { type: 'string' },
             startLine: { type: 'number' },
             endLine: { type: 'number' },
@@ -441,8 +443,9 @@ export class McpStdioServer {
         inputSchema: {
           type: 'object',
           additionalProperties: false,
-          required: ['query'],
+          required: ['repo', 'query'],
           properties: {
+            repo: { type: 'string' },
             query: { type: 'string' },
             topK: { type: 'number' },
             pathPrefix: { type: 'string' },
