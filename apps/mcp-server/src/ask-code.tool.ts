@@ -4,8 +4,8 @@ import axios from 'axios';
 import { OpenFileTool } from './open-file.tool';
 import { SearchCodeTool } from './search-code.tool';
 import { ToolInputError } from './errors';
-import { validateRepoName } from './repo-root';
-import { AskCodeInput, AskCodeOutput, SearchCodeResult } from './types';
+import { resolveScope } from './scope';
+import { AskCodeInput, AskCodeOutput, ResolvedScope, SearchCodeResult } from './types';
 
 const DEFAULT_TOP_K = 5;
 const MIN_TOP_K = 1;
@@ -18,6 +18,7 @@ const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
 const DEFAULT_EMBEDDING_MODEL = 'manutic/nomic-embed-code';
 const DEFAULT_LLM_MODEL = 'gpt-oss:latest';
 const DEFAULT_TIMEOUT_MS = 120_000;
+const MAX_CONTEXTS_PER_REPO_WIDE_SCOPE = 2;
 
 const LANGUAGE_EXTENSIONS: Record<string, string[]> = {
   ts: ['.ts', '.tsx'],
@@ -33,7 +34,7 @@ const LANGUAGE_EXTENSIONS: Record<string, string[]> = {
 };
 
 type ValidatedAskInput = {
-  repo: string;
+  scope: ResolvedScope;
   query: string;
   topK: number;
   pathPrefix: string;
@@ -55,7 +56,7 @@ export class AskCodeTool {
 
     const vector = await this.embedQuestion(input.query);
     const searchOutput = await this.searchCodeTool.execute({
-      repo: input.repo,
+      scope: this.toScopeInput(input.scope),
       query: input.query,
       topK: input.topK,
       pathPrefix: input.pathPrefix,
@@ -67,17 +68,18 @@ export class AskCodeTool {
       .filter((result) => result.score >= input.minScore)
       .slice(0, input.topK);
 
-    const enriched = await this.enrichEvidences(input.repo, ranked);
+    const enriched = await this.enrichEvidences(input.scope, ranked);
 
     if (enriched.length === 0) {
       return {
         answer: 'Sem evidencia suficiente. Tente refinar a pergunta ou ajustar os filtros.',
         evidences: [],
         meta: {
+          scope: this.toScopeMeta(input.scope),
           topK: input.topK,
           minScore: input.minScore,
           llmModel: input.llmModel,
-          repo: input.repo,
+          repo: input.scope.type === 'repo' ? input.scope.repos[0] : undefined,
           collection: searchOutput.meta.collection,
           totalMatches: searchOutput.results.length,
           contextsUsed: 0,
@@ -95,10 +97,11 @@ export class AskCodeTool {
       answer: answer.trim() || '(sem resposta)',
       evidences: enriched,
       meta: {
+        scope: this.toScopeMeta(input.scope),
         topK: input.topK,
         minScore: input.minScore,
         llmModel: input.llmModel,
-        repo: input.repo,
+        repo: input.scope.type === 'repo' ? input.scope.repos[0] : undefined,
         collection: searchOutput.meta.collection,
         totalMatches: searchOutput.results.length,
         contextsUsed: enriched.length,
@@ -115,7 +118,13 @@ export class AskCodeTool {
     }
 
     const input = rawInput as AskCodeInput;
-    const repo = validateRepoName(input.repo);
+    const scope = resolveScope(
+      {
+        scope: input.scope,
+        repo: input.repo,
+      },
+      process.env,
+    );
     const query = this.validateQuery(input.query);
     const topK = this.clampTopK(input.topK);
     const pathPrefix = this.validatePathPrefix(input.pathPrefix);
@@ -124,7 +133,7 @@ export class AskCodeTool {
     const llmModel = this.validateModel(input.llmModel);
 
     return {
-      repo,
+      scope,
       query,
       topK,
       pathPrefix,
@@ -239,16 +248,29 @@ export class AskCodeTool {
     return mapped.some((ext) => lowerPath.endsWith(ext));
   }
 
-  private async enrichEvidences(repo: string, evidences: SearchCodeResult[]): Promise<SearchCodeResult[]> {
+  private async enrichEvidences(
+    scope: ResolvedScope,
+    evidences: SearchCodeResult[],
+  ): Promise<SearchCodeResult[]> {
     const enriched: SearchCodeResult[] = [];
+    const perRepoCounter = new Map<string, number>();
+    const shouldLimitPerRepo = scope.type !== 'repo';
 
     for (const evidence of evidences) {
+      if (shouldLimitPerRepo) {
+        const currentCount = perRepoCounter.get(evidence.repo) ?? 0;
+        if (currentCount >= MAX_CONTEXTS_PER_REPO_WIDE_SCOPE) {
+          continue;
+        }
+        perRepoCounter.set(evidence.repo, currentCount + 1);
+      }
+
       const startLine = evidence.startLine ?? 1;
       const endLine = evidence.endLine ?? startLine + 50;
 
       try {
         const file = await this.openFileTool.execute({
-          repo,
+          repo: evidence.repo,
           path: evidence.path,
           startLine,
           endLine,
@@ -267,6 +289,42 @@ export class AskCodeTool {
     }
 
     return enriched;
+  }
+
+  private toScopeInput(scope: ResolvedScope): AskCodeInput['scope'] {
+    if (scope.type === 'all') {
+      return { type: 'all' };
+    }
+
+    if (scope.type === 'repo') {
+      return {
+        type: 'repo',
+        repo: scope.repos[0],
+      };
+    }
+
+    return {
+      type: 'repos',
+      repos: [...scope.repos],
+    };
+  }
+
+  private toScopeMeta(scope: ResolvedScope): AskCodeOutput['meta']['scope'] {
+    if (scope.type === 'all') {
+      return { type: 'all' };
+    }
+
+    if (scope.type === 'repo') {
+      return {
+        type: 'repo',
+        repos: [...scope.repos],
+      };
+    }
+
+    return {
+      type: 'repos',
+      repos: [...scope.repos],
+    };
   }
 
   private buildPrompt(question: string, evidences: SearchCodeResult[]): { system: string; user: string } {
