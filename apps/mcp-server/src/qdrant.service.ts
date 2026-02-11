@@ -9,6 +9,7 @@ interface SearchPointsArgs {
   vector: number[];
   topK: number;
   pathPrefix?: string;
+  repos?: string[];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -63,6 +64,33 @@ export class QdrantService {
       };
     }
 
+    if (Array.isArray(args.repos) && args.repos.length > 0) {
+      const existingFilter = body.filter as { must?: unknown[] } | undefined;
+      const must = [...(existingFilter?.must ?? [])];
+
+      if (args.repos.length === 1) {
+        must.push({
+          key: 'repo',
+          match: {
+            value: args.repos[0],
+          },
+        });
+      } else {
+        must.push({
+          should: args.repos.map((repo) => ({
+            key: 'repo',
+            match: {
+              value: repo,
+            },
+          })),
+        });
+      }
+
+      body.filter = {
+        must,
+      };
+    }
+
     try {
       const response = await this.httpClient.post<QdrantSearchResponse>(
         `/collections/${encodeURIComponent(this.config.collection)}/points/search`,
@@ -103,7 +131,8 @@ export class QdrantService {
       }
 
       const hits = parsed.filter(isRecord) as QdrantSearchHit[];
-      const filtered = args.pathPrefix
+
+      const filteredByPath = args.pathPrefix
         ? hits.filter((hit) => {
             if (!isRecord(hit.payload)) {
               return false;
@@ -113,7 +142,17 @@ export class QdrantService {
           })
         : hits;
 
-      return filtered.slice(0, args.topK);
+      const filteredByRepo = Array.isArray(args.repos) && args.repos.length > 0
+        ? filteredByPath.filter((hit) => {
+            if (!isRecord(hit.payload)) {
+              return false;
+            }
+            const repo = hit.payload.repo;
+            return typeof repo === 'string' && args.repos?.includes(repo);
+          })
+        : filteredByPath;
+
+      return filteredByRepo.slice(0, args.topK);
     } catch {
       this.logger.warn('MCP_QDRANT_MOCK_RESPONSE inválido; ignorando mock');
       return [];
