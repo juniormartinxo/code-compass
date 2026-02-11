@@ -1,6 +1,6 @@
 # Tutorial: Indexar um repositório específico
 
-Este tutorial mostra como indexar **um repositório específico** com o comando `index`, apontando explicitamente o `repo-root`.
+Este tutorial mostra como indexar **um repositório específico** com o comando `index`, apontando explicitamente o `repo-root`. Se você usa múltiplos repos dentro de `code-base/`, repita o processo para cada repo.
 
 ## Pré-requisitos
 - Ollama em execução (`OLLAMA_URL`) e modelo configurado (`EMBEDDING_MODEL`).
@@ -26,10 +26,27 @@ python -m indexer scan --repo-root /caminho/do/repositorio
 python -m indexer index --repo-root /caminho/do/repositorio
 ```
 
+### Multi-repo (code-base)
+
+Se o host mantém vários repos em `code-base/`, rode a indexação por repo:
+
+```bash
+for repo in code-base/*; do
+  [ -d "$repo" ] || continue
+  python -m indexer index --repo-root "$repo"
+done
+```
+
 3. Confira se a indexação está acessível via busca.
 
 ```bash
 python -m indexer search "palavra-chave" --path_prefix caminho/relativo
+```
+
+4. (Opcional) Valide pergunta RAG no repo indexado.
+
+```bash
+python -m indexer ask "qual a arquitetura principal deste repo?" --repo $(basename /caminho/do/repositorio)
 ```
 
 ## Variações úteis
