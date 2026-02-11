@@ -84,7 +84,7 @@ fi
 # Variáveis de ambiente com fallback
 export REPO_ROOT="${REPO_ROOT:-$ROOT}"
 export QDRANT_URL="${QDRANT_URL:-http://localhost:6333}"
-export QDRANT_COLLECTION="${QDRANT_COLLECTION:-golyzer_3584_manutic_nomic_embed_code}"
+export QDRANT_COLLECTION="${QDRANT_COLLECTION:-compass__3584__manutic_nomic_embed_code}"
 
 START_SCRIPT="mcp:stdio"
 
