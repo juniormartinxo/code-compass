@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 
 from qdrant_client.http import models
 
-from indexer.__main__ import _format_search_result_block
+from indexer.__main__ import _build_search_header, _format_search_result_block, _resolve_search_snippet
 from indexer.qdrant_store import build_qdrant_filter
 
 
@@ -34,6 +36,74 @@ class SearchOutputFormattingTests(unittest.TestCase):
         )
 
         self.assertIn('snippet: "(no text payload)"', block)
+
+    def test_build_search_header_includes_repo_when_present(self) -> None:
+        header = _build_search_header(
+            {
+                "repo": "analytics-portal",
+                "path": "src/charts/drilldown.tsx",
+                "start_line": 14,
+                "end_line": 28,
+            }
+        )
+
+        self.assertEqual(
+            header,
+            "[analytics-portal] src/charts/drilldown.tsx:14-28",
+        )
+
+
+class SearchSnippetFallbackTests(unittest.TestCase):
+    def test_resolve_search_snippet_uses_payload_text_when_available(self) -> None:
+        snippet = _resolve_search_snippet(
+            payload={
+                "text": "const a = 1;",
+                "repo_root": "/tmp/repo",
+                "path": "src/main.ts",
+                "start_line": 1,
+                "end_line": 1,
+            }
+        )
+
+        self.assertEqual(snippet, "const a = 1;")
+
+    def test_resolve_search_snippet_falls_back_to_repo_file_range(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            file_path = repo_root / "src" / "components" / "drilldown.tsx"
+            file_path.parent.mkdir(parents=True)
+            file_path.write_text(
+                "line 1\nline 2\nline 3\nline 4\n",
+                encoding="utf-8",
+            )
+
+            snippet = _resolve_search_snippet(
+                payload={
+                    "repo_root": str(repo_root),
+                    "path": "src/components/drilldown.tsx",
+                    "start_line": 2,
+                    "end_line": 3,
+                },
+                line_cache={},
+            )
+
+        self.assertEqual(snippet, "line 2\nline 3")
+
+    def test_resolve_search_snippet_returns_none_when_path_escapes_repo(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+
+            snippet = _resolve_search_snippet(
+                payload={
+                    "repo_root": str(repo_root),
+                    "path": "../outside.txt",
+                    "start_line": 1,
+                    "end_line": 1,
+                },
+                line_cache={},
+            )
+
+        self.assertIsNone(snippet)
 
 
 class SearchFilterBuilderTests(unittest.TestCase):
