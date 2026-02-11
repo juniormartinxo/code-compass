@@ -1,6 +1,6 @@
 # MCP Client Quickstart (Local STDIO)
 
-Este repositório usa `apps/mcp-server` em `stdio` com protocolo NDJSON próprio das tools (`search_code` e `open_file`).
+Este repositório usa `apps/mcp-server` em `stdio` com protocolo NDJSON próprio das tools (`search_code`, `ask_code` e `open_file`).
 
 ## Golden Path adotado
 
@@ -21,13 +21,24 @@ pnpm mcp:start
 
 O script `bin/dev-mcp` define defaults seguros:
 
-- `REPO_ROOT=<raiz do repositório>`
+- `REPO_ROOT=<raiz do repositório>` (modo compat)
 - `QDRANT_URL=http://localhost:6333` (se ausente)
-- `QDRANT_COLLECTION=code_chunks` (se ausente)
+- `QDRANT_COLLECTION=compass__3584__manutic_nomic_embed_code` (se ausente)
+
+Se você usa múltiplos repos em `code-base/`, defina:
+
+- `CODEBASE_ROOT=/path/para/code-base`
+- Opcional: `ALLOW_GLOBAL_SCOPE=true` para habilitar `scope: { type: "all" }`
 
 ## Configuração do cliente (Codex)
 
 Use o template em `apps/docs/assets/codex-config-example.toml` e ajuste o path absoluto para o seu clone local.
+
+Importante sobre escopo em `ask_code`:
+
+- Em modo single-repo (`CODEBASE_ROOT` ausente), passe `repo` com o nome do repositório indexado (ex.: `code-compass`) ou use `scope` equivalente.
+- Evite `repo: "."`, pois o MCP valida nome simples de repo e usa esse valor como filtro de payload.
+- Garanta que os dados indexados tenham `payload.repo` preenchido (indexações antigas podem precisar reindexação).
 
 ## Fluxo E2E recomendado
 
@@ -36,3 +47,84 @@ Use o template em `apps/docs/assets/codex-config-example.toml` e ajuste o path a
 3. Chamar `open_file` para esse `path` com range curto.
 4. Validar que o texto retornado confere com o arquivo local.
 5. Testar segurança com `open_file` usando `../../etc/passwd` (deve retornar bloqueio `FORBIDDEN`).
+
+### Exemplos de input `ask_code`
+
+Escopo por repo (recomendado):
+
+```json
+{
+  "id": "req-ask-1",
+  "tool": "ask_code",
+  "input": {
+    "scope": { "type": "repo", "repo": "golyzer" },
+    "query": "Como funciona o Modo de Interação?",
+    "topK": 5,
+    "minScore": 0.6
+  }
+}
+```
+
+Modo compat com `repo`:
+
+```json
+{
+  "id": "req-ask-2",
+  "tool": "ask_code",
+  "input": {
+    "repo": "golyzer",
+    "query": "Como funciona o Modo de Interação?",
+    "topK": 5
+  }
+}
+```
+
+## Troubleshooting rápido
+
+- **"Sem evidencia suficiente"**
+  - Confirme `QDRANT_COLLECTION` no cliente/MCP e no indexador.
+  - Reindexe para garantir `payload.repo` nos pontos antigos (`make index-all`).
+  - Evite `repo: "."`; use o nome do diretório do repo indexado.
+- **"Global scope não está habilitado"**
+  - Defina `ALLOW_GLOBAL_SCOPE=true` antes de subir o MCP server.
+
+### Exemplos de input com `scope`
+
+```json
+{
+  "id": "req-1",
+  "tool": "search_code",
+  "input": {
+    "scope": { "type": "repo", "repo": "repo-a" },
+    "query": "bootstrap",
+    "topK": 5,
+    "vector": [0.1, 0.2]
+  }
+}
+```
+
+```json
+{
+  "id": "req-2",
+  "tool": "search_code",
+  "input": {
+    "scope": { "type": "repos", "repos": ["repo-a", "repo-b"] },
+    "query": "qdrant",
+    "topK": 5,
+    "vector": [0.1, 0.2]
+  }
+}
+```
+
+```json
+{
+  "id": "req-3",
+  "tool": "search_code",
+  "input": {
+    "scope": { "type": "all" },
+    "query": "config",
+    "topK": 5,
+    "vector": [0.1, 0.2]
+  }
+}
+```
