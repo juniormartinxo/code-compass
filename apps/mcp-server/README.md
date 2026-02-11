@@ -24,6 +24,7 @@ Cada linha em `stdin` é um request JSON:
   "id": "req-1",
   "tool": "search_code",
   "input": {
+    "repo": "acme-monorepo",
     "query": "find qdrant",
     "topK": 10,
     "pathPrefix": "apps/indexer/",
@@ -49,6 +50,7 @@ Resposta de sucesso (`stdout`, uma linha):
       }
     ],
     "meta": {
+      "repo": "acme-monorepo",
       "topK": 10,
       "pathPrefix": "apps/indexer/",
       "collection": "code_chunks"
@@ -74,7 +76,8 @@ Resposta de erro:
 
 ### Input
 
-- `path` (string, obrigatório, relativo ao `REPO_ROOT`)
+- `repo` (string, obrigatório, nome do repositório dentro de `CODEBASE_ROOT`)
+- `path` (string, obrigatório, relativo ao root do repo resolvido)
 - `startLine` (number opcional, default `1`, min `1`)
 - `endLine` (number opcional, default `startLine + 50`, clamp para no máximo `200` linhas)
 - `maxBytes` (number opcional, default `200000`, max `1000000`)
@@ -99,6 +102,7 @@ Resposta de erro:
 
 ### Input
 
+- `repo` (string, obrigatório)
 - `query` (string, obrigatório, `trim`, 1..500)
 - `topK` (number opcional, default `10`, clamp `1..20`)
 - `pathPrefix` (string opcional, `trim`, max 200, bloqueia `\0` e `..`)
@@ -112,7 +116,7 @@ Resposta de erro:
   - `startLine` (`number | null`)
   - `endLine` (`number | null`)
   - `snippet` (string, normalizado e truncado para até 300 chars)
-- `meta`: `{ topK, pathPrefix?, collection }`
+- `meta`: `{ repo, topK, pathPrefix?, collection }`
 
 ### Regras importantes
 
@@ -126,6 +130,7 @@ Executa o fluxo RAG completo no MCP: embedding da pergunta, busca no Qdrant, enr
 
 ### Input
 
+- `repo` (string, obrigatório)
 - `query` (string, obrigatório)
 - `topK` (number opcional, default `5`, clamp `1..20`)
 - `pathPrefix` (string opcional)
@@ -138,7 +143,7 @@ Executa o fluxo RAG completo no MCP: embedding da pergunta, busca no Qdrant, enr
 - `answer` (string)
 - `evidences` (array de evidências no mesmo formato do `search_code`)
 - `meta`:
-  - `topK`, `minScore`, `llmModel`
+  - `repo`, `topK`, `minScore`, `llmModel`
   - `collection`
   - `totalMatches` e `contextsUsed`
   - `elapsedMs`
@@ -156,9 +161,13 @@ Executa o fluxo RAG completo no MCP: embedding da pergunta, busca no Qdrant, enr
 - `QDRANT_COLLECTION` (default: `code_chunks`; se ausente, usa `QDRANT_COLLECTION_BASE` como fallback)
 - `QDRANT_API_KEY` (opcional)
 
-## REPO_ROOT (env var)
+## CODEBASE_ROOT e REPO_ROOT (env vars)
 
-- `REPO_ROOT` (opcional, recomendado): raiz do repositório para tools de filesystem.
+- `CODEBASE_ROOT` (opcional): pasta contendo múltiplos repositórios (`<CODEBASE_ROOT>/<repo>`).
+  - quando definido, `repo` é obrigatório e o `open_file` só lê dentro de `<CODEBASE_ROOT>/<repo>`.
+  - validação de segurança de repo: bloqueia `\0`, `..` e separadores (`/` e `\\`).
+- `REPO_ROOT` (compat, usado quando `CODEBASE_ROOT` não está definido): raiz single-repo para tools de filesystem.
+
 - Fallback quando ausente: inferência por subida de diretórios buscando `pnpm-workspace.yaml`, `.git/` ou `package.json` com `workspaces`.
 
 ### Carregamento de `.env.local`
