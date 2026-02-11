@@ -111,6 +111,47 @@ def _build_search_filters(args: argparse.Namespace) -> dict[str, object] | None:
     return filters or None
 
 
+def _parse_scope_repos(raw_repos: str) -> list[str]:
+    repos = [item.strip() for item in raw_repos.split(",")]
+    normalized = [item for item in repos if item]
+    if not normalized:
+        raise ValueError("Erro: --scope-repos deve conter ao menos um repo")
+    return normalized
+
+
+def _build_ask_scope_payload(args: argparse.Namespace) -> dict[str, object]:
+    if getattr(args, "scope_repo", None):
+        return {
+            "scope": {
+                "type": "repo",
+                "repo": args.scope_repo,
+            }
+        }
+
+    if getattr(args, "scope_repos", None):
+        return {
+            "scope": {
+                "type": "repos",
+                "repos": _parse_scope_repos(args.scope_repos),
+            }
+        }
+
+    if getattr(args, "scope_all", False):
+        return {
+            "scope": {
+                "type": "all",
+            }
+        }
+
+    repo = getattr(args, "repo", None)
+    if repo:
+        return {"repo": repo}
+
+    raise ValueError(
+        "Erro: informe --repo (compat) ou um escopo (--scope-repo, --scope-repos, --scope-all)"
+    )
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m indexer")
     subparsers = parser.add_subparsers(dest="command")
@@ -245,6 +286,31 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="json_output",
         action="store_true",
         help="Output em JSON"
+    )
+    ask_parser.add_argument(
+        "--repo",
+        dest="repo",
+        default=None,
+        help="Repo alvo em modo compat (equivale a scope.repo no MCP)",
+    )
+    scope_group = ask_parser.add_mutually_exclusive_group()
+    scope_group.add_argument(
+        "--scope-repo",
+        dest="scope_repo",
+        default=None,
+        help="Escopo de um único repo",
+    )
+    scope_group.add_argument(
+        "--scope-repos",
+        dest="scope_repos",
+        default=None,
+        help="Escopo de vários repos (lista separada por vírgula)",
+    )
+    scope_group.add_argument(
+        "--scope-all",
+        dest="scope_all",
+        action="store_true",
+        help="Escopo global (requer ALLOW_GLOBAL_SCOPE=true no MCP server)",
     )
 
     return parser
@@ -531,6 +597,7 @@ def _index_command(args: argparse.Namespace) -> int:
 
             # Payload rico
             payload = {
+                "repo": scan_config.repo_root.name,
                 "path": chunk["path"],
                 "chunk_index": chunk["_chunk_index"],
                 "content_hash": content_hash,
@@ -708,6 +775,7 @@ def _call_mcp_ask_code(
     min_score: float,
     llm_model: str,
     ext: str | None,
+    scope_payload: dict[str, object],
     timeout_sec: float,
 ) -> dict[str, object]:
     command = _resolve_mcp_command()
@@ -720,6 +788,7 @@ def _call_mcp_ask_code(
     }
     if ext:
         input_payload["language"] = ext
+    input_payload.update(scope_payload)
 
     request = {
         "id": "indexer-ask",
@@ -780,6 +849,7 @@ def _ask_command(args: argparse.Namespace) -> int:
 
     try:
         llm_model = args.llm_model or os.getenv("LLM_MODEL", DEFAULT_LLM_MODEL)
+        scope_payload = _build_ask_scope_payload(args)
 
         logger.info(f"Pergunta: {question}")
         logger.info(f"LLM Model: {llm_model}")
@@ -790,6 +860,7 @@ def _ask_command(args: argparse.Namespace) -> int:
             min_score=args.min_score,
             llm_model=llm_model,
             ext=args.ext,
+            scope_payload=scope_payload,
             timeout_sec=120.0,
         )
 
@@ -815,6 +886,7 @@ def _ask_command(args: argparse.Namespace) -> int:
                 "elapsed_sec": round(elapsed, 2),
                 "sources": [
                     {
+                        "repo": e.get("repo"),
                         "path": e.get("path"),
                         "lines": f"{e.get('startLine')}-{e.get('endLine')}",
                         "score": e.get("score"),
@@ -834,10 +906,11 @@ def _ask_command(args: argparse.Namespace) -> int:
                 for i, evidence in enumerate(evidences, 1):
                     if not isinstance(evidence, dict):
                         continue
+                    repo = str(evidence.get("repo", "?"))
                     path = evidence.get("path", "?")
                     lines = f"{evidence.get('startLine', '?')}-{evidence.get('endLine', '?')}"
                     score = float(evidence.get("score", 0.0) or 0.0)
-                    print(f"  {i}. {path} (linhas {lines}) - score: {score:.4f}")
+                    print(f"  {i}. [{repo}] {path} (linhas {lines}) - score: {score:.4f}")
                 print()
             
             print(f"⏱️  Tempo: {elapsed:.2f}s | Modelo: {model_used}")
@@ -846,6 +919,9 @@ def _ask_command(args: argparse.Namespace) -> int:
 
     except subprocess.TimeoutExpired:
         print("Erro: timeout ao chamar MCP ask_code.", file=sys.stderr)
+        return 1
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
         return 1
     except Exception as exc:
         logger.exception("Erro inesperado")
