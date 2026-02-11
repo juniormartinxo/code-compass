@@ -44,6 +44,7 @@ async function run(): Promise<void> {
         id: 'req-h1',
         tool: 'search_code',
         input: {
+          repo: 'acme-repo',
           query: 'bootstrap',
           topK: 10,
           pathPrefix: 'apps/mcp-server/',
