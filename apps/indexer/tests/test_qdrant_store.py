@@ -52,6 +52,39 @@ class TestQdrantConfig(unittest.TestCase):
             self.assertEqual(config.distance, "EUCLID")
             self.assertEqual(config.upsert_batch, 128)
 
+    def test_load_qdrant_config_normalizes_blank_values_to_defaults(self) -> None:
+        env = {
+            "QDRANT_URL": "   ",
+            "QDRANT_API_KEY": "   ",
+            "QDRANT_COLLECTION_BASE": "   ",
+            "QDRANT_COLLECTION": "   ",
+            "QDRANT_DISTANCE": "   ",
+            "QDRANT_UPSERT_BATCH": "64",
+        }
+        with patch.dict("os.environ", env, clear=True):
+            config = load_qdrant_config()
+            self.assertEqual(config.url, DEFAULT_QDRANT_URL)
+            self.assertIsNone(config.api_key)
+            self.assertEqual(config.collection_base, DEFAULT_QDRANT_COLLECTION_BASE)
+            self.assertIsNone(config.collection)
+            self.assertEqual(config.distance, DEFAULT_QDRANT_DISTANCE)
+
+    def test_load_qdrant_config_normalizes_blank_args_to_defaults(self) -> None:
+        with patch.dict("os.environ", {}, clear=True):
+            config = load_qdrant_config(
+                url="   ",
+                api_key="   ",
+                collection_base="   ",
+                collection="   ",
+                distance="   ",
+            )
+
+        self.assertEqual(config.url, DEFAULT_QDRANT_URL)
+        self.assertIsNone(config.api_key)
+        self.assertEqual(config.collection_base, DEFAULT_QDRANT_COLLECTION_BASE)
+        self.assertIsNone(config.collection)
+        self.assertEqual(config.distance, DEFAULT_QDRANT_DISTANCE)
+
 
 class TestGenerateCollectionName(unittest.TestCase):
     """Testes para generate_collection_name."""
@@ -123,6 +156,38 @@ class TestQdrantStore(unittest.TestCase):
             model_name="manutic/nomic-embed-code",
         )
         self.assertEqual(name, "test__3584__manutic_nomic_embed_code")
+
+    @patch("indexer.qdrant_store.QdrantClient")
+    def test_client_does_not_send_api_key_when_none(
+        self, mock_client_class: MagicMock
+    ) -> None:
+        config = self._make_config()
+        store = QdrantStore(config)
+
+        _ = store.client
+
+        mock_client_class.assert_called_once_with(url="http://localhost:6333")
+
+    @patch("indexer.qdrant_store.QdrantClient")
+    def test_client_sends_api_key_when_present(
+        self, mock_client_class: MagicMock
+    ) -> None:
+        config = QdrantConfig(
+            url="http://localhost:6333",
+            api_key="secret-key",
+            collection_base="test",
+            collection=None,
+            distance="COSINE",
+            upsert_batch=10,
+        )
+        store = QdrantStore(config)
+
+        _ = store.client
+
+        mock_client_class.assert_called_once_with(
+            url="http://localhost:6333",
+            api_key="secret-key",
+        )
 
     @patch("indexer.qdrant_store.QdrantClient")
     def test_ensure_collection_creates_new(self, mock_client_class: MagicMock) -> None:
