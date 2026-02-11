@@ -24,6 +24,7 @@ async function run(): Promise<void> {
 
   try {
     writeFileSync(join(tempRepoRoot, 'safe.txt'), 'a\nb\nc\nd\n', 'utf8');
+    delete process.env.CODEBASE_ROOT;
     process.env.REPO_ROOT = tempRepoRoot;
 
     const server = createServer();
@@ -41,6 +42,7 @@ async function run(): Promise<void> {
           id: 'req-open-file-1',
           tool: 'open_file',
           input: {
+            repo: 'single-repo',
             path: 'safe.txt',
             startLine: 2,
             endLine: 3,
@@ -74,6 +76,7 @@ async function run(): Promise<void> {
 
     stdoutWrite.call(process.stdout, `${firstLine}\n`);
   } finally {
+    delete process.env.CODEBASE_ROOT;
     delete process.env.REPO_ROOT;
     rmSync(tempRepoRoot, { recursive: true, force: true });
   }
