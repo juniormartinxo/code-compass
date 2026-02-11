@@ -3,7 +3,7 @@
 **Code Compass** é um **servidor MCP + pipeline RAG** para a base de código da empresa.  
 Ele indexa repositórios (código + docs), gera embeddings e armazena tudo em um **Vector DB (Qdrant)**, expondo **tools via MCP** para agentes como **Codex, Gemini e Claude** consultarem a codebase com **evidência** (trecho + path + linha + score).
 
-> Stack definida (Opção A): **Node/NestJS (MCP Server) + Python (Indexer/ML Worker) + Qdrant (Vector DB)**
+> Stack definida: **Node/NestJS (MCP Server) + Python (Indexer/ML Worker) + Qdrant (Vector DB)**
 
 ---
 
