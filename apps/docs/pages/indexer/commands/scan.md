@@ -21,7 +21,7 @@ python -m indexer scan [opções]
 
 | Opção | Variável de Ambiente | Default | Descrição |
 |-------|----------------------|---------|-----------|
-| `--repo-root` | `REPO_ROOT` | `cwd` | Diretório raiz a ser escaneado. |
+| `--repo-root` | `REPO_ROOT` | `..` | Diretório raiz a ser escaneado (relativo ao diretório atual). |
 | `--ignore-dirs` | `SCAN_IGNORE_DIRS` | `.git,node_modules,...` | Lista de diretórios a serem ignorados (separados por vírgula). |
 | `--allow-exts` | `SCAN_ALLOW_EXTS` | `.ts,.py,.js,...` | Lista de extensões de arquivo a serem incluídas (separadas por vírgula). |
 | `--max-files` | - | `None` | Limita o número máximo de arquivos retornados na lista. |
