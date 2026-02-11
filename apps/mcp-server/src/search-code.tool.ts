@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 
 import { ToolInputError } from './errors';
-import { validateRepoName } from './repo-root';
+import { resolveScope } from './scope';
 import { QdrantService } from './qdrant.service';
-import { QdrantSearchHit, SearchCodeInput, SearchCodeOutput } from './types';
+import { QdrantSearchHit, ResolvedScope, SearchCodeInput, SearchCodeOutput } from './types';
 
 const DEFAULT_TOP_K = 10;
 const MIN_TOP_K = 1;
@@ -12,6 +12,15 @@ const MAX_QUERY_CHARS = 500;
 const MAX_PATH_PREFIX_CHARS = 200;
 const MAX_SNIPPET_CHARS = 300;
 const MIN_SNIPPET_CHARS = 200;
+const MAX_PER_REPO_ON_ALL_SCOPE = 3;
+
+type ValidatedSearchInput = {
+  scope: ResolvedScope;
+  query: string;
+  topK: number;
+  pathPrefix: string;
+  vector: number[];
+};
 
 @Injectable()
 export class SearchCodeTool {
@@ -23,15 +32,21 @@ export class SearchCodeTool {
       vector: input.vector,
       topK: input.topK,
       pathPrefix: input.pathPrefix,
+      repos: input.scope.type === 'all' ? undefined : input.scope.repos,
     });
 
-    const results = hits.slice(0, input.topK).map((hit) => this.mapHitToResult(hit));
+    const mapped = hits.map((hit) => this.mapHitToResult(hit));
+    const results = this.applyScopeResultGuards(mapped, input.scope, input.topK);
 
     const meta: SearchCodeOutput['meta'] = {
-      repo: input.repo,
+      scope: this.toScopeMeta(input.scope),
       topK: input.topK,
       collection: this.qdrantService.getCollectionName(),
     };
+
+    if (input.scope.type === 'repo') {
+      meta.repo = input.scope.repos[0];
+    }
 
     if (input.pathPrefix) {
       meta.pathPrefix = input.pathPrefix;
@@ -43,20 +58,23 @@ export class SearchCodeTool {
     };
   }
 
-  private validateInput(rawInput: unknown): Required<SearchCodeInput> {
+  private validateInput(rawInput: unknown): ValidatedSearchInput {
     if (!rawInput || typeof rawInput !== 'object') {
       throw new ToolInputError('Input inválido: esperado objeto');
     }
 
     const input = rawInput as SearchCodeInput;
-    const repo = validateRepoName(input.repo);
+    const scope = resolveScope({
+      scope: input.scope,
+      repo: input.repo,
+    }, process.env);
     const query = this.validateQuery(input.query);
     const topK = this.clampTopK(input.topK);
     const pathPrefix = this.validatePathPrefix(input.pathPrefix);
     const vector = this.validateVector(input.vector);
 
     return {
-      repo,
+      scope,
       query,
       topK,
       pathPrefix,
@@ -129,6 +147,7 @@ export class SearchCodeTool {
     const snippet = this.extractSnippet(payload);
 
     return {
+      repo: this.ensureRepo(payload.repo),
       score: this.ensureScore(hit.score),
       path: this.ensurePath(payload.path),
       startLine: this.toNumberOrNull(payload.startLine ?? payload.start_line),
@@ -161,6 +180,14 @@ export class SearchCodeTool {
       : normalized;
   }
 
+  private ensureRepo(repo: unknown): string {
+    if (typeof repo !== 'string') {
+      return '(unknown)';
+    }
+    const normalized = repo.trim();
+    return normalized || '(unknown)';
+  }
+
   private toNumberOrNull(value: unknown): number | null {
     if (typeof value === 'number' && Number.isFinite(value)) {
       return Math.trunc(value);
@@ -184,5 +211,52 @@ export class SearchCodeTool {
 
     const targetLength = Math.max(MIN_SNIPPET_CHARS, MAX_SNIPPET_CHARS - 3);
     return `${normalized.slice(0, targetLength).trimEnd()}...`;
+  }
+
+  private applyScopeResultGuards(
+    results: SearchCodeOutput['results'],
+    scope: ResolvedScope,
+    topK: number,
+  ): SearchCodeOutput['results'] {
+    if (scope.type !== 'all') {
+      return results.slice(0, topK);
+    }
+
+    const accepted: SearchCodeOutput['results'] = [];
+    const perRepoCounter = new Map<string, number>();
+
+    for (const result of results) {
+      const currentCount = perRepoCounter.get(result.repo) ?? 0;
+      if (currentCount >= MAX_PER_REPO_ON_ALL_SCOPE) {
+        continue;
+      }
+
+      accepted.push(result);
+      perRepoCounter.set(result.repo, currentCount + 1);
+
+      if (accepted.length >= topK) {
+        break;
+      }
+    }
+
+    return accepted;
+  }
+
+  private toScopeMeta(scope: ResolvedScope): SearchCodeOutput['meta']['scope'] {
+    if (scope.type === 'all') {
+      return { type: 'all' };
+    }
+
+    if (scope.type === 'repo') {
+      return {
+        type: 'repo',
+        repos: [...scope.repos],
+      };
+    }
+
+    return {
+      type: 'repos',
+      repos: [...scope.repos],
+    };
   }
 }
