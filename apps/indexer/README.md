@@ -26,14 +26,10 @@ ollama pull manutic/nomic-embed-code
 
 ### Iniciar Qdrant
 
-Via Docker:
-```bash
-docker run -d --name qdrant -p 6333:6333 -p 6334:6334 qdrant/qdrant
-```
+Na raiz do projeto:
 
-Ou via docker-compose na raiz do projeto:
 ```bash
-docker-compose up -d qdrant
+make up
 ```
 
 ## Setup
@@ -51,7 +47,6 @@ pip install httpx qdrant-client
 
 ```bash
 # Ollama
-export EMBEDDING_PROVIDER=ollama
 export OLLAMA_URL=http://localhost:11434
 export EMBEDDING_MODEL=manutic/nomic-embed-code
 export EMBEDDING_BATCH_SIZE=16
@@ -61,6 +56,7 @@ export QDRANT_URL=http://localhost:6333
 export QDRANT_COLLECTION_BASE=compass
 export QDRANT_DISTANCE=COSINE
 export QDRANT_UPSERT_BATCH=64
+export QDRANT_COLLECTION=compass__3584__manutic_nomic_embed_code
 
 # Repositório
 export REPO_ROOT=/path/to/your/repository
@@ -201,7 +197,7 @@ python -m indexer search "como fazer chunking de arquivos"
 
 Opções:
 - `query` - Texto da busca (obrigatório)
-- `-k`, `--top-k` - Número de resultados (default: 5)
+- `-k`, `--top-k`, `--topk` - Número de resultados (default: 10)
 - `--ext` - Filtrar por extensão (ex: `.py`)
 - `--language` - Filtrar por linguagem (ex: `python`)
 - `--json` - Output em JSON
@@ -211,12 +207,12 @@ Opções:
 Perguntas em linguagem natural usando RAG:
 
 ```bash
-python -m indexer ask "sua pergunta aqui"
+python -m indexer ask "sua pergunta aqui" --repo code-compass
 ```
 
 **Exemplo:**
 ```bash
-python -m indexer ask "qual banco de dados vetorial é usado neste projeto?" --show-context
+python -m indexer ask "qual banco de dados vetorial é usado neste projeto?" --repo code-compass --show-context
 ```
 
 **Saída:**
@@ -240,6 +236,13 @@ Opções:
 - `--ext` - Filtrar contexto por extensão
 - `--show-context` - Mostrar fontes consultadas
 - `--json` - Output em JSON
+- `--repo` - Repo alvo em modo compat (equivale a `scope: { type: "repo" }` no MCP)
+- `--scope-repo` - Escopo explícito para um repo
+- `--scope-repos` - Escopo explícito para vários repos (CSV)
+- `--scope-all` - Escopo global (depende de `ALLOW_GLOBAL_SCOPE=true` no MCP)
+
+Importante:
+- Para `ask`, é obrigatório informar um escopo via `--repo` (compat) ou `--scope-*`.
 
 ## Variáveis de Ambiente
 
@@ -281,6 +284,7 @@ Opções:
 | Variável | Default | Descrição |
 |----------|---------|-----------|
 | `LLM_MODEL` | `gpt-oss:latest` | Modelo LLM para gerar respostas no `ask` |
+| `MCP_COMMAND` | `node apps/mcp-server/dist/main.js --transport stdio` | Comando usado pelo `ask` para chamar o MCP |
 
 ## Payload do Ponto
 
@@ -348,3 +352,9 @@ O modelo de embedding mudou. Opções:
 ### "Erro no Qdrant: conexão recusada"
 
 - Verifique se o Qdrant está rodando: `curl http://localhost:6333`
+
+### "Sem evidencia suficiente" no `ask`
+
+- Confirme que `QDRANT_COLLECTION` no indexer e no MCP server é o mesmo valor.
+- Verifique se o `repo` informado no comando bate com `payload.repo` indexado.
+- Reindexe para atualizar payloads antigos sem `repo`.
