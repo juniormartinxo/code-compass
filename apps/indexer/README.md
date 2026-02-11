@@ -269,6 +269,10 @@ Importante:
 | `QDRANT_DISTANCE` | `COSINE` | Métrica de distância (COSINE, EUCLID, DOT) |
 | `QDRANT_UPSERT_BATCH` | `64` | Pontos por batch de upsert |
 
+Observação sobre autenticação no Qdrant:
+- Se `QDRANT_API_KEY` estiver vazia (ex.: `QDRANT_API_KEY=`), o cliente é inicializado sem API key.
+- Em ambiente local com `QDRANT_URL=http://...`, isso evita o warning `Api key is used with an insecure connection`.
+
 ### Scan/Chunk
 
 | Variável | Default | Descrição |
