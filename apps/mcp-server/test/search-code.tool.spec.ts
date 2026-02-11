@@ -33,11 +33,13 @@ describe('SearchCodeTool', () => {
     const tool = new SearchCodeTool(mock as unknown as QdrantService);
 
     const output = await tool.execute({
+      repo: 'acme-repo',
       query: '  find foo  ',
       topK: 200,
       vector: [0.1, 0.2],
     });
 
+    expect(output.meta.repo).toBe('acme-repo');
     expect(output.meta.topK).toBe(20);
     expect(output.results).toHaveLength(1);
     expect(output.results[0]).toEqual({
@@ -65,6 +67,7 @@ describe('SearchCodeTool', () => {
     const tool = new SearchCodeTool(mock as unknown as QdrantService);
 
     const output = await tool.execute({
+      repo: 'acme-repo',
       query: 'snippet',
       topK: 1,
       vector: [0.2, 0.4],
@@ -88,6 +91,7 @@ describe('SearchCodeTool', () => {
     const tool = new SearchCodeTool(mock as unknown as QdrantService);
 
     const output = await tool.execute({
+      repo: 'acme-repo',
       query: 'without text',
       topK: 1,
       vector: [1],
@@ -102,6 +106,7 @@ describe('SearchCodeTool', () => {
 
     await expect(
       tool.execute({
+        repo: 'acme-repo',
         query: 'test',
         topK: 1,
         pathPrefix: '../src',
@@ -116,7 +121,20 @@ describe('SearchCodeTool', () => {
 
     await expect(
       tool.execute({
+        repo: 'acme-repo',
         query: 'abc',
+      }),
+    ).rejects.toBeInstanceOf(ToolInputError);
+  });
+
+  it('deve falhar sem repo', async () => {
+    const mock = new QdrantServiceMock([]);
+    const tool = new SearchCodeTool(mock as unknown as QdrantService);
+
+    await expect(
+      tool.execute({
+        query: 'abc',
+        vector: [0.1],
       }),
     ).rejects.toBeInstanceOf(ToolInputError);
   });
