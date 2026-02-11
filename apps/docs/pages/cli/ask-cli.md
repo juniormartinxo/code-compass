@@ -26,7 +26,7 @@ code-compass ask
 ### One-shot
 
 ```bash
-pnpm ask "onde fica o handler do search_code?"
+pnpm ask "onde fica o handler do search_code?" --repo code-compass
 ```
 
 ## Atalhos e comandos na TUI
@@ -58,9 +58,14 @@ Use `/open` ou a tecla numerica para abrir o trecho via `open_file`.
 - `--topk <n>`: numero de evidencias (default 10)
 - `--pathPrefix <prefix>`: filtro por prefixo de path
 - `--language <lang>`: filtro por linguagem/extensao (ex: `ts`, `tsx`, `.py`)
-- `--repo <name>`: reservado (nao suportado no MCP MVP)
+- `--repo <name>`: filtra por repositório (equivale a `scope.repo` no MCP)
 - `--debug`: habilita logs de debug
 - `--timeout-ms <ms>`: timeout por request
+
+### Escopo recomendado
+
+- Use `--repo <nome-do-repo>` no `ask` para reduzir ruído e evitar falha por ausência de escopo.
+- Para consultas multi-repo ou globais, use chamadas MCP diretas com `scope`.
 
 ## Configuracao via env
 
@@ -79,5 +84,9 @@ MCP_COMMAND="node apps/mcp-server/dist/main.js --transport stdio"
 ## Troubleshooting rapido
 
 - `Sem evidencia suficiente`: refine a pergunta ou use `--pathPrefix` e `--language`.
+- `Sem evidencia suficiente` mesmo com query conhecida:
+  - confira se `QDRANT_COLLECTION` no MCP aponta para a coleção indexada;
+  - rode reindexação para garantir `payload.repo` nos pontos antigos;
+  - valide que `--repo` usa o nome correto do diretório indexado.
 - `MCP server nao iniciado`: verifique se o build do MCP server existe em `apps/mcp-server/dist`.
 - `Erro ao gerar embedding`: confirme que o Ollama esta rodando e o modelo existe.
