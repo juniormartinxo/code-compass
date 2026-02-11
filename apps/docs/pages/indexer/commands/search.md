@@ -8,7 +8,7 @@ O comando `search` permite realizar **busca semântica** na collection de códig
 O comando:
 1. Gera um embedding da query usando o Ollama
 2. Busca os vetores mais similares no Qdrant
-3. Retorna os chunks mais relevantes com score de similaridade
+3. Retorna os chunks mais relevantes com score de similaridade e snippet contextual
 
 ## Uso Básico
 
@@ -40,10 +40,13 @@ O comando utiliza as mesmas variáveis de ambiente do `init` e `index`:
 | Variável | Default | Descrição |
 |----------|---------|-----------|
 | `QDRANT_URL` | `http://localhost:6333` | URL do servidor Qdrant |
+| `QDRANT_API_KEY` | - | API key (opcional) |
 | `QDRANT_COLLECTION_BASE` | `compass` | Base para nome da collection |
 | `QDRANT_COLLECTION` | - | Nome explícito da collection |
 
 > Dica operacional: para evitar mismatch entre indexação e consulta, prefira definir `QDRANT_COLLECTION` explicitamente.
+>
+> Se `QDRANT_API_KEY` estiver vazia (`QDRANT_API_KEY=`), o cliente não envia API key. Isso é útil em ambiente local com `http://` para evitar warnings de conexão insegura.
 
 ## Exemplos de Uso
 
@@ -124,6 +127,16 @@ O score retornado é a **similaridade de cosseno** (ou outra métrica configurad
 - `1.0` = idêntico
 - `0.0` = sem relação
 - Valores típicos para resultados relevantes: `0.7+`
+
+### Snippet e identificação do projeto
+
+No output textual do `search`, cada resultado é exibido com:
+
+- Cabeçalho no formato `[repo] path:start_line-end_line` quando o payload inclui `repo`
+- `snippet` com prioridade para `payload.text`
+- Fallback automático: se `payload.text` não existir, o CLI tenta reconstruir o trecho lendo o arquivo em `repo_root + path` usando `start_line`/`end_line`
+
+Se não for possível extrair trecho (ex.: arquivo não acessível), o output mantém `"(no text payload)"`.
 
 ### Filtros
 Os filtros são aplicados diretamente no Qdrant, permitindo refinar resultados sem recalcular embeddings:
