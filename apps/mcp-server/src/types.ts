@@ -1,4 +1,5 @@
 export interface SearchCodeInput {
+  repo: string;
   query: string;
   topK?: number;
   pathPrefix?: string;
@@ -6,6 +7,7 @@ export interface SearchCodeInput {
 }
 
 export interface AskCodeInput {
+  repo: string;
   query: string;
   topK?: number;
   pathPrefix?: string;
@@ -15,6 +17,7 @@ export interface AskCodeInput {
 }
 
 export interface OpenFileInput {
+  repo: string;
   path: string;
   startLine?: number;
   endLine?: number;
@@ -32,6 +35,7 @@ export interface SearchCodeResult {
 export interface SearchCodeOutput {
   results: SearchCodeResult[];
   meta: {
+    repo: string;
     topK: number;
     pathPrefix?: string;
     collection: string;
@@ -51,6 +55,7 @@ export interface AskCodeOutput {
   answer: string;
   evidences: SearchCodeResult[];
   meta: {
+    repo: string;
     topK: number;
     minScore: number;
     llmModel: string;
