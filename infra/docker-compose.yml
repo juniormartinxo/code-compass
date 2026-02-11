@@ -26,7 +26,7 @@ services:
         condition: service_healthy
     environment:
       QDRANT_URL: ${QDRANT_URL_DOCKER:-http://qdrant:6333}
-      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-code_chunks}
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-compass__3584__manutic_nomic_embed_code}
       QDRANT_DISTANCE: ${QDRANT_DISTANCE:-Cosine}
       REPO_ROOT: ${REPO_ROOT_DOCKER:-/workspace}
       REPO_ALLOWLIST: ${REPO_ALLOWLIST:-src,packages,apps,docs}
@@ -36,7 +36,7 @@ services:
       EMBEDDINGS_PROVIDER: ${EMBEDDINGS_PROVIDER:-openai}
       EMBEDDINGS_MODEL: ${EMBEDDINGS_MODEL:-text-embedding-3-large}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      INDEXER_RUN_MODULE: ${INDEXER_RUN_MODULE:-code_compass.index}
+      INDEXER_RUN_MODULE: ${INDEXER_RUN_MODULE:-indexer}
     volumes:
       - ../:/workspace
       - indexer_pip_cache:/root/.cache/pip
@@ -58,7 +58,14 @@ services:
           echo 'Erro: requirements.txt ou pyproject.toml não encontrado em /workspace/apps/indexer.';
           exit 1;
         fi;
-        python -m "$${INDEXER_RUN_MODULE}" "$${INDEXER_MODE:-full}";
+        if [ "$${INDEXER_MODE:-index}" = "incremental" ]; then
+          echo 'Aviso: incremental ainda não implementado no CLI; usando index completo.';
+          INDEXER_MODE=index;
+        fi;
+        if [ "$${INDEXER_MODE:-index}" = "full" ]; then
+          INDEXER_MODE=index;
+        fi;
+        PYTHONPATH=. python -m "$${INDEXER_RUN_MODULE}" "$${INDEXER_MODE:-index}";
 
 volumes:
   indexer_pip_cache:
