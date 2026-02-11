@@ -20,6 +20,15 @@ DEFAULT_QDRANT_DISTANCE = "COSINE"
 DEFAULT_QDRANT_UPSERT_BATCH = 64
 
 
+def _normalize_optional_string(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    return normalized
+
+
 @dataclass(frozen=True)
 class QdrantConfig:
     """Configuração do Qdrant."""
@@ -41,13 +50,31 @@ def load_qdrant_config(
     upsert_batch: int | None = None,
 ) -> QdrantConfig:
     """Carrega configuração do Qdrant a partir de args ou variáveis de ambiente."""
+    resolved_url = url if url is not None else os.getenv("QDRANT_URL")
+    resolved_api_key = api_key if api_key is not None else os.getenv("QDRANT_API_KEY")
+    resolved_collection_base = (
+        collection_base
+        if collection_base is not None
+        else os.getenv("QDRANT_COLLECTION_BASE")
+    )
+    resolved_collection = collection if collection is not None else os.getenv("QDRANT_COLLECTION")
+    resolved_distance = distance if distance is not None else os.getenv("QDRANT_DISTANCE")
+
+    normalized_url = _normalize_optional_string(resolved_url) or DEFAULT_QDRANT_URL
+    normalized_api_key = _normalize_optional_string(resolved_api_key)
+    normalized_collection_base = (
+        _normalize_optional_string(resolved_collection_base)
+        or DEFAULT_QDRANT_COLLECTION_BASE
+    )
+    normalized_collection = _normalize_optional_string(resolved_collection)
+    normalized_distance = _normalize_optional_string(resolved_distance) or DEFAULT_QDRANT_DISTANCE
+
     return QdrantConfig(
-        url=url or os.getenv("QDRANT_URL", DEFAULT_QDRANT_URL),
-        api_key=api_key or os.getenv("QDRANT_API_KEY"),
-        collection_base=collection_base
-        or os.getenv("QDRANT_COLLECTION_BASE", DEFAULT_QDRANT_COLLECTION_BASE),
-        collection=collection or os.getenv("QDRANT_COLLECTION"),
-        distance=distance or os.getenv("QDRANT_DISTANCE", DEFAULT_QDRANT_DISTANCE),
+        url=normalized_url,
+        api_key=normalized_api_key,
+        collection_base=normalized_collection_base,
+        collection=normalized_collection,
+        distance=normalized_distance,
         upsert_batch=upsert_batch
         or int(os.getenv("QDRANT_UPSERT_BATCH", str(DEFAULT_QDRANT_UPSERT_BATCH))),
     )
@@ -158,10 +185,11 @@ class QdrantStore:
     def client(self) -> QdrantClient:
         """Retorna cliente Qdrant (lazy init)."""
         if self._client is None:
-            self._client = QdrantClient(
-                url=self.config.url,
-                api_key=self.config.api_key,
-            )
+            client_kwargs: dict[str, Any] = {"url": self.config.url}
+            if self.config.api_key is not None:
+                client_kwargs["api_key"] = self.config.api_key
+
+            self._client = QdrantClient(**client_kwargs)
         return self._client
 
     @property
