@@ -20,12 +20,19 @@ Explore a documentação nas seções abaixo:
 - **[CLI](/cli/ask-cli)** - Interface de linha de comando
 - **[ADRs](/ADRs/ADR-01)** - Decisões arquiteturais
 
+## ⚠️ Pontos Operacionais Importantes
+
+- Defina `QDRANT_COLLECTION` explicitamente para manter indexador e MCP na mesma coleção.
+- No `ask`, informe escopo (`--repo` no CLI ou `scope` nas chamadas MCP diretas).
+- Use `make index-all` para reindexar múltiplos repositórios em `code-base/`.
+
 ## 🔧 MCP Integration
 
 Code Compass funciona como um **MCP Server** (Model Context Protocol):
 
 - **[MCP Antigravity](/mcp-antigravity)** - Configuração para Antigravity
 - **[MCP Client Quickstart](/mcp-client-quickstart)** - Guia rápido de configuração
+- **[MCP Server: Multi-repo & Scope](/mcp-server/multi-repo-routing)** - Contrato de `scope` e roteamento multi-repo
 
 ## 📚 Recursos
 
