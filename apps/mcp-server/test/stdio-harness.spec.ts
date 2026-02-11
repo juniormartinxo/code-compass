@@ -42,6 +42,7 @@ describe('MCP stdio harness', () => {
   const tempRoots: string[] = [];
 
   afterEach(async () => {
+    delete process.env.CODEBASE_ROOT;
     delete process.env.REPO_ROOT;
     delete process.env.MCP_QDRANT_MOCK_RESPONSE;
     delete process.env.QDRANT_COLLECTION;
@@ -79,6 +80,7 @@ describe('MCP stdio harness', () => {
           id: 'req-h1',
           tool: 'search_code',
           input: {
+            repo: 'acme-repo',
             query: 'bootstrap',
             topK: 10,
             pathPrefix: 'apps/mcp-server/',
@@ -104,6 +106,7 @@ describe('MCP stdio harness', () => {
 
     expect(Array.isArray(responseOutput.results)).toBe(true);
     expect(responseOutput.results[0].path).toBe('apps/mcp-server/src/main.ts');
+    expect(responseOutput.meta.repo).toBe('acme-repo');
     expect(responseOutput.meta.collection).toBe('code_chunks');
   });
 
@@ -112,6 +115,7 @@ describe('MCP stdio harness', () => {
     tempRoots.push(repoRoot);
     writeFileSync(join(repoRoot, 'safe.txt'), 'a\nb\nc\nd\n', 'utf8');
 
+    delete process.env.CODEBASE_ROOT;
     process.env.REPO_ROOT = repoRoot;
 
     const server = createServer();
@@ -129,6 +133,7 @@ describe('MCP stdio harness', () => {
           id: 'req-open-file-1',
           tool: 'open_file',
           input: {
+            repo: 'single-repo',
             path: 'safe.txt',
             startLine: 2,
             endLine: 3,
