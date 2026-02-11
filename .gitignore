@@ -96,3 +96,6 @@ temp/
 .codex/cache/
 
 code_compass.code-workspace
+
+code-base/**
+!code-base/.gitkeep
