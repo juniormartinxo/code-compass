@@ -46,7 +46,18 @@ describe('AskCodeTool', () => {
 
     await expect(
       tool.execute({
+        repo: 'acme-repo',
         query: '   ',
+      }),
+    ).rejects.toThrowError();
+  });
+
+  it('deve falhar quando repo não for informado', async () => {
+    const tool = createTool();
+
+    await expect(
+      tool.execute({
+        query: 'o que faz este arquivo?',
       }),
     ).rejects.toThrowError();
   });
