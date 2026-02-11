@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { ToolInputError } from './errors';
+import { validateRepoName } from './repo-root';
 import { QdrantService } from './qdrant.service';
 import { QdrantSearchHit, SearchCodeInput, SearchCodeOutput } from './types';
 
@@ -27,6 +28,7 @@ export class SearchCodeTool {
     const results = hits.slice(0, input.topK).map((hit) => this.mapHitToResult(hit));
 
     const meta: SearchCodeOutput['meta'] = {
+      repo: input.repo,
       topK: input.topK,
       collection: this.qdrantService.getCollectionName(),
     };
@@ -47,12 +49,14 @@ export class SearchCodeTool {
     }
 
     const input = rawInput as SearchCodeInput;
+    const repo = validateRepoName(input.repo);
     const query = this.validateQuery(input.query);
     const topK = this.clampTopK(input.topK);
     const pathPrefix = this.validatePathPrefix(input.pathPrefix);
     const vector = this.validateVector(input.vector);
 
     return {
+      repo,
       query,
       topK,
       pathPrefix,
