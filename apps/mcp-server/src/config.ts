@@ -6,7 +6,7 @@ export interface QdrantRuntimeConfig {
 }
 
 const DEFAULT_QDRANT_URL = 'http://localhost:6333';
-const DEFAULT_QDRANT_COLLECTION = 'code_chunks';
+const DEFAULT_QDRANT_COLLECTION = 'compass__3584__manutic_nomic_embed_code';
 const DEFAULT_QDRANT_TIMEOUT_MS = 5000;
 
 export function resolveQdrantConfig(env: NodeJS.ProcessEnv): QdrantRuntimeConfig {
