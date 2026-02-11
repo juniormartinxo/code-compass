@@ -411,9 +411,43 @@ export class McpStdioServer {
         inputSchema: {
           type: 'object',
           additionalProperties: false,
-          required: ['repo', 'query'],
+          required: ['query'],
+          anyOf: [{ required: ['repo'] }, { required: ['scope'] }],
           properties: {
             repo: { type: 'string' },
+            scope: {
+              oneOf: [
+                {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['type', 'repo'],
+                  properties: {
+                    type: { const: 'repo' },
+                    repo: { type: 'string' },
+                  },
+                },
+                {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['type', 'repos'],
+                  properties: {
+                    type: { const: 'repos' },
+                    repos: {
+                      type: 'array',
+                      items: { type: 'string' },
+                    },
+                  },
+                },
+                {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['type'],
+                  properties: {
+                    type: { const: 'all' },
+                  },
+                },
+              ],
+            },
             query: { type: 'string' },
             topK: { type: 'number' },
             pathPrefix: { type: 'string' },
@@ -443,9 +477,43 @@ export class McpStdioServer {
         inputSchema: {
           type: 'object',
           additionalProperties: false,
-          required: ['repo', 'query'],
+          required: ['query'],
+          anyOf: [{ required: ['repo'] }, { required: ['scope'] }],
           properties: {
             repo: { type: 'string' },
+            scope: {
+              oneOf: [
+                {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['type', 'repo'],
+                  properties: {
+                    type: { const: 'repo' },
+                    repo: { type: 'string' },
+                  },
+                },
+                {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['type', 'repos'],
+                  properties: {
+                    type: { const: 'repos' },
+                    repos: {
+                      type: 'array',
+                      items: { type: 'string' },
+                    },
+                  },
+                },
+                {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['type'],
+                  properties: {
+                    type: { const: 'all' },
+                  },
+                },
+              ],
+            },
             query: { type: 'string' },
             topK: { type: 'number' },
             pathPrefix: { type: 'string' },
