@@ -1,6 +1,10 @@
 SHELL := /bin/bash
 
+ifneq (,$(wildcard .env.local))
+ENV_FILE ?= .env.local
+else
 ENV_FILE ?= .env
+endif
 COMPOSE_FILE ?= infra/docker-compose.yml
 ifneq (,$(wildcard $(ENV_FILE)))
 COMPOSE_ENV_FLAG := --env-file $(ENV_FILE)
@@ -13,12 +17,12 @@ QDRANT_HEALTH_URL ?= http://localhost:$(QDRANT_HTTP_PORT)/readyz
 INDEXER_DIR ?= apps/indexer
 INDEXER_VENV ?= $(INDEXER_DIR)/.venv
 INDEXER_PYTHON ?= python3
-INDEXER_RUN_MODULE ?= code_compass.index
+INDEXER_RUN_MODULE ?= indexer
 
 MCP_SERVER_DIR ?= apps/mcp-server
 INDEXER_DOCKER_PROFILE ?= indexer
 
-.PHONY: help up down restart logs ps health wait-qdrant index index-full index-incremental index-docker index-docker-full index-docker-incremental setup-indexer ensure-indexer dev ensure-mcp-server
+.PHONY: help up down restart logs ps health wait-qdrant index index-full index-incremental index-docker index-docker-full index-docker-incremental setup-indexer ensure-indexer dev ensure-mcp-server index-all
 
 help:
 	@echo "Targets disponíveis:"
@@ -30,9 +34,10 @@ help:
 	@echo "  make health            -> verifica readiness do Qdrant"
 	@echo "  make index             -> indexação full (alias de index-full)"
 	@echo "  make index-full        -> roda indexação full no apps/indexer"
-	@echo "  make index-incremental -> roda indexação incremental"
+	@echo "  make index-incremental -> fallback para indexação full (incremental ainda não implementado no CLI)"
 	@echo "  make index-docker      -> indexação full via container (profile indexer)"
-	@echo "  make index-docker-incremental -> indexação incremental via container"
+	@echo "  make index-docker-incremental -> fallback para indexação full via container"
+	@echo "  make index-all         -> indexa todos os repos de code-base/"
 	@echo "  make dev               -> sobe MCP server em modo dev"
 
 up:
@@ -70,15 +75,17 @@ index: index-full
 index-docker: index-docker-full
 
 index-full: ensure-indexer setup-indexer wait-qdrant
-	cd $(INDEXER_DIR) && source .venv/bin/activate && python -m $(INDEXER_RUN_MODULE) full
+	cd $(INDEXER_DIR) && source .venv/bin/activate && PYTHONPATH=. python -m $(INDEXER_RUN_MODULE) index
 
 index-incremental: ensure-indexer setup-indexer wait-qdrant
-	cd $(INDEXER_DIR) && source .venv/bin/activate && python -m $(INDEXER_RUN_MODULE) incremental
+	@echo "Aviso: CLI atual não possui modo incremental dedicado; executando index completo."
+	cd $(INDEXER_DIR) && source .venv/bin/activate && PYTHONPATH=. python -m $(INDEXER_RUN_MODULE) index
 
 index-docker-full: wait-qdrant
 	INDEXER_MODE=full $(COMPOSE) --profile $(INDEXER_DOCKER_PROFILE) run --rm indexer
 
 index-docker-incremental: wait-qdrant
+	@echo "Aviso: modo incremental ainda não implementado no container; executando index completo."
 	INDEXER_MODE=incremental $(COMPOSE) --profile $(INDEXER_DOCKER_PROFILE) run --rm indexer
 
 setup-indexer: ensure-indexer
@@ -101,6 +108,9 @@ ensure-indexer:
 		echo "Crie o indexer em apps/indexer ou ajuste INDEXER_DIR."; \
 		exit 1; \
 	fi
+
+index-all: ensure-indexer setup-indexer wait-qdrant
+	@./scripts/index-all.sh
 
 dev: ensure-mcp-server
 	cd $(MCP_SERVER_DIR) && npm install && npm run dev
