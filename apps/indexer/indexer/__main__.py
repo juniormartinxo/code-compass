@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 from time import perf_counter
 
-from .chunk import chunk_file
+from .chunk import chunk_file, read_text
 from .config import ChunkConfig, ScanConfig, load_chunk_config, load_scan_config
 from .env import load_env_files
 from .embedder import EmbedderError, OllamaEmbedder, load_embedder_config
@@ -68,11 +68,132 @@ def _normalize_snippet(text: str, max_chars: int = SEARCH_SNIPPET_MAX_CHARS) -> 
     return f"{normalized[: max_chars - 3].rstrip()}..."
 
 
+def _coerce_positive_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+
+    if isinstance(value, int):
+        return value if value > 0 else None
+
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return None
+        try:
+            parsed = int(raw)
+        except ValueError:
+            return None
+        return parsed if parsed > 0 else None
+
+    return None
+
+
+def _resolve_search_line_range(payload: dict[str, object]) -> tuple[int, int] | None:
+    start_line = _coerce_positive_int(payload.get("start_line", payload.get("startLine")))
+    end_line = _coerce_positive_int(payload.get("end_line", payload.get("endLine")))
+
+    if start_line is None or end_line is None:
+        return None
+    if end_line < start_line:
+        return None
+
+    return start_line, end_line
+
+
+def _load_result_file_lines(
+    *,
+    payload: dict[str, object],
+    line_cache: dict[Path, list[str]] | None = None,
+) -> list[str] | None:
+    path_value = payload.get("path")
+    repo_root_value = payload.get("repo_root", payload.get("repoRoot"))
+
+    if not isinstance(path_value, str) or not path_value.strip():
+        return None
+    if not isinstance(repo_root_value, str) or not repo_root_value.strip():
+        return None
+
+    path = Path(path_value)
+
+    try:
+        repo_root = Path(repo_root_value).expanduser().resolve()
+    except OSError:
+        return None
+
+    candidate = path if path.is_absolute() else repo_root / path
+
+    try:
+        resolved_path = candidate.resolve()
+    except OSError:
+        return None
+
+    try:
+        resolved_path.relative_to(repo_root)
+    except ValueError:
+        return None
+
+    if not resolved_path.is_file():
+        return None
+
+    if line_cache is not None and resolved_path in line_cache:
+        return line_cache[resolved_path]
+
+    try:
+        text, _ = read_text(resolved_path)
+    except (OSError, UnicodeDecodeError):
+        return None
+
+    lines = text.splitlines()
+    if line_cache is not None:
+        line_cache[resolved_path] = lines
+    return lines
+
+
+def _resolve_snippet_from_file(
+    *,
+    payload: dict[str, object],
+    line_cache: dict[Path, list[str]] | None = None,
+) -> str | None:
+    line_range = _resolve_search_line_range(payload)
+    if line_range is None:
+        return None
+
+    lines = _load_result_file_lines(payload=payload, line_cache=line_cache)
+    if lines is None:
+        return None
+
+    start_line, end_line = line_range
+    if start_line > len(lines):
+        return None
+
+    start_index = max(start_line - 1, 0)
+    end_index = min(end_line, len(lines))
+    if end_index <= start_index:
+        return None
+
+    snippet = "\n".join(lines[start_index:end_index]).strip()
+    return snippet or None
+
+
+def _resolve_search_snippet(
+    *,
+    payload: dict[str, object],
+    line_cache: dict[Path, list[str]] | None = None,
+) -> str | None:
+    snippet_raw = payload.get("text")
+    if isinstance(snippet_raw, str) and snippet_raw.strip():
+        return snippet_raw
+
+    return _resolve_snippet_from_file(payload=payload, line_cache=line_cache)
+
+
 def _build_search_header(payload: dict[str, object]) -> str:
+    repo = payload.get("repo")
+    repo_prefix = f"[{repo}] " if isinstance(repo, str) and repo.strip() else ""
     path = payload.get("path", "?")
     start_line = payload.get("start_line", payload.get("startLine", "?"))
     end_line = payload.get("end_line", payload.get("endLine", "?"))
-    return f"{path}:{start_line}-{end_line}"
+    return f"{repo_prefix}{path}:{start_line}-{end_line}"
 
 
 def _format_search_result_block(
@@ -81,8 +202,9 @@ def _format_search_result_block(
     score: float,
     payload: dict[str, object],
     vector: object | None = None,
+    snippet_override: str | None = None,
 ) -> str:
-    snippet_raw = payload.get("text")
+    snippet_raw = snippet_override if snippet_override is not None else payload.get("text")
     snippet = "(no text payload)"
     if isinstance(snippet_raw, str) and snippet_raw.strip():
         snippet = _normalize_snippet(snippet_raw).replace('"', "'")
@@ -719,16 +841,21 @@ def _search_command(args: argparse.Namespace) -> int:
             print(f"Resultados: {len(results)}")
             print()
 
+            line_cache: dict[Path, list[str]] = {}
+
             for i, r in enumerate(results, 1):
                 payload = r.get("payload", {})
                 if not isinstance(payload, dict):
                     payload = {}
+
+                snippet = _resolve_search_snippet(payload=payload, line_cache=line_cache)
 
                 block = _format_search_result_block(
                     index=i,
                     score=float(r.get("score", 0.0)),
                     payload=payload,
                     vector=r.get("vector") if args.with_vector else None,
+                    snippet_override=snippet,
                 )
                 print(block)
                 print()
