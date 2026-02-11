@@ -4,6 +4,7 @@ import axios from 'axios';
 import { OpenFileTool } from './open-file.tool';
 import { SearchCodeTool } from './search-code.tool';
 import { ToolInputError } from './errors';
+import { validateRepoName } from './repo-root';
 import { AskCodeInput, AskCodeOutput, SearchCodeResult } from './types';
 
 const DEFAULT_TOP_K = 5;
@@ -32,6 +33,7 @@ const LANGUAGE_EXTENSIONS: Record<string, string[]> = {
 };
 
 type ValidatedAskInput = {
+  repo: string;
   query: string;
   topK: number;
   pathPrefix: string;
@@ -53,6 +55,7 @@ export class AskCodeTool {
 
     const vector = await this.embedQuestion(input.query);
     const searchOutput = await this.searchCodeTool.execute({
+      repo: input.repo,
       query: input.query,
       topK: input.topK,
       pathPrefix: input.pathPrefix,
@@ -64,7 +67,7 @@ export class AskCodeTool {
       .filter((result) => result.score >= input.minScore)
       .slice(0, input.topK);
 
-    const enriched = await this.enrichEvidences(ranked);
+    const enriched = await this.enrichEvidences(input.repo, ranked);
 
     if (enriched.length === 0) {
       return {
@@ -74,6 +77,7 @@ export class AskCodeTool {
           topK: input.topK,
           minScore: input.minScore,
           llmModel: input.llmModel,
+          repo: input.repo,
           collection: searchOutput.meta.collection,
           totalMatches: searchOutput.results.length,
           contextsUsed: 0,
@@ -94,6 +98,7 @@ export class AskCodeTool {
         topK: input.topK,
         minScore: input.minScore,
         llmModel: input.llmModel,
+        repo: input.repo,
         collection: searchOutput.meta.collection,
         totalMatches: searchOutput.results.length,
         contextsUsed: enriched.length,
@@ -110,6 +115,7 @@ export class AskCodeTool {
     }
 
     const input = rawInput as AskCodeInput;
+    const repo = validateRepoName(input.repo);
     const query = this.validateQuery(input.query);
     const topK = this.clampTopK(input.topK);
     const pathPrefix = this.validatePathPrefix(input.pathPrefix);
@@ -118,6 +124,7 @@ export class AskCodeTool {
     const llmModel = this.validateModel(input.llmModel);
 
     return {
+      repo,
       query,
       topK,
       pathPrefix,
@@ -232,7 +239,7 @@ export class AskCodeTool {
     return mapped.some((ext) => lowerPath.endsWith(ext));
   }
 
-  private async enrichEvidences(evidences: SearchCodeResult[]): Promise<SearchCodeResult[]> {
+  private async enrichEvidences(repo: string, evidences: SearchCodeResult[]): Promise<SearchCodeResult[]> {
     const enriched: SearchCodeResult[] = [];
 
     for (const evidence of evidences) {
@@ -241,6 +248,7 @@ export class AskCodeTool {
 
       try {
         const file = await this.openFileTool.execute({
+          repo,
           path: evidence.path,
           startLine,
           endLine,
