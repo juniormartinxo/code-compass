@@ -24,7 +24,7 @@ Cada linha em `stdin` é um request JSON:
   "id": "req-1",
   "tool": "search_code",
   "input": {
-    "repo": "acme-monorepo",
+    "scope": { "type": "repo", "repo": "acme-monorepo" },
     "query": "find qdrant",
     "topK": 10,
     "pathPrefix": "apps/indexer/",
@@ -42,6 +42,7 @@ Resposta de sucesso (`stdout`, uma linha):
   "output": {
     "results": [
       {
+        "repo": "acme-monorepo",
         "score": 0.912,
         "path": "apps/indexer/indexer/qdrant_store.py",
         "startLine": 120,
@@ -50,10 +51,11 @@ Resposta de sucesso (`stdout`, uma linha):
       }
     ],
     "meta": {
+      "scope": { "type": "repo", "repos": ["acme-monorepo"] },
       "repo": "acme-monorepo",
       "topK": 10,
       "pathPrefix": "apps/indexer/",
-      "collection": "code_chunks"
+      "collection": "compass__3584__manutic_nomic_embed_code"
     }
   }
 }
@@ -95,14 +97,18 @@ Resposta de erro:
 
 - Bloqueia path vazio, `\0`, path absoluto e `..`.
 - Resolve `realpath` do root e do arquivo para impedir escape por symlink.
-- Bloqueia acesso fora de `REPO_ROOT` com erro `FORBIDDEN`.
+- Bloqueia acesso fora de `<CODEBASE_ROOT>/<repo>` (ou `REPO_ROOT` em modo compat) com erro `FORBIDDEN`.
 - Bloqueia arquivo binário (byte nulo ou decode UTF-8 inválido) com `UNSUPPORTED_MEDIA`.
 
 ## Tool `search_code`
 
 ### Input
 
-- `repo` (string, obrigatório)
+- `scope` (opcional; recomendado):
+  - `{ type: "repo", repo: string }`
+  - `{ type: "repos", repos: string[] }`
+  - `{ type: "all" }` (exige `ALLOW_GLOBAL_SCOPE=true`)
+- `repo` (string, compatibilidade; se `scope` ausente, equivale a `scope: { type: "repo", repo }`)
 - `query` (string, obrigatório, `trim`, 1..500)
 - `topK` (number opcional, default `10`, clamp `1..20`)
 - `pathPrefix` (string opcional, `trim`, max 200, bloqueia `\0` e `..`)
@@ -111,12 +117,13 @@ Resposta de erro:
 ### Output
 
 - `results` (máx 20):
+  - `repo` (string)
   - `score` (number)
   - `path` (string)
   - `startLine` (`number | null`)
   - `endLine` (`number | null`)
   - `snippet` (string, normalizado e truncado para até 300 chars)
-- `meta`: `{ repo, topK, pathPrefix?, collection }`
+- `meta`: `{ scope, repo?, topK, pathPrefix?, collection }`
 
 ### Regras importantes
 
@@ -130,7 +137,11 @@ Executa o fluxo RAG completo no MCP: embedding da pergunta, busca no Qdrant, enr
 
 ### Input
 
-- `repo` (string, obrigatório)
+- `scope` (opcional; recomendado):
+  - `{ type: "repo", repo: string }`
+  - `{ type: "repos", repos: string[] }`
+  - `{ type: "all" }` (exige `ALLOW_GLOBAL_SCOPE=true`)
+- `repo` (string, compatibilidade; se `scope` ausente, equivale a `scope: { type: "repo", repo }`)
 - `query` (string, obrigatório)
 - `topK` (number opcional, default `5`, clamp `1..20`)
 - `pathPrefix` (string opcional)
@@ -143,7 +154,7 @@ Executa o fluxo RAG completo no MCP: embedding da pergunta, busca no Qdrant, enr
 - `answer` (string)
 - `evidences` (array de evidências no mesmo formato do `search_code`)
 - `meta`:
-  - `repo`, `topK`, `minScore`, `llmModel`
+  - `scope`, `repo?`, `topK`, `minScore`, `llmModel`
   - `collection`
   - `totalMatches` e `contextsUsed`
   - `elapsedMs`
@@ -158,7 +169,7 @@ Executa o fluxo RAG completo no MCP: embedding da pergunta, busca no Qdrant, enr
 ## Qdrant (env vars)
 
 - `QDRANT_URL` (default: `http://localhost:6333`)
-- `QDRANT_COLLECTION` (default: `code_chunks`; se ausente, usa `QDRANT_COLLECTION_BASE` como fallback)
+- `QDRANT_COLLECTION` (default: `compass__3584__manutic_nomic_embed_code`)
 - `QDRANT_API_KEY` (opcional)
 
 ## CODEBASE_ROOT e REPO_ROOT (env vars)
@@ -167,6 +178,12 @@ Executa o fluxo RAG completo no MCP: embedding da pergunta, busca no Qdrant, enr
   - quando definido, `repo` é obrigatório e o `open_file` só lê dentro de `<CODEBASE_ROOT>/<repo>`.
   - validação de segurança de repo: bloqueia `\0`, `..` e separadores (`/` e `\\`).
 - `REPO_ROOT` (compat, usado quando `CODEBASE_ROOT` não está definido): raiz single-repo para tools de filesystem.
+
+## ALLOW_GLOBAL_SCOPE (env var)
+
+- `ALLOW_GLOBAL_SCOPE` (opcional, default `false`):
+  - quando `true`, habilita `scope: { type: "all" }` em `search_code`/`ask_code`.
+  - quando ausente ou diferente de `true`, `scope: { type: "all" }` retorna `FORBIDDEN`.
 
 - Fallback quando ausente: inferência por subida de diretórios buscando `pnpm-workspace.yaml`, `.git/` ou `package.json` com `workspaces`.
 
@@ -179,7 +196,7 @@ No bootstrap, o MCP server tenta carregar automaticamente (nesta ordem):
 3. `.env.local` na raiz do monorepo
 4. `.env` na raiz do monorepo
 
-Isso permite usar `QDRANT_COLLECTION=golyzer_3584_manutic_nomic_embed_code` em `.env.local` sem precisar exportar no comando.
+Isso permite usar `QDRANT_COLLECTION=goapice_3584_manutic_nomic_embed_code` em `.env.local` sem precisar exportar no comando.
 
 ## Testes
 
