@@ -21,7 +21,7 @@ python -m indexer search "sua query aqui"
 | Opção | Default | Descrição |
 |-------|---------|-----------|
 | `query` | - | Texto da busca (obrigatório) |
-| `-k`, `--top-k` | `5` | Número de resultados a retornar |
+| `-k`, `--top-k`, `--topk` | `10` | Número de resultados a retornar |
 | `--ext` | - | Filtrar por extensão (ex: `.py`) |
 | `--language` | - | Filtrar por linguagem (ex: `python`) |
 | `--json` | `false` | Output em formato JSON |
@@ -42,6 +42,8 @@ O comando utiliza as mesmas variáveis de ambiente do `init` e `index`:
 | `QDRANT_URL` | `http://localhost:6333` | URL do servidor Qdrant |
 | `QDRANT_COLLECTION_BASE` | `compass` | Base para nome da collection |
 | `QDRANT_COLLECTION` | - | Nome explícito da collection |
+
+> Dica operacional: para evitar mismatch entre indexação e consulta, prefira definir `QDRANT_COLLECTION` explicitamente.
 
 ## Exemplos de Uso
 
