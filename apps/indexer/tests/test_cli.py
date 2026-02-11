@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import subprocess
 import sys
@@ -166,6 +167,70 @@ class AskCliTests(unittest.TestCase):
 
         self.assertEqual(completed.returncode, 1)
         self.assertIn("Erro: pergunta vazia.", completed.stderr)
+
+    def test_cli_ask_requires_repo_or_scope(self) -> None:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "indexer",
+                "ask",
+                "qual repo?",
+            ],
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 1)
+        self.assertIn("informe --repo", completed.stderr)
+
+
+class AskScopePayloadTests(unittest.TestCase):
+    def _ask_args(self, **kwargs: object) -> argparse.Namespace:
+        from indexer.__main__ import _build_parser
+
+        parser = _build_parser()
+        base = ["ask", "pergunta"]
+        for key, value in kwargs.items():
+            if isinstance(value, bool):
+                if value:
+                    base.append(f"--{key.replace('_', '-')}")
+            else:
+                base.extend([f"--{key.replace('_', '-')}", str(value)])
+        return parser.parse_args(base)
+
+    def test_scope_payload_uses_repo_compat(self) -> None:
+        from indexer.__main__ import _build_ask_scope_payload
+
+        args = self._ask_args(repo="acme-portal")
+        payload = _build_ask_scope_payload(args)
+        self.assertEqual(payload, {"repo": "acme-portal"})
+
+    def test_scope_payload_uses_scope_repo(self) -> None:
+        from indexer.__main__ import _build_ask_scope_payload
+
+        args = self._ask_args(scope_repo="shared-lib")
+        payload = _build_ask_scope_payload(args)
+        self.assertEqual(payload, {"scope": {"type": "repo", "repo": "shared-lib"}})
+
+    def test_scope_payload_uses_scope_repos(self) -> None:
+        from indexer.__main__ import _build_ask_scope_payload
+
+        args = self._ask_args(scope_repos="repo-a, repo-b")
+        payload = _build_ask_scope_payload(args)
+        self.assertEqual(
+            payload,
+            {"scope": {"type": "repos", "repos": ["repo-a", "repo-b"]}},
+        )
+
+    def test_scope_payload_uses_scope_all(self) -> None:
+        from indexer.__main__ import _build_ask_scope_payload
+
+        args = self._ask_args(scope_all=True)
+        payload = _build_ask_scope_payload(args)
+        self.assertEqual(payload, {"scope": {"type": "all"}})
 
 
 if __name__ == "__main__":
