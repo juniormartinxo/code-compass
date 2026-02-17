@@ -17,7 +17,8 @@ Explore a documentação nas seções abaixo:
 - **[Arquitetura](/ARCHITECTURE)** - Visão detalhada da arquitetura do sistema
 - **[Estrutura](/STRUCTURE)** - Organização do projeto
 - **[Indexer](/indexer/architecture-rag)** - Sistema de indexação e RAG
-- **[CLI](/cli/ask-cli)** - Interface de linha de comando
+- **[CLI](/cli/ask-cli)** - Nova CLI em Python (ask/chat)
+- **[ACP Agent](/acp-agent)** - Agente ACP Python (stdio)
 - **[ADRs](/ADRs/ADR-01)** - Decisões arquiteturais
 
 ## ⚠️ Pontos Operacionais Importantes
@@ -25,6 +26,7 @@ Explore a documentação nas seções abaixo:
 - Defina `QDRANT_COLLECTION` explicitamente para manter indexador e MCP na mesma coleção.
 - No `ask`, informe escopo (`--repo` no CLI ou `scope` nas chamadas MCP diretas).
 - Use `make index-all` para reindexar múltiplos repositórios em `code-base/`.
+- Para rodar testes Python em todas as apps, use `make py:test`.
 
 ## 🔧 MCP Integration
 
