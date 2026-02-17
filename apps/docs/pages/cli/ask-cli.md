@@ -1,22 +1,40 @@
-# CLI - comando ask (Python)
+# CLI - nova CLI (Python)
 
-Este guia descreve o comando `ask` da nova CLI em Python usando Toad via ACP.
+Este guia descreve a **nova CLI em Python** (Typer + Rich) integrada ao Toad via ACP.
 
 ## Pre-requisitos
 
-- Python 3.14+
-- Dependência `acp`
+- Python 3.12+
+- Dependência `agent-client-protocol` (SDK ACP)
+- Para `chat`: `batrachian-toad` (requer Python 3.14+)
 
-## Como rodar
+## Instalação
 
 ```bash
 cd apps/cli
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .
-code-compass ask "onde fica o handler do search_code?" --repo code-compass
+```
 
-# Abrir a UI do Toad
+Alternativa via Makefile:
+
+```bash
+make py:setup
+apps/cli/.venv/bin/code-compass ask "onde fica o handler do search_code?" --repo code-compass
+```
+
+## Comandos
+
+### `ask`
+
+```bash
+code-compass ask "onde fica o handler do search_code?" --repo code-compass
+```
+
+### `chat`
+
+```bash
 code-compass chat
 ```
 
@@ -30,6 +48,11 @@ code-compass chat
 - `--timeout-ms <ms>`: timeout por request
 - `--debug`: habilita logs
 
+## Fluxo de execução
+
+- `ask` usa ACP para conversar com o Toad e retornar a resposta.
+- `chat` abre a TUI do Toad usando `TOAD_COMMAND`/`TOAD_ARGS` ou `python -m toad`.
+
 ## Configuração via env
 
 - `LLM_MODEL`
@@ -37,3 +60,7 @@ code-compass chat
 - `TOAD_PROFILE`
 - `TOAD_COMMAND` (binário do toad, opcional)
 - `TOAD_ARGS` (args extras para o toad)
+
+## Observações
+
+- O comando `chat` exige `batrachian-toad` instalado em Python 3.14+ ou `TOAD_COMMAND` apontando para um binário compatível.
