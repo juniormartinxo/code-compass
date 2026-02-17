@@ -70,6 +70,13 @@ try {
 ROOT="$(resolve_repo_root)"
 MCP_SERVER_DIR="$ROOT/apps/mcp-server"
 MCP_SERVER_PACKAGE_JSON="$MCP_SERVER_DIR/package.json"
+ENV_FILE=""
+
+if [[ -f "$ROOT/.env.local" ]]; then
+  ENV_FILE="$ROOT/.env.local"
+elif [[ -f "$ROOT/.env" ]]; then
+  ENV_FILE="$ROOT/.env"
+fi
 
 if ! command -v pnpm >/dev/null 2>&1; then
   log "Error: pnpm not found in PATH."
@@ -85,6 +92,19 @@ fi
 export REPO_ROOT="${REPO_ROOT:-$ROOT}"
 export QDRANT_URL="${QDRANT_URL:-http://localhost:6333}"
 export QDRANT_COLLECTION="${QDRANT_COLLECTION:-compass__3584__manutic_nomic_embed_code}"
+
+# Carrega .env.local/.env se existir (apenas linhas KEY=VALUE)
+if [[ -n "$ENV_FILE" ]]; then
+  log "Loading env file: $ENV_FILE"
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+fi
+
+if [[ -n "${LLM_MODEL:-}" ]]; then
+  log "LLM_MODEL=$LLM_MODEL"
+fi
 
 START_SCRIPT="mcp:stdio"
 
