@@ -917,15 +917,25 @@ def _call_mcp_ask_code(
         input_payload["language"] = ext
     input_payload.update(scope_payload)
 
-    request = {
-        "id": "indexer-ask",
-        "tool": "ask_code",
-        "input": input_payload,
+    init_req = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
+    init_notif = {"jsonrpc": "2.0", "method": "initialized"}
+    call_req = {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/call",
+        "params": {"name": "ask_code", "arguments": input_payload},
     }
 
     process = subprocess.run(
         command,
-        input=f"{json.dumps(request, ensure_ascii=False)}\n",
+        input="\n".join(
+            (
+                json.dumps(init_req, ensure_ascii=False),
+                json.dumps(init_notif, ensure_ascii=False),
+                json.dumps(call_req, ensure_ascii=False),
+                "",
+            )
+        ),
         capture_output=True,
         text=True,
         timeout=timeout_sec,
@@ -940,15 +950,28 @@ def _call_mcp_ask_code(
             f"MCP ask_code não retornou resposta (exit={process.returncode}): {stderr_message}"
         )
 
-    try:
-        parsed = json.loads(stdout_lines[0])
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"Resposta do MCP inválida: {stdout_lines[0]}") from exc
+    parsed = None
+    parsed_error: Exception | None = None
+    for line in stdout_lines:
+        try:
+            candidate = json.loads(line)
+        except json.JSONDecodeError as exc:
+            parsed_error = exc
+            continue
 
-    if not isinstance(parsed, dict):
-        raise RuntimeError("Resposta do MCP inválida: esperado objeto")
+        if not isinstance(candidate, dict):
+            continue
 
-    if parsed.get("ok") is not True:
+        if candidate.get("id") == 2:
+            parsed = candidate
+            break
+
+    if parsed is None:
+        if parsed_error:
+            raise RuntimeError("Resposta do MCP inválida") from parsed_error
+        raise RuntimeError("Resposta do MCP inválida: resposta tools/call ausente")
+
+    if "error" in parsed:
         error = parsed.get("error")
         if isinstance(error, dict):
             message = str(error.get("message", "Erro MCP"))
@@ -956,7 +979,27 @@ def _call_mcp_ask_code(
             message = "Erro MCP"
         raise RuntimeError(message)
 
-    output = parsed.get("output")
+    result = parsed.get("result")
+    if not isinstance(result, dict):
+        raise RuntimeError("Resposta do MCP sem result válido")
+
+    content = result.get("content")
+    if not isinstance(content, list) or not content:
+        raise RuntimeError("Resposta do MCP sem conteúdo")
+
+    first = content[0]
+    if not isinstance(first, dict):
+        raise RuntimeError("Resposta do MCP sem bloco de conteúdo válido")
+
+    content_text = first.get("text")
+    if not isinstance(content_text, str):
+        raise RuntimeError("Resposta do MCP sem texto válido")
+
+    try:
+        output = json.loads(content_text)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("Resposta do MCP sem JSON válido") from exc
+
     if not isinstance(output, dict):
         raise RuntimeError("Resposta do MCP sem output válido")
 
