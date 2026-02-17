@@ -29,6 +29,9 @@ def ask(
     language: Optional[str] = typer.Option(None, "--language", help="Filtro por linguagem"),
     top_k: int = typer.Option(10, "--topk", help="Número de evidências"),
     min_score: float = typer.Option(0.6, "--min-score", help="Score mínimo"),
+    grounded: bool = typer.Option(False, "--grounded", help="Restringe resposta ao contexto"),
+    show_meta: bool = typer.Option(False, "--show-meta", help="Exibe metadados do MCP"),
+    show_context: bool = typer.Option(False, "--show-context", help="Exibe evidências usadas"),
     timeout_ms: int = typer.Option(120_000, "--timeout-ms", help="Timeout em ms"),
     debug: bool = typer.Option(False, "--debug", help="Debug"),
 ):
@@ -39,13 +42,25 @@ def ask(
         top_k=top_k,
         min_score=min_score,
         timeout_ms=timeout_ms,
-        llm_model=os.getenv("LLM_MODEL", "gpt-oss:latest"),
+        llm_model=os.getenv("LLM_MODEL"),
         debug=debug,
         mcp_command=os.getenv("MCP_COMMAND"),
         toad_profile=os.getenv("TOAD_PROFILE"),
     )
 
-    client = ToadAcpClient(profile=config.toad_profile, debug=config.debug)
+    client = ToadAcpClient(
+        profile=config.toad_profile,
+        debug=config.debug,
+        repo=config.repo,
+        path_prefix=config.path_prefix,
+        language=config.language,
+        top_k=config.top_k,
+        min_score=config.min_score,
+        llm_model=config.llm_model,
+        grounded=grounded,
+        show_meta=show_meta,
+        show_context=show_context,
+    )
 
     console.print(Panel.fit("Enviando pergunta ao Toad (ACP)...", style="cyan"))
 
@@ -55,7 +70,22 @@ def ask(
         console.print(Panel.fit(str(exc), style="red"))
         raise typer.Exit(code=1)
 
-    console.print(response)
+    if client.chunks:
+        console.print("\n".join(client.chunks))
+    else:
+        console.print(response)
+
+    if show_meta or show_context:
+        passthrough = response.get("_passthrough") if isinstance(response, dict) else None
+        if isinstance(passthrough, dict):
+            if show_meta:
+                meta = passthrough.get("meta")
+                if isinstance(meta, dict):
+                    console.print(meta)
+            if show_context:
+                evidences = passthrough.get("evidences")
+                if isinstance(evidences, list):
+                    console.print(evidences)
 
 
 @app.command()
