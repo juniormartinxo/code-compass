@@ -77,3 +77,5 @@ disponível, ele injeta `toad acp <agent-cmd>` automaticamente.
 ## Observações
 
 - O comando `chat` exige `batrachian-toad` instalado em Python 3.14+ ou `TOAD_COMMAND` apontando para um binário compatível.
+- Dentro do chat, use `/repo <nome>` para trocar o repositório na sessão (ex.: `/repo golyzer`).
+- Dentro do chat, use `/model <nome>` para trocar o modelo na sessão (use `/model` para ver o atual e `/model reset` para voltar ao default).
