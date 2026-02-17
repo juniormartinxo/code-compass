@@ -22,7 +22,7 @@ INDEXER_RUN_MODULE ?= indexer
 MCP_SERVER_DIR ?= apps/mcp-server
 INDEXER_DOCKER_PROFILE ?= indexer
 
-.PHONY: help up down restart logs ps health wait-qdrant index index-full index-incremental index-docker index-docker-full index-docker-incremental setup-indexer ensure-indexer dev ensure-mcp-server index-all py:test py:lint py:typecheck py:setup acp:setup cli:setup
+.PHONY: help up down restart logs ps health wait-qdrant index index-full index-incremental index-docker index-docker-full index-docker-incremental setup-indexer ensure-indexer dev ensure-mcp-server index-all py-test py-lint py-typecheck py-setup acp-setup cli-setup
 
 help:
 	@echo "Targets disponíveis:"
@@ -39,10 +39,10 @@ help:
 	@echo "  make index-docker-incremental -> fallback para indexação full via container"
 	@echo "  make index-all         -> indexa todos os repos de code-base/"
 	@echo "  make dev               -> sobe MCP server em modo dev"
-	@echo "  make py:setup          -> instala deps Python (indexer/cli/acp)"
-	@echo "  make py:test           -> roda pytest em apps Python"
-	@echo "  make py:lint           -> roda lint Python (ruff)"
-	@echo "  make py:typecheck      -> roda typecheck Python (mypy/pyright)"
+	@echo "  make py-setup          -> instala deps Python (indexer/cli/acp)"
+	@echo "  make py-test           -> roda pytest em apps Python"
+	@echo "  make py-lint           -> roda lint Python (ruff)"
+	@echo "  make py-typecheck      -> roda typecheck Python (mypy/pyright)"
 
 up:
 	$(COMPOSE) up -d qdrant
@@ -126,9 +126,9 @@ ensure-mcp-server:
 		exit 1; \
 	fi
 
-py:setup: setup-indexer cli:setup acp:setup
+py-setup: setup-indexer cli-setup acp-setup
 
-acp:setup:
+acp-setup:
 	@if [ -d "apps/acp" ]; then \
 		if [ ! -d "apps/acp/.venv" ]; then \
 			echo "Criando virtualenv do ACP em apps/acp/.venv..."; \
@@ -144,7 +144,7 @@ acp:setup:
 		echo "Aviso: apps/acp não encontrado; pulando."; \
 	fi
 
-cli:setup:
+cli-setup:
 	@if [ -d "apps/cli" ]; then \
 		if [ ! -d "apps/cli/.venv" ]; then \
 			echo "Criando virtualenv do CLI em apps/cli/.venv..."; \
@@ -160,8 +160,8 @@ cli:setup:
 		echo "Aviso: apps/cli não encontrado; pulando."; \
 	fi
 
-py:test:
-	@$(MAKE) py:setup
+py-test:
+	@$(MAKE) py-setup
 	@for dir in apps/indexer apps/cli apps/acp; do \
 		if [ -d "$$dir" ]; then \
 			if [ -x "$$dir/.venv/bin/python" ]; then \
@@ -172,12 +172,12 @@ py:test:
 					echo "Aviso: $$dir não possui pasta tests; pulando."; \
 				fi; \
 			else \
-				echo "Aviso: $$dir sem venv; rode make py:setup."; \
+				echo "Aviso: $$dir sem venv; rode make py-setup."; \
 			fi; \
 		fi; \
 	done
 
-py:lint:
+py-lint:
 	@for dir in apps/indexer apps/cli apps/acp; do \
 		if [ -d "$$dir" ]; then \
 			if [ -x "$$dir/.venv/bin/python" ] && [ -x "$$dir/.venv/bin/ruff" ]; then \
@@ -189,7 +189,7 @@ py:lint:
 		fi; \
 	done
 
-py:typecheck:
+py-typecheck:
 	@for dir in apps/indexer apps/cli apps/acp; do \
 		if [ -d "$$dir" ]; then \
 			if [ -x "$$dir/.venv/bin/python" ]; then \
