@@ -39,6 +39,7 @@ export interface AskCodeInput {
   language?: string;
   minScore?: number;
   llmModel?: string;
+  grounded?: boolean;
 }
 
 export interface OpenFileInput {
@@ -103,7 +104,9 @@ export type StdioErrorCode =
   | 'FORBIDDEN'
   | 'NOT_FOUND'
   | 'UNSUPPORTED_MEDIA'
-  | 'INTERNAL';
+  | 'INTERNAL'
+  | 'EMBEDDING_FAILED'
+  | 'EMBEDDING_INVALID';
 
 export interface StdioToolRequest {
   id: string;
