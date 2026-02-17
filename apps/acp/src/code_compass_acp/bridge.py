@@ -158,7 +158,10 @@ class McpBridge:
                     line, buffer = buffer.split(b"\n", 1)
                     if not line.strip():
                         continue
-                    msg = json.loads(line)
+                    try:
+                        msg = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
                     msg_id = msg.get("id")
                     if msg_id in self._pending:
                         future = self._pending.pop(msg_id)
@@ -202,6 +205,9 @@ class McpBridge:
         text = first.get("text")
         if not isinstance(text, str):
             raise RuntimeError("Resposta MCP sem texto")
+
+        if response.get("result", {}).get("isError") is True:
+            raise RuntimeError(text)
 
         try:
             output = json.loads(text)
