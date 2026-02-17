@@ -22,7 +22,7 @@ INDEXER_RUN_MODULE ?= indexer
 MCP_SERVER_DIR ?= apps/mcp-server
 INDEXER_DOCKER_PROFILE ?= indexer
 
-.PHONY: help up down restart logs ps health wait-qdrant index index-full index-incremental index-docker index-docker-full index-docker-incremental setup-indexer ensure-indexer dev ensure-mcp-server index-all
+.PHONY: help up down restart logs ps health wait-qdrant index index-full index-incremental index-docker index-docker-full index-docker-incremental setup-indexer ensure-indexer dev ensure-mcp-server index-all py:test py:lint py:typecheck py:setup acp:setup cli:setup
 
 help:
 	@echo "Targets disponíveis:"
@@ -39,6 +39,10 @@ help:
 	@echo "  make index-docker-incremental -> fallback para indexação full via container"
 	@echo "  make index-all         -> indexa todos os repos de code-base/"
 	@echo "  make dev               -> sobe MCP server em modo dev"
+	@echo "  make py:setup          -> instala deps Python (indexer/cli/acp)"
+	@echo "  make py:test           -> roda pytest em apps Python"
+	@echo "  make py:lint           -> roda lint Python (ruff)"
+	@echo "  make py:typecheck      -> roda typecheck Python (mypy/pyright)"
 
 up:
 	$(COMPOSE) up -d qdrant
@@ -121,3 +125,83 @@ ensure-mcp-server:
 		echo "Crie o MCP server em apps/mcp-server para usar make dev."; \
 		exit 1; \
 	fi
+
+py:setup: setup-indexer cli:setup acp:setup
+
+acp:setup:
+	@if [ -d "apps/acp" ]; then \
+		if [ ! -d "apps/acp/.venv" ]; then \
+			echo "Criando virtualenv do ACP em apps/acp/.venv..."; \
+			python3 -m venv apps/acp/.venv; \
+		fi; \
+		cd apps/acp && source .venv/bin/activate && pip install --upgrade pip; \
+		if [ -f "apps/acp/requirements.txt" ]; then \
+			cd apps/acp && source .venv/bin/activate && pip install -r requirements.txt; \
+		else \
+			cd apps/acp && source .venv/bin/activate && pip install -e .; \
+		fi; \
+	else \
+		echo "Aviso: apps/acp não encontrado; pulando."; \
+	fi
+
+cli:setup:
+	@if [ -d "apps/cli" ]; then \
+		if [ ! -d "apps/cli/.venv" ]; then \
+			echo "Criando virtualenv do CLI em apps/cli/.venv..."; \
+			python3 -m venv apps/cli/.venv; \
+		fi; \
+		cd apps/cli && source .venv/bin/activate && pip install --upgrade pip; \
+		if [ -f "apps/cli/requirements.txt" ]; then \
+			cd apps/cli && source .venv/bin/activate && pip install -r requirements.txt; \
+		else \
+			cd apps/cli && source .venv/bin/activate && pip install -e .; \
+		fi; \
+	else \
+		echo "Aviso: apps/cli não encontrado; pulando."; \
+	fi
+
+py:test:
+	@$(MAKE) py:setup
+	@for dir in apps/indexer apps/cli apps/acp; do \
+		if [ -d "$$dir" ]; then \
+			if [ -x "$$dir/.venv/bin/python" ]; then \
+				if [ -d "$$dir/tests" ]; then \
+					echo "Rodando pytest em $$dir..."; \
+					cd $$dir && .venv/bin/python -m pytest tests -v; \
+				else \
+					echo "Aviso: $$dir não possui pasta tests; pulando."; \
+				fi; \
+			else \
+				echo "Aviso: $$dir sem venv; rode make py:setup."; \
+			fi; \
+		fi; \
+	done
+
+py:lint:
+	@for dir in apps/indexer apps/cli apps/acp; do \
+		if [ -d "$$dir" ]; then \
+			if [ -x "$$dir/.venv/bin/python" ] && [ -x "$$dir/.venv/bin/ruff" ]; then \
+				echo "Rodando ruff em $$dir..."; \
+				cd $$dir && .venv/bin/ruff check .; \
+			else \
+				echo "Aviso: ruff não encontrado em $$dir/.venv/bin"; \
+			fi; \
+		fi; \
+	done
+
+py:typecheck:
+	@for dir in apps/indexer apps/cli apps/acp; do \
+		if [ -d "$$dir" ]; then \
+			if [ -x "$$dir/.venv/bin/python" ]; then \
+				if [ -x "$$dir/.venv/bin/mypy" ]; then \
+					echo "Rodando mypy em $$dir..."; \
+					cd $$dir && .venv/bin/mypy .; \
+				elif [ -x "$$dir/.venv/bin/pyright" ]; then \
+					echo "Rodando pyright em $$dir..."; \
+					cd $$dir && .venv/bin/pyright; \
+				else \
+					echo "Aviso: mypy/pyright não encontrado em $$dir/.venv/bin"; \
+				fi; \
+			fi; \
+		fi; \
+	done
