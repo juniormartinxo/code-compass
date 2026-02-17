@@ -40,6 +40,9 @@ O `ask` exibe os chunks do agente quando disponíveis.
 code-compass chat
 ```
 
+O `chat` tenta abrir o Toad já apontando para o **ACP Agent**. Se o agente estiver
+disponível, ele injeta `toad acp <agent-cmd>` automaticamente.
+
 ## Flags
 
 - `--topk <n>`: número de evidências (default 10)
@@ -56,7 +59,8 @@ code-compass chat
 ## Fluxo de execução
 
 - `ask` fala direto com o **ACP Agent** (`apps/acp`), que por sua vez chama o MCP server.
-- `chat` abre a TUI do Toad usando `TOAD_COMMAND`/`TOAD_ARGS` ou `python -m toad`.
+- `chat` abre a TUI do Toad usando `TOAD_COMMAND`/`TOAD_ARGS` ou `python -m toad` e
+  injeta o agente ACP quando disponível.
 
 ## Configuração via env
 
