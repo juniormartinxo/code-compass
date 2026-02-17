@@ -10,7 +10,7 @@ class CliConfig(BaseModel):
     top_k: int = 10
     min_score: float = 0.6
     timeout_ms: int = 120_000
-    llm_model: str = "gpt-oss:latest"
+    llm_model: str | None = None
     debug: bool = False
 
     mcp_command: str | None = None
