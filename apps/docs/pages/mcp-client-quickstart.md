@@ -63,7 +63,8 @@ Escopo por repo (recomendado):
       "scope": { "type": "repo", "repo": "golyzer" },
       "query": "Como funciona o Modo de Interação?",
       "topK": 5,
-      "minScore": 0.6
+      "minScore": 0.6,
+      "grounded": true
     }
   }
 }
@@ -95,6 +96,9 @@ Modo compat com `repo`:
   - Evite `repo: "."`; use o nome do diretório do repo indexado.
 - **"Global scope não está habilitado"**
   - Defina `ALLOW_GLOBAL_SCOPE=true` antes de subir o MCP server.
+- **"Campo \"vector\" é obrigatório"**
+  - O MCP não conseguiu gerar embeddings.
+  - Verifique `OLLAMA_URL` e `EMBEDDING_MODEL` no MCP server.
 
 ### Exemplos de input com `scope`
 
