@@ -1,6 +1,6 @@
 # MCP Client Quickstart (Local STDIO)
 
-Este repositório usa `apps/mcp-server` em `stdio` com protocolo NDJSON próprio das tools (`search_code`, `ask_code` e `open_file`).
+Este repositório usa `apps/mcp-server` em `stdio` com **MCP JSON-RPC 2.0**.
 
 ## Golden Path adotado
 
@@ -54,13 +54,17 @@ Escopo por repo (recomendado):
 
 ```json
 {
-  "id": "req-ask-1",
-  "tool": "ask_code",
-  "input": {
-    "scope": { "type": "repo", "repo": "golyzer" },
-    "query": "Como funciona o Modo de Interação?",
-    "topK": 5,
-    "minScore": 0.6
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "ask_code",
+    "arguments": {
+      "scope": { "type": "repo", "repo": "golyzer" },
+      "query": "Como funciona o Modo de Interação?",
+      "topK": 5,
+      "minScore": 0.6
+    }
   }
 }
 ```
@@ -69,12 +73,16 @@ Modo compat com `repo`:
 
 ```json
 {
-  "id": "req-ask-2",
-  "tool": "ask_code",
-  "input": {
-    "repo": "golyzer",
-    "query": "Como funciona o Modo de Interação?",
-    "topK": 5
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "ask_code",
+    "arguments": {
+      "repo": "golyzer",
+      "query": "Como funciona o Modo de Interação?",
+      "topK": 5
+    }
   }
 }
 ```
@@ -92,39 +100,51 @@ Modo compat com `repo`:
 
 ```json
 {
-  "id": "req-1",
-  "tool": "search_code",
-  "input": {
-    "scope": { "type": "repo", "repo": "repo-a" },
-    "query": "bootstrap",
-    "topK": 5,
-    "vector": [0.1, 0.2]
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "search_code",
+    "arguments": {
+      "scope": { "type": "repo", "repo": "repo-a" },
+      "query": "bootstrap",
+      "topK": 5,
+      "vector": [0.1, 0.2]
+    }
   }
 }
 ```
 
 ```json
 {
-  "id": "req-2",
-  "tool": "search_code",
-  "input": {
-    "scope": { "type": "repos", "repos": ["repo-a", "repo-b"] },
-    "query": "qdrant",
-    "topK": 5,
-    "vector": [0.1, 0.2]
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "search_code",
+    "arguments": {
+      "scope": { "type": "repos", "repos": ["repo-a", "repo-b"] },
+      "query": "qdrant",
+      "topK": 5,
+      "vector": [0.1, 0.2]
+    }
   }
 }
 ```
 
 ```json
 {
-  "id": "req-3",
-  "tool": "search_code",
-  "input": {
-    "scope": { "type": "all" },
-    "query": "config",
-    "topK": 5,
-    "vector": [0.1, 0.2]
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "tools/call",
+  "params": {
+    "name": "search_code",
+    "arguments": {
+      "scope": { "type": "all" },
+      "query": "config",
+      "topK": 5,
+      "vector": [0.1, 0.2]
+    }
   }
 }
 ```
