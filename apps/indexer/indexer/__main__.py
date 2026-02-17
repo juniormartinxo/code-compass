@@ -284,6 +284,10 @@ def _build_parser() -> argparse.ArgumentParser:
     scan_parser.add_argument("--allow-exts", dest="allow_exts", default=None)
     scan_parser.add_argument("--ignore-dirs", dest="ignore_dirs", default=None)
     scan_parser.add_argument("--max-files", dest="max_files", type=int, default=None)
+    scan_parser.add_argument(
+        "--ignore-patterns", dest="ignore_patterns", default=None,
+        help="Padrões glob para ignorar arquivos (CSV). Ex: '*.md,docs/*'. Prioridade: CLI > Env (SCAN_IGNORE_PATTERNS) > Default.",
+    )
 
     # Comando chunk
     chunk_parser = subparsers.add_parser("chunk", help="Gera chunks de um arquivo")
@@ -325,6 +329,10 @@ def _build_parser() -> argparse.ArgumentParser:
     index_parser.add_argument("--max-files", dest="max_files", type=int, default=None)
     index_parser.add_argument("--chunk-lines", dest="chunk_lines", type=int, default=None)
     index_parser.add_argument("--overlap-lines", dest="overlap_lines", type=int, default=None)
+    index_parser.add_argument(
+        "--ignore-patterns", dest="ignore_patterns", default=None,
+        help="Padrões glob para ignorar arquivos (CSV). Ex: '*.md,docs/*'. Prioridade: CLI > Env (SCAN_IGNORE_PATTERNS) > Default.",
+    )
 
     # Comando search
     search_parser = subparsers.add_parser(
@@ -443,6 +451,7 @@ def _resolve_scan_config(args: argparse.Namespace) -> ScanConfig:
         repo_root=args.repo_root,
         ignore_dirs=args.ignore_dirs,
         allow_exts=args.allow_exts,
+        ignore_patterns=getattr(args, "ignore_patterns", None),
     )
 
 
@@ -469,6 +478,7 @@ def _scan_command(args: argparse.Namespace) -> int:
         ignore_dirs=config.ignore_dirs,
         allow_exts=config.allow_exts,
         max_files=args.max_files,
+        ignore_patterns=config.ignore_patterns,
     )
 
     payload = {
@@ -647,6 +657,7 @@ def _index_command(args: argparse.Namespace) -> int:
             ignore_dirs=scan_config.ignore_dirs,
             allow_exts=scan_config.allow_exts,
             max_files=args.max_files,
+            ignore_patterns=scan_config.ignore_patterns,
         )
         logger.info(f"Arquivos encontrados: {len(files)}")
 
