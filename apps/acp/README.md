@@ -14,6 +14,23 @@ pnpm acp:install
 apps/acp/.venv/bin/code-compass-acp
 ```
 
+## Smoke test (E2E)
+
+Pré-requisitos: MCP server buildado + Qdrant + indexação.
+
+```bash
+pnpm mcp:build
+make up
+make index
+
+apps/acp/.venv/bin/python apps/acp/scripts/e2e_smoke.py
+```
+
+Env vars úteis:
+
+- `ACP_AGENT_CMD`: comando do agente (default `apps/acp/.venv/bin/code-compass-acp`)
+- `ACP_SMOKE_QUESTION`: pergunta do teste
+
 ## Variáveis de ambiente
 
 - `MCP_COMMAND`: comando do MCP server (`--transport stdio`)
