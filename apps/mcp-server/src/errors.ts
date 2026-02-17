@@ -7,7 +7,13 @@ export class ToolInputError extends Error {
 
 export class ToolExecutionError extends Error {
   constructor(
-    public readonly code: 'BAD_REQUEST' | 'FORBIDDEN' | 'NOT_FOUND' | 'UNSUPPORTED_MEDIA',
+    public readonly code:
+      | 'BAD_REQUEST'
+      | 'FORBIDDEN'
+      | 'NOT_FOUND'
+      | 'UNSUPPORTED_MEDIA'
+      | 'EMBEDDING_FAILED'
+      | 'EMBEDDING_INVALID',
     message: string,
   ) {
     super(message);
