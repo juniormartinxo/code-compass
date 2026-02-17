@@ -51,7 +51,7 @@ def test_prompt_receives_updates(monkeypatch: pytest.MonkeyPatch) -> None:
         conn = DummyConn()
         agent.on_connect(conn)  # type: ignore[arg-type]
 
-        session = await agent.new_session(cwd=".")
+        session = await agent.new_session(cwd=".", mcpServers=[])
         response = await agent.prompt(
             [acp.text_block("Pergunta")],
             session_id=session.session_id,
@@ -74,7 +74,7 @@ def test_cancel_during_mcp_wait(monkeypatch: pytest.MonkeyPatch) -> None:
         conn = DummyConn()
         agent.on_connect(conn)  # type: ignore[arg-type]
 
-        session = await agent.new_session(cwd=".")
+        session = await agent.new_session(cwd=".", mcpServers=[])
 
         async def do_prompt() -> acp.PromptResponse:
             return await agent.prompt(
