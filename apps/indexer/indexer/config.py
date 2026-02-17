@@ -33,6 +33,8 @@ DEFAULT_ALLOW_EXTS: set[str] = {
     ".yml",
 }
 
+DEFAULT_IGNORE_PATTERNS: list[str] = []
+
 DEFAULT_CHUNK_LINES = 120
 DEFAULT_CHUNK_OVERLAP_LINES = 20
 
@@ -42,6 +44,7 @@ class ScanConfig:
     repo_root: Path
     ignore_dirs: set[str]
     allow_exts: set[str]
+    ignore_patterns: list[str]
 
 
 @dataclass(frozen=True)
@@ -78,6 +81,16 @@ def _normalize_allow_exts(values: Iterable[str]) -> set[str]:
     return normalized
 
 
+def _normalize_ignore_patterns(values: Iterable[str]) -> list[str]:
+    """Normaliza padrões de ignore (globs). Remove espaços e entradas vazias."""
+    patterns: list[str] = []
+    for value in values:
+        item = value.strip()
+        if item:
+            patterns.append(item)
+    return patterns
+
+
 def _resolve_repo_root(raw: str | None) -> Path:
     target = Path(raw).expanduser() if raw else Path("..")
     if not target.is_absolute():
@@ -109,9 +122,11 @@ def load_scan_config(
     repo_root: str | None = None,
     ignore_dirs: str | Iterable[str] | None = None,
     allow_exts: str | Iterable[str] | None = None,
+    ignore_patterns: str | Iterable[str] | None = None,
 ) -> ScanConfig:
     repo_root_raw = repo_root if repo_root is not None else os.getenv("REPO_ROOT")
 
+    # --- ignore_dirs ---
     env_ignore_dirs = os.getenv("SCAN_IGNORE_DIRS")
     if ignore_dirs is None:
         extra_ignore_dirs = _parse_csv(env_ignore_dirs)
@@ -120,6 +135,7 @@ def load_scan_config(
     else:
         extra_ignore_dirs = list(ignore_dirs)
 
+    # --- allow_exts ---
     env_allow_exts = os.getenv("SCAN_ALLOW_EXTS")
     if allow_exts is None:
         allow_raw = _parse_csv(env_allow_exts)
@@ -128,13 +144,30 @@ def load_scan_config(
     else:
         allow_raw = list(allow_exts)
 
+    # --- ignore_patterns (CLI > Env > Default) ---
+    env_ignore_patterns = os.getenv("SCAN_IGNORE_PATTERNS")
+    if ignore_patterns is not None:
+        # CLI tem prioridade máxima
+        if isinstance(ignore_patterns, str):
+            patterns_raw = _parse_csv(ignore_patterns)
+        else:
+            patterns_raw = list(ignore_patterns)
+    elif env_ignore_patterns:
+        # Env tem prioridade secundária
+        patterns_raw = _parse_csv(env_ignore_patterns)
+    else:
+        # Default
+        patterns_raw = list(DEFAULT_IGNORE_PATTERNS)
+
     resolved_ignore_dirs = DEFAULT_IGNORE_DIRS | _normalize_ignore_dirs(extra_ignore_dirs)
     resolved_allow_exts = _normalize_allow_exts(allow_raw) if allow_raw else set(DEFAULT_ALLOW_EXTS)
+    resolved_ignore_patterns = _normalize_ignore_patterns(patterns_raw)
 
     return ScanConfig(
         repo_root=_resolve_repo_root(repo_root_raw),
         ignore_dirs=resolved_ignore_dirs,
         allow_exts=resolved_allow_exts,
+        ignore_patterns=resolved_ignore_patterns,
     )
 
 
