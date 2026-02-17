@@ -1,0 +1,51 @@
+# Seshat Configuration
+# Generated automatically - customize as needed
+
+project_type: typescript
+
+# Commit defaults (equivalente a COMMIT_LANGUAGE, MAX_DIFF_SIZE, WARN_DIFF_SIZE)
+commit:
+  language: PT-BR
+  max_diff_size: 5000
+  warn_diff_size: 4000
+  # provider: deepseek
+  # model: deepseek-reasoner
+  # no_ai_extensions: [".md", ".mdx"]
+  # no_ai_paths: ["docs/", ".github/", "CHANGELOG.md"]
+
+# Pre-commit checks
+checks:
+  lint:
+    enabled: false
+    blocking: true
+    auto_fix: false  # Change to true to fix automatically
+  test:
+    enabled: false
+    blocking: false
+  typecheck:
+    enabled: false
+    blocking: true
+
+# AI Code Review
+code_review:
+  enabled: true
+  blocking: true
+  prompt: seshat-review.md  # Edite este arquivo!
+  log_dir: seshat-logs
+  extensions: [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]  # extensões padrão detectadas
+
+# UI
+ui:
+  force_rich: true
+
+# Custom commands (uncomment and modify as needed)
+# commands:
+#   eslint:
+#     command: "pnpm eslint"
+#     command: "pnpm eslint"
+#     extensions: [".ts", ".tsx"]
+#     auto_fix: true
+#   tsc:
+#     command: "npm run typecheck"
+#   jest:
+#     command: "npm test -- --passWithNoTests"
