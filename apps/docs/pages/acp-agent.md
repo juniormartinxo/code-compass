@@ -42,11 +42,36 @@ make py:setup
 apps/acp/.venv/bin/code-compass-acp
 ```
 
+## Smoke test (E2E)
+
+Pré-requisitos: MCP server buildado + Qdrant + indexação.
+
+```bash
+pnpm mcp:build
+make up
+make index
+
+apps/acp/.venv/bin/python apps/acp/scripts/e2e_smoke.py
+```
+
+Se o retorno vier com `stop_reason=refusal`, verifique:
+
+- `MCP_COMMAND` apontando para o MCP server (`apps/mcp-server/dist/main.js`).
+- Qdrant ativo (`make up`).
+- Indexação realizada (`make index`).
+
+Env vars úteis:
+
+- `ACP_AGENT_CMD`: comando do agente
+- `ACP_SMOKE_QUESTION`: pergunta do teste
+
 ## Variáveis de ambiente
 
 - `MCP_COMMAND`: comando para subir o MCP server (`--transport stdio`)
 - `LLM_MODEL`: repassado ao MCP via `env`
 - `ACP_REPO`: repo padrão enviado ao `ask_code`
+- `ACP_PATH_PREFIX`, `ACP_LANGUAGE`, `ACP_TOPK`, `ACP_MIN_SCORE`: filtros do `ask_code`
+- `ACP_GROUNDED`: força resposta restrita ao contexto
 
 ## Notas de operação
 
