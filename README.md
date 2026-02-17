@@ -1,6 +1,9 @@
 # Code Compass
 
-**Code Compass** é um **servidor MCP + pipeline RAG** para a base de código da empresa.  
+![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white) ![Node.js](https://img.shields.io/badge/Node.js-LTS-339933?logo=node.js&logoColor=white) ![NestJS](https://img.shields.io/badge/NestJS-MCP%20Server-E0234E?logo=nestjs&logoColor=white) ![Qdrant](https://img.shields.io/badge/Qdrant-Vector%20DB-DC244C?logo=qdrant&logoColor=white) ![MCP](https://img.shields.io/badge/MCP-Tools%20Gateway-6E56CF)
+
+**Code Compass** é um **servidor MCP + pipeline RAG** para a base de código de qualquer empresa.
+
 Ele indexa repositórios (código + docs), gera embeddings e armazena tudo em um **Vector DB (Qdrant)**, expondo **tools via MCP** para agentes como **Codex, Gemini e Claude** consultarem a codebase com **evidência** (trecho + path + linha + score).
 
 > Stack definida: **Node/NestJS (MCP Server) + Python (Indexer/ML Worker) + Qdrant (Vector DB)**
