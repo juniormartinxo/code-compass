@@ -12,9 +12,9 @@
     "mcp:test": "pnpm -C apps/mcp-server test",
     "mcp:test:stdio": "pnpm -C apps/mcp-server test:stdio",
     "mcp:test:open-file": "pnpm -C apps/mcp-server test:open-file",
-    "cli:build": "pnpm -C apps/cli build",
-    "cli:ask": "pnpm -C apps/cli ask",
-    "ask": "pnpm -C apps/cli ask",
+    "cli:install": "python -m venv apps/cli/.venv && . apps/cli/.venv/bin/activate && pip install -e apps/cli",
+    "cli:ask": "apps/cli/.venv/bin/code-compass ask",
+    "ask": "apps/cli/.venv/bin/code-compass ask",
     "docs:dev": "pnpm -C apps/docs dev",
     "docs:build": "pnpm -C apps/docs build",
     "docs:start": "pnpm -C apps/docs start"
