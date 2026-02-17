@@ -520,6 +520,7 @@ export class McpStdioServer {
             language: { type: 'string' },
             minScore: { type: 'number' },
             llmModel: { type: 'string' },
+            grounded: { type: 'boolean' },
           },
         },
       },
