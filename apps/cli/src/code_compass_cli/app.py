@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from pathlib import Path
 from typing import Optional
 
 import typer
@@ -112,6 +113,13 @@ def chat() -> None:
             )
             raise typer.Exit(code=1)
 
+    agent_cmd = _resolve_acp_agent_command()
+    if agent_cmd:
+        if len(args) >= 2 and args[0] == "-m" and args[1] == "toad":
+            args = ["-m", "toad", "acp", *agent_cmd, *args[2:]]
+        else:
+            args = ["acp", *agent_cmd, *args]
+
     try:
         subprocess.run([command, *args], check=True)
     except FileNotFoundError as exc:
@@ -120,3 +128,16 @@ def chat() -> None:
     except subprocess.CalledProcessError as exc:
         console.print(Panel.fit(f"Erro ao executar Toad: {exc}", style="red"))
         raise typer.Exit(code=1)
+
+
+def _resolve_acp_agent_command() -> list[str] | None:
+    command = os.getenv("ACP_AGENT_CMD", "").strip()
+    args = os.getenv("ACP_AGENT_ARGS", "").split()
+    if not command:
+        repo_root = Path(__file__).resolve().parents[4]
+        default = repo_root / "apps" / "acp" / ".venv" / "bin" / "code-compass-acp"
+        if default.exists():
+            command = str(default)
+    if not command:
+        return None
+    return [command, *args]
