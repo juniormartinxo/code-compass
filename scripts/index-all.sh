@@ -3,8 +3,11 @@
 # index-all.sh — Indexa todos os repositórios em code-base/
 #
 # Uso:
-#   ./scripts/index-all.sh                   # indexa todos
-#   ./scripts/index-all.sh repo-a repo-b     # indexa apenas os listados
+#   ./scripts/index-all.sh                                        # indexa todos
+#   ./scripts/index-all.sh repo-a repo-b                          # indexa apenas os listados
+#   ./scripts/index-all.sh -- --ignore-patterns "*.md,docs/*"     # indexa todos, ignorando .md
+#   ./scripts/index-all.sh repo-a -- --allow-exts ".ts,.py"       # indexa repo-a com exts específicas
+#   INDEXER_EXTRA_ARGS="--ignore-patterns *.md" ./scripts/index-all.sh   # via env
 #
 # Requisitos:
 #   - Qdrant rodando (QDRANT_URL)
@@ -41,13 +44,33 @@ if [[ ! -d "$CODE_BASE_DIR" ]]; then
   exit 1
 fi
 
+# ── Separar repos de args extras do indexer ─────────────────
+# Uso: ./scripts/index-all.sh [repo1 repo2 ...] [-- --ignore-patterns "*.md,docs/*"]
+REPOS=()
+EXTRA_ARGS=()
+AFTER_SEPARATOR=false
+
+for arg in "$@"; do
+  if [[ "$arg" == "--" ]]; then
+    AFTER_SEPARATOR=true
+    continue
+  fi
+  if $AFTER_SEPARATOR; then
+    EXTRA_ARGS+=("$arg")
+  else
+    REPOS+=("$arg")
+  fi
+done
+
+# Se INDEXER_EXTRA_ARGS estiver definido no env, usar como fallback
+if [[ ${#EXTRA_ARGS[@]} -eq 0 && -n "${INDEXER_EXTRA_ARGS:-}" ]]; then
+  # shellcheck disable=SC2206
+  EXTRA_ARGS=($INDEXER_EXTRA_ARGS)
+fi
+
 # ── Listar repositórios a indexar ───────────────────────────
-if [[ $# -gt 0 ]]; then
-  # Repos passados como argumento
-  REPOS=("$@")
-else
+if [[ ${#REPOS[@]} -eq 0 ]]; then
   # Todos os subdiretórios de code-base/
-  REPOS=()
   for dir in "$CODE_BASE_DIR"/*/; do
     [[ -d "$dir" ]] || continue
     REPOS+=("$(basename "$dir")")
@@ -61,6 +84,9 @@ fi
 
 echo ""
 echo "🔍 Repositórios para indexar: ${REPOS[*]}"
+if [[ ${#EXTRA_ARGS[@]} -gt 0 ]]; then
+  echo "🔧 Args extras do indexer: ${EXTRA_ARGS[*]}"
+fi
 echo "────────────────────────────────────────────"
 echo ""
 
@@ -86,7 +112,7 @@ for repo_name in "${REPOS[@]}"; do
 
   export REPO_ROOT="$REPO_PATH"
 
-  if (cd "$INDEXER_DIR" && PYTHONPATH=. python -m indexer index --repo-root "$REPO_PATH"); then
+  if (cd "$INDEXER_DIR" && PYTHONPATH=. python -m indexer index --repo-root "$REPO_PATH" "${EXTRA_ARGS[@]}"); then
     SUCCESS=$((SUCCESS + 1))
     echo "  ✅ $repo_name indexado com sucesso"
   else
