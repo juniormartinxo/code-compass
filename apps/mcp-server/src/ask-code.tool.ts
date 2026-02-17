@@ -3,7 +3,7 @@ import axios from 'axios';
 
 import { OpenFileTool } from './open-file.tool';
 import { SearchCodeTool } from './search-code.tool';
-import { ToolInputError } from './errors';
+import { ToolInputError, ToolExecutionError } from './errors';
 import { resolveScope } from './scope';
 import { AskCodeInput, AskCodeOutput, ResolvedScope, SearchCodeResult } from './types';
 
@@ -41,6 +41,7 @@ type ValidatedAskInput = {
   language: string;
   minScore: number;
   llmModel: string;
+  grounded: boolean;
 };
 
 @Injectable()
@@ -90,7 +91,28 @@ export class AskCodeTool {
       };
     }
 
-    const prompt = this.buildPrompt(input.query, enriched);
+    if (input.grounded) {
+      const answer = this.buildGroundedAnswer(enriched);
+      return {
+        answer,
+        evidences: enriched,
+        meta: {
+          scope: this.toScopeMeta(input.scope),
+          topK: input.topK,
+          minScore: input.minScore,
+          llmModel: input.llmModel,
+          repo: input.scope.type === 'repo' ? input.scope.repos[0] : undefined,
+          collection: searchOutput.meta.collection,
+          totalMatches: searchOutput.results.length,
+          contextsUsed: enriched.length,
+          elapsedMs: Date.now() - startedAt,
+          pathPrefix: input.pathPrefix || undefined,
+          language: input.language || undefined,
+        },
+      };
+    }
+
+    const prompt = this.buildPrompt(input.query, enriched, input.grounded);
     const answer = await this.chat(prompt.system, prompt.user, input.llmModel);
 
     return {
@@ -131,6 +153,7 @@ export class AskCodeTool {
     const language = this.validateLanguage(input.language);
     const minScore = this.validateMinScore(input.minScore);
     const llmModel = this.validateModel(input.llmModel);
+    const grounded = this.validateGrounded(input.grounded);
 
     return {
       scope,
@@ -140,6 +163,7 @@ export class AskCodeTool {
       language,
       minScore,
       llmModel,
+      grounded,
     };
   }
 
@@ -227,6 +251,16 @@ export class AskCodeTool {
       throw new ToolInputError('Campo "llmModel" não pode ser vazio');
     }
     return normalized;
+  }
+
+  private validateGrounded(grounded: unknown): boolean {
+    if (grounded === undefined || grounded === null) {
+      return false;
+    }
+    if (typeof grounded !== 'boolean') {
+      throw new ToolInputError('Campo "grounded" deve ser boolean');
+    }
+    return grounded;
   }
 
   private matchesLanguage(pathValue: string, language: string): boolean {
@@ -327,12 +361,18 @@ export class AskCodeTool {
     };
   }
 
-  private buildPrompt(question: string, evidences: SearchCodeResult[]): { system: string; user: string } {
+  private buildPrompt(
+    question: string,
+    evidences: SearchCodeResult[],
+    grounded: boolean,
+  ): { system: string; user: string } {
     const system = [
       'Voce e um assistente especializado em analisar codigo-fonte.',
       'Responda as perguntas do usuario baseando-se APENAS no contexto fornecido.',
       'Se a informacao nao estiver no contexto, diga que nao encontrou essa informacao no codigo indexado.',
-      'Seja conciso e direto. Responda em portugues brasileiro.',
+      grounded
+        ? 'Nao invente exemplos nem APIs. Use somente o que aparece nos trechos. Cite os arquivos relevantes.'
+        : 'Seja conciso e direto. Responda em portugues brasileiro.',
     ].join('\n');
 
     const sections = evidences.map((evidence, index) => {
@@ -356,24 +396,57 @@ export class AskCodeTool {
     return { system, user };
   }
 
+  private buildGroundedAnswer(evidences: SearchCodeResult[]): string {
+    const header = 'Resposta baseada estritamente nas evidencias abaixo:';
+    const items = evidences.map((evidence) => {
+      const startLine = evidence.startLine ?? '?';
+      const endLine = evidence.endLine ?? '?';
+      const snippet = evidence.snippet.trim() || '[conteudo nao disponivel]';
+      return [
+        `- ${evidence.path} (linhas ${startLine}-${endLine})`,
+        '```',
+        snippet,
+        '```',
+      ].join('\n');
+    });
+
+    return [header, '', ...items].join('\n');
+  }
+
   private async embedQuestion(query: string): Promise<number[]> {
     const ollamaUrl = process.env.OLLAMA_URL || DEFAULT_OLLAMA_URL;
     const embeddingModel = process.env.EMBEDDING_MODEL || DEFAULT_EMBEDDING_MODEL;
 
-    const response = await axios.post<{ embeddings?: number[][] }>(
-      `${ollamaUrl.replace(/\/$/, '')}/api/embed`,
-      {
-        model: embeddingModel,
-        input: [query],
-      },
-      {
-        timeout: DEFAULT_TIMEOUT_MS,
-      },
-    );
+    let response;
+    try {
+      response = await axios.post<{ embeddings?: number[][] }>(
+        `${ollamaUrl.replace(/\/$/, '')}/api/embed`,
+        {
+          model: embeddingModel,
+          input: [query],
+        },
+        {
+          timeout: DEFAULT_TIMEOUT_MS,
+        },
+      );
+    } catch (error) {
+      const details = axios.isAxiosError(error)
+        ? error.message
+        : error instanceof Error
+          ? error.message
+          : 'erro desconhecido';
+      throw new ToolExecutionError(
+        'EMBEDDING_FAILED',
+        `Falha ao gerar embedding via Ollama (${ollamaUrl} / ${embeddingModel}): ${details}`,
+      );
+    }
 
     const embeddings = response.data?.embeddings;
     if (!Array.isArray(embeddings) || embeddings.length === 0 || !Array.isArray(embeddings[0])) {
-      throw new Error('Resposta de embedding invalida do Ollama');
+      throw new ToolExecutionError(
+        'EMBEDDING_INVALID',
+        'Resposta de embedding inválida do Ollama. Verifique OLLAMA_URL e EMBEDDING_MODEL.',
+      );
     }
 
     return embeddings[0] as number[];
