@@ -6,6 +6,7 @@ export default {
   'mcp-server': 'MCP Server',
   tutoriais: 'Tutoriais',
   cli: 'CLI',
+  'acp-agent': 'ACP Agent',
   ADRs: 'ADRs (Decisões)',
   'mcp-antigravity': 'MCP Antigravity',
   'mcp-client-quickstart': 'MCP Quickstart',
