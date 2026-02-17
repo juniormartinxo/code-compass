@@ -21,3 +21,7 @@ pip install -e .
 ```bash
 code-compass ask "onde fica o handler do search_code?" --repo code-compass
 ```
+
+## Troubleshooting
+
+Consulte [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) para problemas conhecidos e correções manuais.
