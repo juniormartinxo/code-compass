@@ -20,6 +20,8 @@ class SessionState:
     cancel_event: asyncio.Event
     prompt_lock: asyncio.Lock
     mcp_bridge: McpBridge
+    repo_override: str | None = None
+    model_override: str | None = None
 
 
 class CodeCompassAgent(acp.Agent):
@@ -59,6 +61,8 @@ class CodeCompassAgent(acp.Agent):
             cancel_event=asyncio.Event(),
             prompt_lock=asyncio.Lock(),
             mcp_bridge=bridge,
+            repo_override=None,
+            model_override=None,
         )
         session_id = _random_session_id()
         self._sessions[session_id] = state
@@ -83,7 +87,15 @@ class CodeCompassAgent(acp.Agent):
 
         async with state.prompt_lock:
             try:
-                raw_repo = os.getenv("ACP_REPO", "code-compass").strip()
+                command_response = await _handle_repo_command(self._conn, session_id, state, question)
+                if command_response is not None:
+                    return command_response
+
+                command_response = await _handle_model_command(self._conn, session_id, state, question)
+                if command_response is not None:
+                    return command_response
+
+                raw_repo = (state.repo_override or os.getenv("ACP_REPO", "code-compass")).strip()
                 payload = {
                     "query": question,
                     "repo": raw_repo,
@@ -92,7 +104,7 @@ class CodeCompassAgent(acp.Agent):
                 language = os.getenv("ACP_LANGUAGE", "").strip()
                 top_k = os.getenv("ACP_TOPK", "").strip()
                 min_score = os.getenv("ACP_MIN_SCORE", "").strip()
-                llm_model = os.getenv("LLM_MODEL", "").strip()
+                llm_model = (state.model_override or os.getenv("LLM_MODEL", "")).strip()
                 grounded = os.getenv("ACP_GROUNDED", "").strip().lower()
 
                 if "," in raw_repo:
@@ -195,6 +207,74 @@ def _blocks_to_text(
         if getattr(block, "type", None) == "text":
             parts.append(getattr(block, "text", ""))
     return "\n".join(parts).strip()
+
+
+async def _handle_repo_command(
+    conn: acp.Client | None,
+    session_id: str,
+    state: SessionState,
+    question: str,
+) -> acp.PromptResponse | None:
+    text = question.strip()
+    if not text.startswith("/repo"):
+        return None
+    parts = text.split(maxsplit=1)
+    if len(parts) == 1:
+        reply = f"Repo atual: {state.repo_override or os.getenv('ACP_REPO', 'code-compass')}"
+    else:
+        repo = parts[1].strip()
+        if not repo:
+            reply = "Nome do repo vazio. Use /repo <nome>."
+        elif not await _repo_exists(repo):
+            reply = f"Repo '{repo}' não existe. Use /repo <nome>."
+        else:
+            state.repo_override = repo
+            reply = f"Repo atualizado para: {state.repo_override}"
+
+    if conn:
+        await conn.session_update(session_id, acp.update_agent_message_text(reply))
+    return acp.PromptResponse(stop_reason="end_turn")
+
+
+async def _repo_exists(repo: str) -> bool:
+    codebase_root = os.getenv("CODEBASE_ROOT", "").strip()
+    if not codebase_root:
+        return True
+    try:
+        from pathlib import Path
+
+        repo_path = Path(codebase_root) / repo
+        return repo_path.exists() and repo_path.is_dir()
+    except Exception:
+        return False
+
+
+async def _handle_model_command(
+    conn: acp.Client | None,
+    session_id: str,
+    state: SessionState,
+    question: str,
+) -> acp.PromptResponse | None:
+    text = question.strip()
+    if not text.startswith("/model"):
+        return None
+    parts = text.split(maxsplit=1)
+    if len(parts) == 1:
+        reply = f"Modelo atual: {state.model_override or os.getenv('LLM_MODEL', '') or 'default'}"
+    else:
+        model = parts[1].strip()
+        if not model:
+            reply = "Nome do modelo vazio. Use /model <nome>."
+        elif model.lower() in {"default", "reset"}:
+            state.model_override = None
+            reply = "Modelo resetado para o default."
+        else:
+            state.model_override = model
+            reply = f"Modelo atualizado para: {state.model_override}"
+
+    if conn:
+        await conn.session_update(session_id, acp.update_agent_message_text(reply))
+    return acp.PromptResponse(stop_reason="end_turn")
 
 
 def _random_session_id() -> str:
