@@ -7,7 +7,10 @@ import { SearchCodeTool } from '../src/search-code.tool';
 
 function createTool(): AskCodeTool {
   process.env.OLLAMA_URL = 'http://localhost:11434';
-  process.env.EMBEDDING_MODEL = 'manutic/nomic-embed-code';
+  process.env.EMBEDDING_PROVIDER_CODE = 'ollama';
+  process.env.EMBEDDING_PROVIDER_DOCS = 'ollama';
+  process.env.EMBEDDING_MODEL_CODE = 'manutic/nomic-embed-code';
+  process.env.EMBEDDING_MODEL_DOCS = 'manutic/nomic-embed-code';
   process.env.LLM_MODEL = 'gpt-oss:latest';
 
   process.env.QDRANT_URL = 'http://localhost:6333';
@@ -46,7 +49,10 @@ describe('AskCodeTool', () => {
   afterEach(() => {
     delete process.env.ALLOW_GLOBAL_SCOPE;
     delete process.env.OLLAMA_URL;
-    delete process.env.EMBEDDING_MODEL;
+    delete process.env.EMBEDDING_PROVIDER_CODE;
+    delete process.env.EMBEDDING_PROVIDER_DOCS;
+    delete process.env.EMBEDDING_MODEL_CODE;
+    delete process.env.EMBEDDING_MODEL_DOCS;
     delete process.env.LLM_MODEL;
     delete process.env.QDRANT_URL;
     delete process.env.MCP_QDRANT_MOCK_RESPONSE;
@@ -91,7 +97,10 @@ describe('AskCodeTool', () => {
     process.env.ALLOW_GLOBAL_SCOPE = 'true';
     const tool = createTool();
 
-    vi.spyOn(tool as unknown as { embedQuestion: (query: string) => Promise<number[]> }, 'embedQuestion')
+    vi.spyOn(
+      tool as unknown as { embedQuestion: (query: string, contentType: 'code' | 'docs') => Promise<number[]> },
+      'embedQuestion',
+    )
       .mockResolvedValue([0.1, 0.2]);
     vi.spyOn(tool as unknown as { chat: () => Promise<string> }, 'chat').mockResolvedValue('ok');
 
