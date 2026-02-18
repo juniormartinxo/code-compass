@@ -3,6 +3,7 @@ import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
+import { McpProtocolHandler } from '../src/mcp-protocol.handler';
 import { McpStdioServer } from '../src/mcp-stdio.server';
 import { OpenFileTool } from '../src/open-file.tool';
 import { SearchCodeTool } from '../src/search-code.tool';
@@ -16,7 +17,8 @@ function createServer(): McpStdioServer {
   const fileService = new FileService();
   const openFileTool = new OpenFileTool(fileService);
   const askCodeTool = new AskCodeTool(searchCodeTool, openFileTool);
-  return new McpStdioServer(searchCodeTool, openFileTool, askCodeTool);
+  const protocolHandler = new McpProtocolHandler(searchCodeTool, openFileTool, askCodeTool);
+  return new McpStdioServer(protocolHandler);
 }
 
 async function run(): Promise<void> {

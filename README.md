@@ -533,7 +533,7 @@ Executa o fluxo RAG completo (embedding + busca + contexto + LLM) no servidor MC
 
 ## Como conectar no Claude/Gemini/Codex via MCP
 
-> **Importante:** clientes MCP podem suportar diferentes transportes. Alguns preferem **STDIO** (server local executado como processo), outros suportam **HTTP/SSE**. Sempre siga a doc do cliente.
+> **Importante:** clientes MCP podem suportar diferentes transportes. O Code Compass suporta **STDIO** (processo local) e **HTTP** (endpoint JSON-RPC em `/mcp`). Alguns clientes também usam **HTTP/SSE**; sempre siga a doc do cliente.
 
 ### A) Claude (Claude Desktop)
 
@@ -577,6 +577,24 @@ env = { "MCP_SERVER_MODE" = "stdio" }
 5. usar Codex apontando para o projeto
 
 ---
+
+### Rodando em HTTP (server remoto)
+
+Use transporte HTTP quando quiser hospedar o MCP em um servidor:
+
+```bash
+pnpm -C apps/mcp-server build
+pnpm -C apps/mcp-server start:http
+```
+
+Configurações úteis:
+
+- `MCP_HTTP_HOST` (default: `0.0.0.0`)
+- `MCP_HTTP_PORT` (default: `3001`)
+- `MCP_SERVER_MODE=http` (alternativa ao `--transport http`)
+
+Endpoint MCP: `POST http://<host>:<port>/mcp` (JSON-RPC 2.0).
+
 
 ### C) Gemini (duas rotas comuns)
 
