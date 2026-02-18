@@ -36,7 +36,6 @@ class QdrantConfig:
     url: str
     api_key: str | None
     collection_base: str
-    collection: str | None
     distance: str
     upsert_batch: int
     collection_code: str | None = None
@@ -47,7 +46,6 @@ def load_qdrant_config(
     url: str | None = None,
     api_key: str | None = None,
     collection_base: str | None = None,
-    collection: str | None = None,
     distance: str | None = None,
     upsert_batch: int | None = None,
 ) -> QdrantConfig:
@@ -59,9 +57,6 @@ def load_qdrant_config(
         if collection_base is not None
         else os.getenv("QDRANT_COLLECTION_BASE")
     )
-    if resolved_collection_base is None:
-        resolved_collection_base = os.getenv("QDRANT_COLLECTION")
-    resolved_collection = collection if collection is not None else os.getenv("QDRANT_COLLECTION")
     resolved_collection_code = os.getenv("QDRANT_COLLECTION_CODE")
     resolved_collection_docs = os.getenv("QDRANT_COLLECTION_DOCS")
     resolved_distance = distance if distance is not None else os.getenv("QDRANT_DISTANCE")
@@ -72,7 +67,6 @@ def load_qdrant_config(
         _normalize_optional_string(resolved_collection_base)
         or DEFAULT_QDRANT_COLLECTION_BASE
     )
-    normalized_collection = _normalize_optional_string(resolved_collection)
     normalized_collection_code = _normalize_optional_string(resolved_collection_code)
     normalized_collection_docs = _normalize_optional_string(resolved_collection_docs)
     normalized_distance = _normalize_optional_string(resolved_distance) or DEFAULT_QDRANT_DISTANCE
@@ -81,7 +75,6 @@ def load_qdrant_config(
         url=normalized_url,
         api_key=normalized_api_key,
         collection_base=normalized_collection_base,
-        collection=normalized_collection,
         collection_code=normalized_collection_code,
         collection_docs=normalized_collection_docs,
         distance=normalized_distance,
@@ -228,19 +221,13 @@ class QdrantStore:
         model_name: str,
     ) -> str:
         """
-        Resolve o nome da collection.
-
-        Se QDRANT_COLLECTION estiver definido, usa ele.
-        Senão, gera automaticamente baseado em base/size/model.
+        Resolve o nome base da collection.
         """
-        if self.config.collection:
-            self._collection_name = self.config.collection
-        else:
-            self._collection_name = generate_collection_name(
-                self.config.collection_base,
-                vector_size,
-                model_name,
-            )
+        self._collection_name = generate_collection_name(
+            self.config.collection_base,
+            vector_size,
+            model_name,
+        )
         return self._collection_name
 
     def resolve_split_collection_names(
@@ -255,14 +242,11 @@ class QdrantStore:
         - QDRANT_COLLECTION_CODE / QDRANT_COLLECTION_DOCS (se definidos)
         - senão, stem + sufixos "__code" e "__docs"
         """
-        if self.config.collection:
-            stem = self.config.collection
-        else:
-            stem = generate_collection_name(
-                self.config.collection_base,
-                vector_size,
-                model_name,
-            )
+        stem = generate_collection_name(
+            self.config.collection_base,
+            vector_size,
+            model_name,
+        )
 
         code_collection = self.config.collection_code or f"{stem}__code"
         docs_collection = self.config.collection_docs or f"{stem}__docs"
