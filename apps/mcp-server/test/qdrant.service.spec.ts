@@ -12,8 +12,6 @@ describe('QdrantService', () => {
     nock.cleanAll();
     delete process.env.QDRANT_URL;
     delete process.env.QDRANT_COLLECTION_BASE;
-    delete process.env.QDRANT_COLLECTION_CODE;
-    delete process.env.QDRANT_COLLECTION_DOCS;
     delete process.env.QDRANT_API_KEY;
     delete process.env.RRF_K;
     delete process.env.RRF_DIVERSITY_FLOOR;
