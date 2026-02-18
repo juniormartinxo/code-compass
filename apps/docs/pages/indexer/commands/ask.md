@@ -50,7 +50,7 @@ python -m indexer ask "sua pergunta aqui" --scope-repo code-compass
 | Variável | Default | Descrição |
 |----------|---------|-----------|
 | `QDRANT_URL` | `http://localhost:6333` | URL do servidor Qdrant |
-| `QDRANT_COLLECTION_BASE` | `compass__3584__manutic_nomic_embed` | Stem base das collections |
+| `QDRANT_COLLECTION_BASE` | `compass__manutic_nomic_embed` | Stem base das collections |
 
 > Dica operacional: para ambiente multi-repo, mantenha `QDRANT_COLLECTION_BASE` igual no indexer e no MCP server.
 
