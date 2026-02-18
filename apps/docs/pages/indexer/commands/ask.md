@@ -44,7 +44,10 @@ python -m indexer ask "sua pergunta aqui" --scope-repo code-compass
 | Variável | Default | Descrição |
 |----------|---------|-----------|
 | `OLLAMA_URL` | `http://localhost:11434` | URL do servidor Ollama |
-| `EMBEDDING_MODEL` | `manutic/nomic-embed-code` | Modelo de embedding |
+| `EMBEDDING_PROVIDER_CODE` | `ollama` | Provider de embedding para `code` |
+| `EMBEDDING_PROVIDER_DOCS` | `ollama` | Provider de embedding para `docs` |
+| `EMBEDDING_MODEL_CODE` | `manutic/nomic-embed-code` | Modelo de embedding para `code` |
+| `EMBEDDING_MODEL_DOCS` | `bge-m3` | Modelo de embedding para `docs` |
 
 **Qdrant:**
 | Variável | Default | Descrição |
