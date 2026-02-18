@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -15,7 +14,7 @@ from qdrant_client.http.exceptions import UnexpectedResponse
 logger = logging.getLogger(__name__)
 
 DEFAULT_QDRANT_URL = "http://localhost:6333"
-DEFAULT_QDRANT_COLLECTION_BASE = "compass"
+DEFAULT_QDRANT_COLLECTION_BASE = "compass__3584__manutic_nomic_embed"
 DEFAULT_QDRANT_DISTANCE = "COSINE"
 DEFAULT_QDRANT_UPSERT_BATCH = 64
 
@@ -38,8 +37,6 @@ class QdrantConfig:
     collection_base: str
     distance: str
     upsert_batch: int
-    collection_code: str | None = None
-    collection_docs: str | None = None
 
 
 def load_qdrant_config(
@@ -57,8 +54,6 @@ def load_qdrant_config(
         if collection_base is not None
         else os.getenv("QDRANT_COLLECTION_BASE")
     )
-    resolved_collection_code = os.getenv("QDRANT_COLLECTION_CODE")
-    resolved_collection_docs = os.getenv("QDRANT_COLLECTION_DOCS")
     resolved_distance = distance if distance is not None else os.getenv("QDRANT_DISTANCE")
 
     normalized_url = _normalize_optional_string(resolved_url) or DEFAULT_QDRANT_URL
@@ -67,16 +62,12 @@ def load_qdrant_config(
         _normalize_optional_string(resolved_collection_base)
         or DEFAULT_QDRANT_COLLECTION_BASE
     )
-    normalized_collection_code = _normalize_optional_string(resolved_collection_code)
-    normalized_collection_docs = _normalize_optional_string(resolved_collection_docs)
     normalized_distance = _normalize_optional_string(resolved_distance) or DEFAULT_QDRANT_DISTANCE
 
     return QdrantConfig(
         url=normalized_url,
         api_key=normalized_api_key,
         collection_base=normalized_collection_base,
-        collection_code=normalized_collection_code,
-        collection_docs=normalized_collection_docs,
         distance=normalized_distance,
         upsert_batch=upsert_batch
         or int(os.getenv("QDRANT_UPSERT_BATCH", str(DEFAULT_QDRANT_UPSERT_BATCH))),
@@ -141,14 +132,6 @@ def build_qdrant_filter(filters: dict[str, Any] | None) -> models.Filter | None:
     return models.Filter(must=must_conditions)
 
 
-def _slugify(text: str) -> str:
-    """Converte texto para slug (lowercase, underscores)."""
-    slug = text.lower()
-    slug = re.sub(r"[^a-z0-9]+", "_", slug)
-    slug = slug.strip("_")
-    return slug
-
-
 def _resolve_distance(distance_str: str) -> models.Distance:
     """Converte string de distância para enum do Qdrant."""
     distance_map = {
@@ -170,13 +153,14 @@ def generate_collection_name(
     model_name: str,
 ) -> str:
     """
-    Gera nome da collection baseado em base, vector_size e modelo.
+    Retorna o stem base da collection.
 
-    Formato: {base}__{vector_size}__{model_slug}
-    Ex: compass__3584__manutic_nomic_embed_code
+    `vector_size` e `model_name` são ignorados para manter
+    assinatura backward-compatible com chamadas existentes.
     """
-    model_slug = _slugify(model_name)
-    return f"{collection_base}__{vector_size}__{model_slug}"
+    del vector_size
+    del model_name
+    return collection_base
 
 
 class QdrantStore:
@@ -237,10 +221,6 @@ class QdrantStore:
     ) -> dict[str, str]:
         """
         Resolve nomes das collections para code/docs.
-
-        Prioridade:
-        - QDRANT_COLLECTION_CODE / QDRANT_COLLECTION_DOCS (se definidos)
-        - senão, stem + sufixos "__code" e "__docs"
         """
         stem = generate_collection_name(
             self.config.collection_base,
@@ -248,8 +228,8 @@ class QdrantStore:
             model_name,
         )
 
-        code_collection = self.config.collection_code or f"{stem}__code"
-        docs_collection = self.config.collection_docs or f"{stem}__docs"
+        code_collection = f"{stem}__code"
+        docs_collection = f"{stem}__docs"
         return {
             "code": code_collection,
             "docs": docs_collection,
