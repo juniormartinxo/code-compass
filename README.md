@@ -108,7 +108,7 @@ pnpm ask --repo code-compass
 pnpm ask "onde fica o handler do search_code?" --repo code-compass
 ```
 
-No fluxo atual, informe `--repo` para `ask` (ou use `scope` nas chamadas MCP diretas).
+No fluxo atual, o CLI converte `--repo` para `scope: { type: "repo", repo }` ao chamar o MCP.
 
 ---
 
@@ -182,8 +182,7 @@ Observações importantes do estado atual deste repositório:
 
 ### Flags de CLI
 
-- `pnpm ask --repo <repo>`: escopo de um repositório para `ask_code`.
-- `python -m indexer ask --repo <repo>`: modo compatível com MCP (`scope.type=repo`).
+- `pnpm ask --repo <repo>`: escopo de um repositório para `ask_code` (via ACP, convertido em `scope`).
 - `python -m indexer ask --scope-repo <repo>`: escopo explícito de 1 repo.
 - `python -m indexer ask --scope-repos "repo-a,repo-b"`: escopo explícito multi-repo.
 - `python -m indexer ask --scope-all`: escopo global (requer `ALLOW_GLOBAL_SCOPE=true`).
@@ -490,8 +489,7 @@ CHUNK_OVERLAP_LINES=20
 # -----------------------------
 MCP_SERVER_NAME=code-compass
 MCP_SERVER_PORT=3333
-REPO_ROOT=/abs/path/para/repositorio
-# CODEBASE_ROOT=/abs/path/para/code-base
+CODEBASE_ROOT=/abs/path/para/code-base
 ALLOW_GLOBAL_SCOPE=false
 
 # -----------------------------
