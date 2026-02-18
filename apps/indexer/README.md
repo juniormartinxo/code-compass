@@ -56,9 +56,6 @@ export QDRANT_URL=http://localhost:6333
 export QDRANT_COLLECTION_BASE=compass__3584__manutic_nomic_embed_code
 export QDRANT_DISTANCE=COSINE
 export QDRANT_UPSERT_BATCH=64
-# opcionais:
-# export QDRANT_COLLECTION_CODE=${QDRANT_COLLECTION_BASE}__code
-# export QDRANT_COLLECTION_DOCS=${QDRANT_COLLECTION_BASE}__docs
 
 # Repositório
 export REPO_ROOT=/path/to/your/repository
@@ -297,8 +294,6 @@ Importante:
 | `QDRANT_URL` | `http://localhost:6333` | URL do Qdrant |
 | `QDRANT_API_KEY` | - | API key (opcional) |
 | `QDRANT_COLLECTION_BASE` | `compass__3584__manutic_nomic_embed_code` | Stem para nome das collections |
-| `QDRANT_COLLECTION_CODE` | - | Nome explícito da collection de código |
-| `QDRANT_COLLECTION_DOCS` | - | Nome explícito da collection de documentação |
 | `QDRANT_DISTANCE` | `COSINE` | Métrica de distância (COSINE, EUCLID, DOT) |
 | `QDRANT_UPSERT_BATCH` | `64` | Pontos por batch de upsert |
 | `INDEX_MIN_FILE_COVERAGE` | `0.95` | Cobertura mínima de arquivos no `index` |
@@ -359,10 +354,10 @@ Observação importante:
 
 ## Nome Automático de Collection
 
-O stem base da collection é gerado automaticamente por:
+O stem base da collection é o valor de `QDRANT_COLLECTION_BASE`.
 
 ```
-{QDRANT_COLLECTION_BASE}__{VECTOR_SIZE}__{slug(EMBEDDING_MODEL)}
+{QDRANT_COLLECTION_BASE}
 ```
 
 Exemplo:
@@ -370,7 +365,9 @@ Exemplo:
 compass__3584__manutic_nomic_embed_code
 ```
 
-Isso evita conflitos ao trocar de modelo (cada modelo terá sua própria collection).
+Os nomes finais usados no Qdrant são:
+- `{QDRANT_COLLECTION_BASE}__code`
+- `{QDRANT_COLLECTION_BASE}__docs`
 
 ## Idempotência
 
@@ -396,7 +393,7 @@ python -m pytest tests/ -v
 ### "Collection X tem vector size Y, mas embedding é size Z"
 
 O modelo de embedding mudou. Opções:
-1. Use outro `QDRANT_COLLECTION_BASE` (ou overrides `QDRANT_COLLECTION_CODE`/`QDRANT_COLLECTION_DOCS`)
+1. Use outro `QDRANT_COLLECTION_BASE`
 2. Delete a collection existente via API do Qdrant
 
 ### "Erro no Qdrant: conexão recusada"
