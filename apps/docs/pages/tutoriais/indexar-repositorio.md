@@ -46,7 +46,7 @@ python -m indexer search "palavra-chave" --path_prefix caminho/relativo
 4. (Opcional) Valide pergunta RAG no repo indexado.
 
 ```bash
-python -m indexer ask "qual a arquitetura principal deste repo?" --repo $(basename /caminho/do/repositorio)
+python -m indexer ask "qual a arquitetura principal deste repo?" --scope-repo $(basename /caminho/do/repositorio)
 ```
 
 ## Variações úteis
