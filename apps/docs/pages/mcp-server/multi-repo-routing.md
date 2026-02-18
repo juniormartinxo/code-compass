@@ -62,7 +62,7 @@ Output (trecho relevante):
     "scope": { "type": "repos", "repos": ["repo-a", "repo-b"] },
     "topK": 10,
     "pathPrefix": "apps/indexer/",
-    "collection": "compass__3584__manutic_nomic_embed_code"
+    "collection": "compass__manutic_nomic_embed"
   }
 }
 ```
@@ -100,7 +100,7 @@ Output (trecho relevante):
     "topK": 5,
     "minScore": 0.6,
     "llmModel": "gpt-oss:latest",
-    "collection": "compass__3584__manutic_nomic_embed_code",
+    "collection": "compass__manutic_nomic_embed",
     "totalMatches": 12,
     "contextsUsed": 3,
     "elapsedMs": 1234
