@@ -12,7 +12,7 @@ python -m indexer init [opções]
 
 O comando `init` prepara o ambiente para indexação:
 
-1. **Probe do Vector Size**: Conecta ao Ollama e descobre automaticamente o tamanho do vetor do modelo configurado
+1. **Probe do Vector Size**: Conecta ao Ollama e descobre automaticamente o tamanho do vetor para `code` e `docs`
 2. **Resolução dos Nomes**: Gera os nomes das collections de `code` e `docs`
 3. **Criação/Validação**: Cria as collections no Qdrant (se não existirem) ou valida as existentes
 
@@ -28,7 +28,10 @@ Este comando pode ser executado múltiplas vezes sem efeitos colaterais:
 | Opção | Descrição | Default |
 |-------|-----------|---------|
 | `--ollama-url` | URL do servidor Ollama | `http://localhost:11434` (env: `OLLAMA_URL`) |
-| `--model` | Modelo de embedding | `manutic/nomic-embed-code` (env: `EMBEDDING_MODEL`) |
+| `--provider-code` | Provider de embedding para `code` | `ollama` (env: `EMBEDDING_PROVIDER_CODE`) |
+| `--provider-docs` | Provider de embedding para `docs` | `ollama` (env: `EMBEDDING_PROVIDER_DOCS`) |
+| `--model-code` | Modelo de embedding para `code` | `manutic/nomic-embed-code` (env: `EMBEDDING_MODEL_CODE`) |
+| `--model-docs` | Modelo de embedding para `docs` | `bge-m3` (env: `EMBEDDING_MODEL_DOCS`) |
 | `--qdrant-url` | URL do servidor Qdrant | `http://localhost:6333` (env: `QDRANT_URL`) |
 
 ## Variáveis de Ambiente
@@ -36,7 +39,10 @@ Este comando pode ser executado múltiplas vezes sem efeitos colaterais:
 As variáveis são lidas do ambiente e carregadas automaticamente de `.env` e `.env.local` na raiz do repositório. `.env.local` sobrescreve `.env`, e variáveis já exportadas no shell têm precedência.
 
 - `OLLAMA_URL`: URL do Ollama
-- `EMBEDDING_MODEL`: Modelo de embedding
+- `EMBEDDING_PROVIDER_CODE`: Provider de embedding para `code`
+- `EMBEDDING_PROVIDER_DOCS`: Provider de embedding para `docs`
+- `EMBEDDING_MODEL_CODE`: Modelo de embedding para `code`
+- `EMBEDDING_MODEL_DOCS`: Modelo de embedding para `docs`
 - `QDRANT_URL`: URL do Qdrant
 - `QDRANT_API_KEY`: API key do Qdrant (opcional)
 - `QDRANT_COLLECTION_BASE`: Stem base das collections
@@ -48,10 +54,20 @@ O comando retorna um JSON com informações da inicialização:
 
 ```json
 {
-  "provider": "ollama",
-  "ollama_url": "http://localhost:11434",
-  "model": "manutic/nomic-embed-code",
-  "vector_size": 3584,
+  "embedding": {
+    "code": {
+      "provider": "ollama",
+      "ollama_url": "http://localhost:11434",
+      "model": "manutic/nomic-embed-code",
+      "vector_size": 3584
+    },
+    "docs": {
+      "provider": "ollama",
+      "ollama_url": "http://localhost:11434",
+      "model": "bge-m3",
+      "vector_size": 3584
+    }
+  },
   "collections": {
     "code": {
       "name": "compass__manutic_nomic_embed__code",
@@ -71,10 +87,7 @@ O comando retorna um JSON com informações da inicialização:
 
 | Campo | Descrição |
 |-------|-----------|
-| `provider` | Provider de embeddings (`ollama`) |
-| `ollama_url` | URL do Ollama usado |
-| `model` | Modelo de embedding |
-| `vector_size` | Tamanho do vetor descoberto |
+| `embedding` | Configuração por tipo (`provider`, `ollama_url`, `model`, `vector_size`) |
 | `collections` | Mapa com collections finais (`code` e `docs`) e ação (`created`/`validated`) |
 | `distance` | Métrica de distância configurada |
 | `qdrant_url` | URL do Qdrant usado |
@@ -124,8 +137,9 @@ O Ollama não está acessível ou o modelo não está instalado.
 # Verificar Ollama
 curl http://localhost:11434
 
-# Instalar modelo
+# Instalar modelos
 ollama pull manutic/nomic-embed-code
+ollama pull bge-m3
 ```
 
 ### "Collection X tem vector size Y, mas embedding é size Z"
