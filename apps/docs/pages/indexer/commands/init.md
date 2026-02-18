@@ -39,9 +39,7 @@ As variáveis são lidas do ambiente e carregadas automaticamente de `.env` e `.
 - `EMBEDDING_MODEL`: Modelo de embedding
 - `QDRANT_URL`: URL do Qdrant
 - `QDRANT_API_KEY`: API key do Qdrant (opcional)
-- `QDRANT_COLLECTION_BASE`: Base para geração automática dos nomes
-- `QDRANT_COLLECTION_CODE`: Override opcional da collection de código
-- `QDRANT_COLLECTION_DOCS`: Override opcional da collection de documentação
+- `QDRANT_COLLECTION_BASE`: Stem base das collections
 - `QDRANT_DISTANCE`: Métrica de distância (COSINE, EUCLID, DOT)
 
 ## Saída
@@ -54,10 +52,18 @@ O comando retorna um JSON com informações da inicialização:
   "ollama_url": "http://localhost:11434",
   "model": "manutic/nomic-embed-code",
   "vector_size": 3584,
-  "collection_name": "compass__3584__manutic_nomic_embed_code",
+  "collections": {
+    "code": {
+      "name": "compass__3584__manutic_nomic_embed__code",
+      "action": "created"
+    },
+    "docs": {
+      "name": "compass__3584__manutic_nomic_embed__docs",
+      "action": "created"
+    }
+  },
   "distance": "COSINE",
-  "qdrant_url": "http://localhost:6333",
-  "action": "created"
+  "qdrant_url": "http://localhost:6333"
 }
 ```
 
@@ -69,17 +75,16 @@ O comando retorna um JSON com informações da inicialização:
 | `ollama_url` | URL do Ollama usado |
 | `model` | Modelo de embedding |
 | `vector_size` | Tamanho do vetor descoberto |
-| `collection_name` | Nome da collection no Qdrant |
+| `collections` | Mapa com collections finais (`code` e `docs`) e ação (`created`/`validated`) |
 | `distance` | Métrica de distância configurada |
 | `qdrant_url` | URL do Qdrant usado |
-| `action` | `created` (nova) ou `validated` (existente) |
 
 ## Geração Automática de Nome
 
-O stem base é gerado automaticamente por:
+O stem base é o valor de `QDRANT_COLLECTION_BASE`:
 
 ```
-{QDRANT_COLLECTION_BASE}__{VECTOR_SIZE}__{slug(EMBEDDING_MODEL)}
+{QDRANT_COLLECTION_BASE}
 ```
 
 Exemplo para o modelo padrão:
@@ -89,10 +94,8 @@ compass__3584__manutic_nomic_embed_code
 
 Os nomes finais usados no Qdrant são:
 
-- `{stem}__code`
-- `{stem}__docs`
-
-com possibilidade de override via `QDRANT_COLLECTION_CODE`/`QDRANT_COLLECTION_DOCS`.
+- `{QDRANT_COLLECTION_BASE}__code`
+- `{QDRANT_COLLECTION_BASE}__docs`
 
 ## Exemplos
 
@@ -130,7 +133,7 @@ ollama pull manutic/nomic-embed-code
 A collection já existe mas foi criada com outro modelo de embedding.
 
 **Solução:**
-- Use outro `QDRANT_COLLECTION_BASE` (ou overrides `QDRANT_COLLECTION_CODE`/`QDRANT_COLLECTION_DOCS`)
+- Use outro `QDRANT_COLLECTION_BASE`
 - Ou delete a collection existente
 
 ## Ver Também
