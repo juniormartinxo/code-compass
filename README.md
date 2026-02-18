@@ -190,7 +190,6 @@ Observações importantes do estado atual deste repositório:
 ### Env vars operacionais
 
 - `QDRANT_COLLECTION_BASE`: stem compartilhado entre indexador e MCP (coleções finais: `__code` e `__docs`).
-- `QDRANT_COLLECTION_CODE`/`QDRANT_COLLECTION_DOCS`: overrides opcionais dos nomes finais.
 - `CODEBASE_ROOT`: habilita roteamento multi-repo no MCP (`<CODEBASE_ROOT>/<repo>`).
 - `ALLOW_GLOBAL_SCOPE=true`: habilita `scope: { type: "all" }` em `search_code` e `ask_code`.
 - `INDEXER_RUN_MODULE=indexer`: módulo Python usado pelo `Makefile`/docker para indexação.
@@ -440,9 +439,6 @@ QDRANT_STORAGE_PATH=../.qdrant_storage
 QDRANT_URL=http://localhost:6333
 QDRANT_API_KEY=
 QDRANT_COLLECTION_BASE=compass__3584__manutic_nomic_embed_code
-# opcionais:
-# QDRANT_COLLECTION_CODE=${QDRANT_COLLECTION_BASE}__code
-# QDRANT_COLLECTION_DOCS=${QDRANT_COLLECTION_BASE}__docs
 QDRANT_DISTANCE=COSINE
 QDRANT_UPSERT_BATCH=64
 
