@@ -38,7 +38,9 @@ python -m indexer ask "sua pergunta aqui" --scope-repo code-compass
 **LLM:**
 | Variável | Default | Descrição |
 |----------|---------|-----------|
-| `LLM_MODEL` | `gpt-oss:latest` | Modelo LLM para gerar respostas |
+| `LLM_MODEL` | `gpt-oss:latest` | Modelo LLM padrão para gerar respostas |
+
+Precedência de configuração do modelo no `ask`: `--model` > `LLM_MODEL` > `gpt-oss:latest`.
 
 **Embeddings (Ollama):**
 | Variável | Default | Descrição |
