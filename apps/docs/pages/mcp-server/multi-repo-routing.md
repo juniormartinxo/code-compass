@@ -1,11 +1,10 @@
 # MCP Server: Multi-repo e Scope
 
-Este guia documenta o contrato atualizado das tools `search_code`, `ask_code` e `open_file` no MCP Server, incluindo suporte a multi-repo via `scope` e o modo compatível com `repo`.
+Este guia documenta o contrato atual das tools `search_code`, `ask_code` e `open_file` no MCP Server, com escopo obrigatório via `scope`.
 
 ## Resumo das mudanças
 
-- `search_code` e `ask_code` agora aceitam `scope` (opcional) para buscar em 1 repo, múltiplos repos ou todos.
-- `repo` continua aceito por compatibilidade quando `scope` não é enviado.
+- `search_code` e `ask_code` exigem `scope` para buscar em 1 repo, múltiplos repos ou todos.
 - `open_file` **não mudou**: continua exigindo `repo` e aplica as mesmas regras de segurança de filesystem.
 - `scope: { type: "all" }` depende de `ALLOW_GLOBAL_SCOPE=true`.
 - Resultados e evidências agora incluem `repo` para observabilidade.
@@ -23,11 +22,6 @@ Este guia documenta o contrato atualizado das tools `search_code`, `ask_code` e 
 ```json
 { "type": "all" }
 ```
-
-## Regras de compatibilidade
-
-- Se `scope` **não** for enviado, o MCP espera `repo` e equivale a `scope: { type: "repo", repo }`.
-- Se `scope` for enviado, ele é a fonte de verdade; `repo` (se existir) é ignorado.
 
 ## Feature flag: `ALLOW_GLOBAL_SCOPE`
 
@@ -130,7 +124,7 @@ Input (continua igual):
 Regras de segurança permanecem:
 
 - `repo` obrigatório.
-- O arquivo deve estar dentro de `<CODEBASE_ROOT>/<repo>` ou `REPO_ROOT` (modo compat).
+- O arquivo deve estar dentro de `<CODEBASE_ROOT>/<repo>`.
 - `path` absoluto e `..` são bloqueados.
 - Escape via symlink é bloqueado via `realpath`.
 
@@ -150,6 +144,6 @@ Regras práticas:
 - Para multi-repo real, indexe cada subdiretório (`code-base/<repo>`) individualmente (ex.: `scripts/index-all.sh`).
 - Para dados antigos sem `payload.repo`, reindexe para restaurar o filtro preciso por repositório.
 
-## Compatibilidade com clientes antigos
+## Observação de migração
 
-Clientes que enviam apenas `repo` continuam funcionando sem alterações. Para novos clientes, recomenda-se migrar para `scope`.
+Clientes que ainda enviavam apenas `repo` em `search_code`/`ask_code` devem migrar para `scope`.
