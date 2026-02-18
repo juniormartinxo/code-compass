@@ -304,6 +304,11 @@ Importante:
 | `QDRANT_DISTANCE` | `COSINE` | Métrica de distância (COSINE, EUCLID, DOT) |
 | `QDRANT_UPSERT_BATCH` | `64` | Pontos por batch de upsert |
 | `INDEX_MIN_FILE_COVERAGE` | `0.95` | Cobertura mínima de arquivos no `index` |
+| `SEARCH_SNIPPET_MAX_CHARS` | `300` | Limite de caracteres no snippet de `search` |
+| `DOC_EXTENSIONS` | `.md,.mdx,.rst,.adoc,.txt` | Extensões classificadas como `docs` |
+| `DOC_PATH_HINTS` | `/docs/,/documentation/,/adr,...` | Pistas de path para classificar como `docs` |
+| `EXCLUDED_CONTEXT_PATH_PARTS` | `/.venv/,/venv/,...` | Paths excluídos do contexto em `ask` |
+| `CONTENT_TYPES` | `code,docs` | Tipos de conteúdo usados no split de collections |
 
 Observação sobre autenticação no Qdrant:
 - Se `QDRANT_API_KEY` estiver vazia (ex.: `QDRANT_API_KEY=`), o cliente é inicializado sem API key.
