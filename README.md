@@ -51,7 +51,7 @@ Ele indexa repositórios (código + docs), gera embeddings e armazena tudo em um
 ## Quickstart (plug and play)
 
 ### 1) Configure `.env.local`
-Crie `.env.local` a partir de `.env.example`.
+Crie `.env.local` a partir de `.env.example` (inclui `LLM_MODEL` para o comando `ask`).
 
 > O `Makefile` prioriza `.env.local` quando o arquivo existe.
 
