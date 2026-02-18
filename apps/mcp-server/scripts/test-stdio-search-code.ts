@@ -19,7 +19,7 @@ function createServer(): McpStdioServer {
 async function run(): Promise<void> {
   process.env.QDRANT_URL = process.env.QDRANT_URL || 'http://localhost:6333';
   process.env.QDRANT_COLLECTION_BASE =
-    process.env.QDRANT_COLLECTION_BASE || 'compass__3584__manutic_nomic_embed_code';
+    process.env.QDRANT_COLLECTION_BASE || 'compass__manutic_nomic_embed';
   process.env.MCP_QDRANT_MOCK_RESPONSE = JSON.stringify([
     {
       score: 0.88,
