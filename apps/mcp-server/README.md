@@ -198,7 +198,7 @@ Executa o fluxo RAG completo no MCP: embedding da pergunta, busca no Qdrant, enr
 
 ### Regras importantes
 
-- Usa `OLLAMA_URL` + `EMBEDDING_MODEL` para gerar embedding da pergunta.
+- Usa `OLLAMA_URL` + `EMBEDDING_MODEL_CODE`/`EMBEDDING_MODEL_DOCS` para gerar embedding da pergunta conforme `contentType`.
 - Usa `OLLAMA_URL` + `llmModel` para gerar resposta final.
 - A política de prompt e seleção de contexto fica centralizada no MCP.
 
