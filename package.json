@@ -16,7 +16,7 @@
     "cli:install": "python -m venv apps/cli/.venv && . apps/cli/.venv/bin/activate && pip install -e apps/cli",
     "cli:ask": "apps/cli/.venv/bin/code-compass ask",
     "ask": "apps/cli/.venv/bin/code-compass ask",
-    "chat": "PYTHON_COMMAND=apps/cli/.venv/bin/python apps/cli/.venv/bin/code-compass chat",
+    "chat": "bash ./bin/dev-chat",
     "docs:dev": "pnpm -C apps/docs dev",
     "docs:build": "pnpm -C apps/docs build",
     "docs:start": "pnpm -C apps/docs start"
