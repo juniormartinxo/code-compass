@@ -96,9 +96,9 @@ class CodeCompassAgent(acp.Agent):
                     return command_response
 
                 raw_repo = (state.repo_override or os.getenv("ACP_REPO", "code-compass")).strip()
-                payload = {
+                payload: dict[str, Any] = {
                     "query": question,
-                    "repo": raw_repo,
+                    "scope": {"type": "repo", "repo": raw_repo},
                 }
                 path_prefix = os.getenv("ACP_PATH_PREFIX", "").strip()
                 language = os.getenv("ACP_LANGUAGE", "").strip()
@@ -112,7 +112,6 @@ class CodeCompassAgent(acp.Agent):
                 if "," in raw_repo:
                     repos = [r.strip() for r in raw_repo.split(",") if r.strip()]
                     if repos:
-                        payload.pop("repo", None)
                         payload["scope"] = {"type": "repos", "repos": repos}
 
                 if path_prefix:
