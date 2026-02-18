@@ -186,7 +186,7 @@ Query do Agente
 1. **Verifique se o Qdrant está rodando:** `make up` ou `docker ps`.
 2. **Verifique se a collection tem pontos:** use o dashboard do Qdrant em `http://localhost:6333/dashboard`.
 3. **Reduza o `minScore`:** se o valor está muito alto, trechos relevantes podem estar sendo descartados.
-4. **Verifique o modelo de embeddings:** o modelo no MCP server (`EMBEDDING_MODEL`) deve ser o **mesmo** usado na indexação.
+4. **Verifique os modelos de embeddings:** no MCP server, `EMBEDDING_MODEL_CODE` e `EMBEDDING_MODEL_DOCS` devem ser os **mesmos** usados na indexação para cada tipo.
 
 ### O contexto enviado ao LLM está desatualizado
 
