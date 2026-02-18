@@ -5,4 +5,5 @@ export default {
   'ADR-04': 'ADR-04: MCP como Interface',
   'ADR-05': 'ADR-05: Read-Only por Padrão',
   'ADR-06': 'ADR-06: Evidence-First',
+  'ADR-07': 'ADR-07: Split Code/Docs no Qdrant',
 };
