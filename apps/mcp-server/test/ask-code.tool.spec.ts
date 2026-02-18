@@ -21,6 +21,7 @@ function createTool(): AskCodeTool {
         startLine: 1,
         endLine: 4,
         text: 'export const OPERATORS = ["eq", "neq"];',
+        content_type: 'code',
       },
     },
   ]);
