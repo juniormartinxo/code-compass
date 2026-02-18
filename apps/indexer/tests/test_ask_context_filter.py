@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import unittest
+from unittest.mock import patch
 
 from indexer.__main__ import _filter_context_results, _should_exclude_context_path
 
@@ -40,6 +42,15 @@ class AskContextFilterTests(unittest.TestCase):
         self.assertEqual(excluded, 1)
         self.assertEqual(len(filtered), 1)
         self.assertEqual(filtered[0]["id"], "2")
+
+    def test_respects_excluded_context_path_parts_from_env(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"EXCLUDED_CONTEXT_PATH_PARTS": "/generated/"},
+            clear=False,
+        ):
+            self.assertTrue(_should_exclude_context_path("src/generated/schema.ts"))
+            self.assertFalse(_should_exclude_context_path("src/domain/schema.ts"))
 
 
 if __name__ == "__main__":
