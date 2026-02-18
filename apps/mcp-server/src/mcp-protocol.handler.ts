@@ -196,6 +196,17 @@ export class McpProtocolHandler {
             topK: { type: 'number' },
             pathPrefix: { type: 'string' },
             vector: { type: 'array', items: { type: 'number' } },
+            contentType: {
+              type: 'string',
+              enum: ['code', 'docs', 'all'],
+              default: 'all',
+            },
+            strict: {
+              type: 'boolean',
+              default: false,
+              description:
+                'When true, returns an error if any collection is unavailable instead of partial results.',
+            },
           },
         },
       },
@@ -265,6 +276,17 @@ export class McpProtocolHandler {
             minScore: { type: 'number' },
             llmModel: { type: 'string' },
             grounded: { type: 'boolean' },
+            contentType: {
+              type: 'string',
+              enum: ['code', 'docs', 'all'],
+              default: 'all',
+            },
+            strict: {
+              type: 'boolean',
+              default: false,
+              description:
+                'When true, returns an error if any collection is unavailable instead of partial results.',
+            },
           },
         },
       },
