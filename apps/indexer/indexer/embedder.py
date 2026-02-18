@@ -13,17 +13,29 @@ import httpx
 logger = logging.getLogger(__name__)
 
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
-DEFAULT_EMBEDDING_MODEL = "manutic/nomic-embed-code"
+DEFAULT_EMBEDDING_PROVIDER_CODE = "ollama"
+DEFAULT_EMBEDDING_PROVIDER_DOCS = "ollama"
+DEFAULT_EMBEDDING_MODEL_CODE = "manutic/nomic-embed-code"
+DEFAULT_EMBEDDING_MODEL_DOCS = "bge-m3"
 DEFAULT_EMBEDDING_BATCH_SIZE = 16
 DEFAULT_EMBEDDING_MAX_RETRIES = 5
 DEFAULT_EMBEDDING_BACKOFF_BASE_MS = 500
 DEFAULT_TIMEOUT_SECONDS = 120
 
 
+def _normalize_content_type(content_type: str) -> str:
+    normalized = content_type.strip().lower()
+    if normalized not in {"code", "docs"}:
+        raise ValueError("content_type deve ser 'code' ou 'docs'")
+    return normalized
+
+
 @dataclass(frozen=True)
 class EmbedderConfig:
     """Configuração do embedder."""
 
+    content_type: str
+    provider: str
     ollama_url: str
     model: str
     batch_size: int
@@ -33,17 +45,55 @@ class EmbedderConfig:
 
 
 def load_embedder_config(
+    content_type: str = "code",
     ollama_url: str | None = None,
     model: str | None = None,
+    provider: str | None = None,
     batch_size: int | None = None,
     max_retries: int | None = None,
     backoff_base_ms: int | None = None,
     timeout_seconds: int | None = None,
 ) -> EmbedderConfig:
     """Carrega configuração do embedder a partir de args ou variáveis de ambiente."""
+    resolved_content_type = _normalize_content_type(content_type)
+    suffix = resolved_content_type.upper()
+    default_provider = (
+        DEFAULT_EMBEDDING_PROVIDER_CODE
+        if resolved_content_type == "code"
+        else DEFAULT_EMBEDDING_PROVIDER_DOCS
+    )
+    default_model = (
+        DEFAULT_EMBEDDING_MODEL_CODE
+        if resolved_content_type == "code"
+        else DEFAULT_EMBEDDING_MODEL_DOCS
+    )
+
+    resolved_provider_raw = provider or os.getenv(
+        f"EMBEDDING_PROVIDER_{suffix}",
+        default_provider,
+    )
+    resolved_provider = resolved_provider_raw.strip().lower()
+    if not resolved_provider:
+        resolved_provider = default_provider
+    if resolved_provider != "ollama":
+        raise ValueError(
+            f"EMBEDDING_PROVIDER_{suffix}='{resolved_provider}' não suportado. "
+            "Apenas 'ollama' é aceito no indexador atualmente."
+        )
+
+    resolved_model_raw = model or os.getenv(
+        f"EMBEDDING_MODEL_{suffix}",
+        default_model,
+    )
+    resolved_model = resolved_model_raw.strip() if resolved_model_raw else ""
+    if not resolved_model:
+        resolved_model = default_model
+
     return EmbedderConfig(
+        content_type=resolved_content_type,
+        provider=resolved_provider,
         ollama_url=ollama_url or os.getenv("OLLAMA_URL", DEFAULT_OLLAMA_URL),
-        model=model or os.getenv("EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL),
+        model=resolved_model,
         batch_size=batch_size
         or int(os.getenv("EMBEDDING_BATCH_SIZE", str(DEFAULT_EMBEDDING_BATCH_SIZE))),
         max_retries=max_retries
