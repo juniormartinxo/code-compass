@@ -26,7 +26,7 @@ services:
         condition: service_healthy
     environment:
       QDRANT_URL: ${QDRANT_URL_DOCKER:-http://qdrant:6333}
-      QDRANT_COLLECTION_BASE: ${QDRANT_COLLECTION_BASE:-compass__3584__manutic_nomic_embed_code}
+      QDRANT_COLLECTION_BASE: ${QDRANT_COLLECTION_BASE:-compass__manutic_nomic_embed}
       QDRANT_COLLECTION_CODE: ${QDRANT_COLLECTION_CODE:-}
       QDRANT_COLLECTION_DOCS: ${QDRANT_COLLECTION_DOCS:-}
       QDRANT_DISTANCE: ${QDRANT_DISTANCE:-Cosine}
