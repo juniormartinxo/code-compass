@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Função de log enviando TUDO para o stderr (canal 2)
+log() {
+  echo "[dev-chat] $*" >&2
+}
+
+find_repo_root_upward() {
+  local current="$1"
+  while true; do
+    if [[ -f "$current/pnpm-workspace.yaml" || -d "$current/.git" || -f "$current/.git" ]]; then
+      echo "$current"
+      return 0
+    fi
+
+    local parent
+    parent="$(dirname "$current")"
+    if [[ "$parent" == "$current" ]]; then
+      return 1
+    fi
+    current="$parent"
+  done
+}
+
+resolve_repo_root() {
+  local script_dir
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+  local script_parent
+  script_parent="$(cd "$script_dir/.." && pwd -P)"
+
+  if command -v git >/dev/null 2>&1; then
+    local git_root
+    if git_root="$(git -C "$script_parent" rev-parse --show-toplevel 2>/dev/null)"; then
+      echo "$git_root"
+      return 0
+    fi
+  fi
+
+  if find_repo_root_upward "$script_parent"; then
+    return 0
+  fi
+
+  if find_repo_root_upward "$(pwd -P)"; then
+    return 0
+  fi
+
+  log "Error: could not resolve repo root (missing .git or pnpm-workspace.yaml)."
+  return 1
+}
+
+ROOT="$(resolve_repo_root)"
+ENV_FILE=""
+
+if [[ -f "$ROOT/.env.local" ]]; then
+  ENV_FILE="$ROOT/.env.local"
+elif [[ -f "$ROOT/.env" ]]; then
+  ENV_FILE="$ROOT/.env"
+fi
+
+# Carrega .env.local/.env se existir (apenas linhas KEY=VALUE)
+if [[ -n "$ENV_FILE" ]]; then
+  log "Loading env file: $ENV_FILE"
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+fi
+
+# Configura MCP_COMMAND se não estiver definido
+if [[ -z "${MCP_COMMAND:-}" ]]; then
+  MCP_SERVER_DIST="$ROOT/apps/mcp-server/dist/main.js"
+  if [[ -f "$MCP_SERVER_DIST" ]]; then
+    export MCP_COMMAND="node $MCP_SERVER_DIST"
+    log "MCP_COMMAND set to: $MCP_COMMAND"
+  else
+    log "Warning: MCP server not built. Run 'pnpm mcp:build' first."
+  fi
+fi
+
+# Configura PYTHON_COMMAND para o .venv do CLI
+export PYTHON_COMMAND="$ROOT/apps/cli/.venv/bin/python"
+
+# Configura ACP_AGENT_CMD se não estiver definido e o ACP existir
+if [[ -z "${ACP_AGENT_CMD:-}" ]]; then
+  ACP_BIN="$ROOT/apps/acp/.venv/bin/code-compass-acp"
+  if [[ -x "$ACP_BIN" ]]; then
+    export ACP_AGENT_CMD="$ACP_BIN"
+    log "ACP_AGENT_CMD set to: $ACP_AGENT_CMD"
+  else
+    log "Note: ACP agent not found at $ACP_BIN. Chat will run without ACP integration."
+  fi
+fi
+
+cd "$ROOT"
+log "Starting code-compass chat..."
+
+# Executa o chat com o Python do .venv do CLI
+exec "$ROOT/apps/cli/.venv/bin/code-compass" chat
