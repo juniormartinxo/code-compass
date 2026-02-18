@@ -65,7 +65,7 @@ export QDRANT_UPSERT_BATCH=64
 export REPO_ROOT=/path/to/your/repository
 ```
 
-Ou copie e edite o `.env.example` na raiz do projeto.
+Ou copie e edite o `.env.example` na raiz do projeto (inclui `LLM_MODEL` para o comando `ask`).
 
 ## Comandos
 
@@ -355,7 +355,7 @@ Observação sobre autenticação no Qdrant:
 
 | Variável | Default | Descrição |
 |----------|---------|-----------|
-| `LLM_MODEL` | `gpt-oss:latest` | Modelo LLM para gerar respostas no `ask` |
+| `LLM_MODEL` | `gpt-oss:latest` | Modelo LLM padrão do `ask` (prioridade: `--model` > `LLM_MODEL` > default interno) |
 | `MCP_COMMAND` | `node apps/mcp-server/dist/main.js --transport stdio` | Comando usado pelo `ask` para chamar o MCP |
 
 ## Payload do Ponto
