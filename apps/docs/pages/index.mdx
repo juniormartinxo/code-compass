@@ -23,8 +23,8 @@ Explore a documentação nas seções abaixo:
 
 ## ⚠️ Pontos Operacionais Importantes
 
-- Defina `QDRANT_COLLECTION` explicitamente para manter indexador e MCP na mesma coleção.
-- No `ask`, informe escopo (`--repo` no CLI ou `scope` nas chamadas MCP diretas).
+- Defina `QDRANT_COLLECTION_BASE` (e overrides `QDRANT_COLLECTION_CODE`/`QDRANT_COLLECTION_DOCS` se necessário) igual no indexer e no MCP.
+- No `ask`, informe escopo (`--scope-*` no indexer ou `scope` nas chamadas MCP diretas; o CLI converte `--repo` para `scope` via ACP).
 - Use `make index-all` para reindexar múltiplos repositórios em `code-base/`.
 - Para rodar testes Python em todas as apps, use `make py:test`.
 
