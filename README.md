@@ -465,9 +465,11 @@ REPO_ROOT_DOCKER=/workspace
 # -----------------------------
 # Embeddings (Ollama)
 # -----------------------------
-EMBEDDING_PROVIDER=ollama
+EMBEDDING_PROVIDER_CODE=ollama
+EMBEDDING_PROVIDER_DOCS=ollama
 OLLAMA_URL=http://localhost:11434
-EMBEDDING_MODEL=manutic/nomic-embed-code
+EMBEDDING_MODEL_CODE=manutic/nomic-embed-code
+EMBEDDING_MODEL_DOCS=bge-m3
 EMBEDDING_BATCH_SIZE=16
 EMBEDDING_MAX_RETRIES=5
 EMBEDDING_BACKOFF_BASE_MS=500
