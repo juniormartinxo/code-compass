@@ -33,7 +33,7 @@ Notas:
 
 - O uso de `bash -lc` ajuda a carregar ambiente/PATH (incluindo `pnpm`).
 - O uso de `pnpm --silent` evita banner no `stdout`, preservando `stdout` para o protocolo MCP.
-- O launcher `bin/dev-mcp` define defaults de `REPO_ROOT`, `QDRANT_URL` e `QDRANT_COLLECTION` sem sobrescrever env já informado pelo usuário.
+- O launcher `bin/dev-mcp` define defaults de `CODEBASE_ROOT`, `QDRANT_URL` e `QDRANT_COLLECTION_BASE` sem sobrescrever env já informado pelo usuário.
 - Evite depender de `cwd` no config do cliente; o template já faz `cd` explícito para a raiz do projeto.
 
 ## Verificação funcional
