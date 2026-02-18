@@ -8,6 +8,7 @@ O comando `scan` é responsável por varrer recursivamente um diretório (reposi
 O scanner percorre a árvore de diretórios a partir do `repo-root` e retorna uma lista de caminhos de arquivos relativos. Ele aplica filtros para:
 - Ignorar diretórios configurados (ex: `.git`, `node_modules`).
 - Filtrar por extensões de arquivo permitidas (ex: `.ts`, `.py`).
+- Ignorar arquivos por padrões glob opcionais (ex: `docs/**`, `**/*.test.ts`).
 - Detectar e ignorar arquivos binários.
 - Limitar o número máximo de arquivos retornados (opcional).
 
@@ -24,6 +25,7 @@ python -m indexer scan [opções]
 | `--repo-root` | `REPO_ROOT` | `..` | Diretório raiz a ser escaneado (relativo ao diretório atual). |
 | `--ignore-dirs` | `SCAN_IGNORE_DIRS` | `.git,node_modules,...` | Lista de diretórios a serem ignorados (separados por vírgula). |
 | `--allow-exts` | `SCAN_ALLOW_EXTS` | `.ts,.py,.js,...` | Lista de extensões de arquivo a serem incluídas (separadas por vírgula). |
+| `--ignore-patterns` | `SCAN_IGNORE_PATTERNS` | vazio | Padrões glob para ignorar arquivos (CSV). Ex.: `*.md,docs/**,**/*.test.ts`. Prioridade: CLI > Env > Default. |
 | `--max-files` | - | `None` | Limita o número máximo de arquivos retornados na lista. |
 
 ### Valores Padrão
@@ -55,6 +57,7 @@ A saída será um JSON contendo a lista de arquivos e estatísticas da varredura
     "total_dirs_seen": 20,
     "files_kept": 45,
     "files_ignored_ext": 100,
+    "files_ignored_pattern": 3,
     "files_ignored_binary": 5,
     "dirs_ignored": 2,
     "elapsed_ms": 12
@@ -70,6 +73,7 @@ A saída será um JSON contendo a lista de arquivos e estatísticas da varredura
 ## Detalhes de Implementação
 
 - **Detecção de Binários:** O scanner lê os primeiros 4096 bytes de cada arquivo. Se encontrar um byte nulo (`\x00`), o arquivo é considerado binário e ignorado.
+- **Ordem dos Filtros:** O scanner aplica primeiro `allow_exts`, depois `ignore_patterns`. Ou seja, padrões glob só são avaliados para arquivos cuja extensão já foi permitida.
 - **Performance:** O scan utiliza `os.scandir` para maior eficiência em diretórios grandes.
 - **Symlinks:** O scanner **não** segue links simbólicos (`follow_symlinks=False`) para evitar loops infinitos ou indexação duplicada.
 
