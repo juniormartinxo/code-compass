@@ -46,12 +46,14 @@ describe('FileService integration-ish', () => {
   });
 
   it('deve abrir range 10-20 com 11 linhas', async () => {
-    const repoRoot = mkdtempSync(join(tmpdir(), 'mcp-open-file-'));
-    tempRoots.push(repoRoot);
+    const codebaseRoot = mkdtempSync(join(tmpdir(), 'mcp-codebase-'));
+    const repoRoot = join(codebaseRoot, 'single-repo');
+    tempRoots.push(codebaseRoot);
+    mkdirSync(repoRoot, { recursive: true });
 
     writeFileSync(join(repoRoot, 'safe.txt'), `${makeLines(300)}\n`, 'utf8');
 
-    process.env.REPO_ROOT = repoRoot;
+    process.env.CODEBASE_ROOT = codebaseRoot;
     const service = new FileService();
 
     const output = await service.openRange({
@@ -71,10 +73,12 @@ describe('FileService integration-ish', () => {
   });
 
   it('deve bloquear traversal ../../etc/passwd', async () => {
-    const repoRoot = mkdtempSync(join(tmpdir(), 'mcp-open-file-'));
-    tempRoots.push(repoRoot);
+    const codebaseRoot = mkdtempSync(join(tmpdir(), 'mcp-codebase-'));
+    const repoRoot = join(codebaseRoot, 'single-repo');
+    tempRoots.push(codebaseRoot);
+    mkdirSync(repoRoot, { recursive: true });
 
-    process.env.REPO_ROOT = repoRoot;
+    process.env.CODEBASE_ROOT = codebaseRoot;
     const service = new FileService();
 
     await expect(service.openRange({ repo: 'single-repo', path: '../../etc/passwd' })).rejects.toMatchObject({
@@ -84,15 +88,17 @@ describe('FileService integration-ish', () => {
   });
 
   it('deve bloquear symlink escape para fora do root', async () => {
-    const repoRoot = mkdtempSync(join(tmpdir(), 'mcp-open-file-'));
+    const codebaseRoot = mkdtempSync(join(tmpdir(), 'mcp-codebase-'));
+    const repoRoot = join(codebaseRoot, 'single-repo');
     const outsideRoot = mkdtempSync(join(tmpdir(), 'mcp-open-file-outside-'));
-    tempRoots.push(repoRoot, outsideRoot);
+    tempRoots.push(codebaseRoot, outsideRoot);
+    mkdirSync(repoRoot, { recursive: true });
 
     const outsideFile = join(outsideRoot, 'outside.txt');
     writeFileSync(outsideFile, 'outside\n', 'utf8');
     symlinkSync(outsideFile, join(repoRoot, 'link-out'));
 
-    process.env.REPO_ROOT = repoRoot;
+    process.env.CODEBASE_ROOT = codebaseRoot;
     const service = new FileService();
 
     await expect(service.openRange({ repo: 'single-repo', path: 'link-out' })).rejects.toMatchObject({
@@ -102,14 +108,16 @@ describe('FileService integration-ish', () => {
   });
 
   it('deve detectar binário por byte nulo', async () => {
-    const repoRoot = mkdtempSync(join(tmpdir(), 'mcp-open-file-'));
-    tempRoots.push(repoRoot);
+    const codebaseRoot = mkdtempSync(join(tmpdir(), 'mcp-codebase-'));
+    const repoRoot = join(codebaseRoot, 'single-repo');
+    tempRoots.push(codebaseRoot);
+    mkdirSync(repoRoot, { recursive: true });
 
     const binaryPath = join(repoRoot, 'binary.txt');
     mkdirSync(resolve(repoRoot), { recursive: true });
     writeFileSync(binaryPath, Buffer.from([0x61, 0x00, 0x62]));
 
-    process.env.REPO_ROOT = repoRoot;
+    process.env.CODEBASE_ROOT = codebaseRoot;
     const service = new FileService();
 
     await expect(service.openRange({ repo: 'single-repo', path: 'binary.txt' })).rejects.toMatchObject({
