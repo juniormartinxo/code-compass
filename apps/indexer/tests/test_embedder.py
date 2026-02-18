@@ -12,7 +12,10 @@ from indexer.embedder import (
     DEFAULT_EMBEDDING_BACKOFF_BASE_MS,
     DEFAULT_EMBEDDING_BATCH_SIZE,
     DEFAULT_EMBEDDING_MAX_RETRIES,
-    DEFAULT_EMBEDDING_MODEL,
+    DEFAULT_EMBEDDING_MODEL_CODE,
+    DEFAULT_EMBEDDING_MODEL_DOCS,
+    DEFAULT_EMBEDDING_PROVIDER_CODE,
+    DEFAULT_EMBEDDING_PROVIDER_DOCS,
     DEFAULT_OLLAMA_URL,
     EmbedderConfig,
     EmbedderError,
@@ -29,36 +32,58 @@ class TestEmbedderConfig(unittest.TestCase):
     def test_load_embedder_config_defaults(self) -> None:
         """Deve usar valores default quando não há env vars."""
         with patch.dict("os.environ", {}, clear=True):
-            config = load_embedder_config()
+            config = load_embedder_config(content_type="code")
             self.assertEqual(config.ollama_url, DEFAULT_OLLAMA_URL)
-            self.assertEqual(config.model, DEFAULT_EMBEDDING_MODEL)
+            self.assertEqual(config.provider, DEFAULT_EMBEDDING_PROVIDER_CODE)
+            self.assertEqual(config.model, DEFAULT_EMBEDDING_MODEL_CODE)
             self.assertEqual(config.batch_size, DEFAULT_EMBEDDING_BATCH_SIZE)
             self.assertEqual(config.max_retries, DEFAULT_EMBEDDING_MAX_RETRIES)
             self.assertEqual(config.backoff_base_ms, DEFAULT_EMBEDDING_BACKOFF_BASE_MS)
+            docs_config = load_embedder_config(content_type="docs")
+            self.assertEqual(docs_config.provider, DEFAULT_EMBEDDING_PROVIDER_DOCS)
+            self.assertEqual(docs_config.model, DEFAULT_EMBEDDING_MODEL_DOCS)
 
     def test_load_embedder_config_from_env(self) -> None:
         """Deve carregar valores de variáveis de ambiente."""
         env = {
             "OLLAMA_URL": "http://custom:11434",
-            "EMBEDDING_MODEL": "custom-model",
+            "EMBEDDING_PROVIDER_CODE": "ollama",
+            "EMBEDDING_MODEL_CODE": "custom-model-code",
+            "EMBEDDING_PROVIDER_DOCS": "ollama",
+            "EMBEDDING_MODEL_DOCS": "custom-model-docs",
             "EMBEDDING_BATCH_SIZE": "32",
             "EMBEDDING_MAX_RETRIES": "10",
             "EMBEDDING_BACKOFF_BASE_MS": "1000",
         }
         with patch.dict("os.environ", env, clear=True):
-            config = load_embedder_config()
+            config = load_embedder_config(content_type="code")
             self.assertEqual(config.ollama_url, "http://custom:11434")
-            self.assertEqual(config.model, "custom-model")
+            self.assertEqual(config.provider, "ollama")
+            self.assertEqual(config.model, "custom-model-code")
             self.assertEqual(config.batch_size, 32)
             self.assertEqual(config.max_retries, 10)
             self.assertEqual(config.backoff_base_ms, 1000)
+            docs_config = load_embedder_config(content_type="docs")
+            self.assertEqual(docs_config.provider, "ollama")
+            self.assertEqual(docs_config.model, "custom-model-docs")
 
     def test_load_embedder_config_from_args(self) -> None:
         """Args devem ter precedência sobre env vars."""
         env = {"OLLAMA_URL": "http://env:11434"}
         with patch.dict("os.environ", env, clear=True):
-            config = load_embedder_config(ollama_url="http://arg:11434")
+            config = load_embedder_config(
+                content_type="code",
+                ollama_url="http://arg:11434",
+                provider="ollama",
+                model="arg-model",
+            )
             self.assertEqual(config.ollama_url, "http://arg:11434")
+            self.assertEqual(config.provider, "ollama")
+            self.assertEqual(config.model, "arg-model")
+
+    def test_load_embedder_config_invalid_provider(self) -> None:
+        with self.assertRaises(ValueError):
+            load_embedder_config(content_type="docs", provider="openai")
 
 
 class MockOllamaHandler(BaseHTTPRequestHandler):
@@ -132,6 +157,8 @@ class TestOllamaEmbedder(unittest.TestCase):
 
     def _make_config(self) -> EmbedderConfig:
         return EmbedderConfig(
+            content_type="code",
+            provider="ollama",
             ollama_url=f"http://127.0.0.1:{self.port}",
             model="test-model",
             batch_size=4,
