@@ -13,7 +13,14 @@ from pathlib import Path
 from time import perf_counter
 
 from .chunk import chunk_file, read_text
-from .config import ChunkConfig, ScanConfig, load_chunk_config, load_scan_config
+from .config import (
+    ChunkConfig,
+    RuntimeConfig,
+    ScanConfig,
+    load_chunk_config,
+    load_runtime_config,
+    load_scan_config,
+)
 from .env import load_env_files
 from .embedder import EmbedderError, OllamaEmbedder, load_embedder_config
 from .qdrant_store import CONTENT_TYPE_FIELD, QdrantStore, QdrantStoreError, load_qdrant_config
@@ -26,47 +33,29 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-EXCLUDED_CONTEXT_PATH_PARTS: tuple[str, ...] = (
-    "/.venv/",
-    "/venv/",
-    "/__pycache__/",
-    "/.pytest_cache/",
-    "/.mypy_cache/",
-    "/.ruff_cache/",
-)
-
-SEARCH_SNIPPET_MAX_CHARS = 300
-
-DOC_EXTENSIONS: set[str] = {".md", ".mdx", ".rst", ".adoc", ".txt"}
-DOC_PATH_HINTS: tuple[str, ...] = (
-    "/docs/",
-    "/documentation/",
-    "/adr",
-    "/wiki/",
-    "/changelog",
-    "/contributing",
-    "/license",
-    "/readme",
-)
-CONTENT_TYPES: tuple[str, str] = ("code", "docs")
-DEFAULT_MIN_FILE_COVERAGE = 0.95
-
-
-def _should_exclude_context_path(path: str | None) -> bool:
+def _should_exclude_context_path(
+    path: str | None,
+    runtime_config: RuntimeConfig | None = None,
+) -> bool:
     if not path:
         return False
+    config = runtime_config or load_runtime_config()
     normalized = f"/{path.replace('\\', '/').strip('/')}/".lower()
-    return any(marker in normalized for marker in EXCLUDED_CONTEXT_PATH_PARTS)
+    return any(marker in normalized for marker in config.excluded_context_path_parts)
 
 
-def _filter_context_results(results: list[dict[str, object]]) -> tuple[list[dict[str, object]], int]:
+def _filter_context_results(
+    results: list[dict[str, object]],
+    runtime_config: RuntimeConfig | None = None,
+) -> tuple[list[dict[str, object]], int]:
+    config = runtime_config or load_runtime_config()
     filtered: list[dict[str, object]] = []
     excluded = 0
 
     for result in results:
         payload = result.get("payload", {})
         path = payload.get("path") if isinstance(payload, dict) else None
-        if isinstance(path, str) and _should_exclude_context_path(path):
+        if isinstance(path, str) and _should_exclude_context_path(path, runtime_config=config):
             excluded += 1
             continue
         filtered.append(result)
@@ -74,13 +63,14 @@ def _filter_context_results(results: list[dict[str, object]]) -> tuple[list[dict
     return filtered, excluded
 
 
-def _normalize_snippet(text: str, max_chars: int = SEARCH_SNIPPET_MAX_CHARS) -> str:
+def _normalize_snippet(text: str, max_chars: int | None = None) -> str:
+    resolved_max_chars = max_chars or load_runtime_config().search_snippet_max_chars
     normalized = " ".join(text.split())
     if not normalized:
         return ""
-    if len(normalized) <= max_chars:
+    if len(normalized) <= resolved_max_chars:
         return normalized
-    return f"{normalized[: max_chars - 3].rstrip()}..."
+    return f"{normalized[: resolved_max_chars - 3].rstrip()}..."
 
 
 def _coerce_positive_int(value: object) -> int | None:
@@ -248,18 +238,26 @@ def _build_search_filters(args: argparse.Namespace) -> dict[str, object] | None:
     return filters or None
 
 
-def _find_doc_path_hint(path: str) -> str | None:
+def _find_doc_path_hint(
+    path: str,
+    runtime_config: RuntimeConfig | None = None,
+) -> str | None:
+    config = runtime_config or load_runtime_config()
     normalized = f"/{path.replace('\\', '/').strip('/').lower()}"
-    for hint in DOC_PATH_HINTS:
+    for hint in config.doc_path_hints:
         if hint in normalized:
             return hint
     return None
 
 
-def _classify_content_type(path: str) -> tuple[str, str | None]:
+def _classify_content_type(
+    path: str,
+    runtime_config: RuntimeConfig | None = None,
+) -> tuple[str, str | None]:
+    config = runtime_config or load_runtime_config()
     ext = Path(path).suffix.lower()
-    path_hint = _find_doc_path_hint(path)
-    if path_hint is not None or ext in DOC_EXTENSIONS:
+    path_hint = _find_doc_path_hint(path, runtime_config=config)
+    if path_hint is not None or ext in config.doc_extensions:
         return "docs", path_hint
     return "code", path_hint
 
@@ -280,21 +278,9 @@ def _build_classification_log_record(
     }
 
 
-def _resolve_min_file_coverage() -> float:
-    raw = os.getenv("INDEX_MIN_FILE_COVERAGE")
-    if not raw:
-        return DEFAULT_MIN_FILE_COVERAGE
-
-    try:
-        parsed = float(raw)
-    except ValueError:
-        return DEFAULT_MIN_FILE_COVERAGE
-
-    if parsed <= 0:
-        return DEFAULT_MIN_FILE_COVERAGE
-    if parsed > 1:
-        return 1.0
-    return parsed
+def _resolve_min_file_coverage(runtime_config: RuntimeConfig | None = None) -> float:
+    config = runtime_config or load_runtime_config()
+    return config.min_file_coverage
 
 
 def _parse_scope_repos(raw_repos: str) -> list[str]:
@@ -620,6 +606,8 @@ def _init_command(args: argparse.Namespace) -> int:
     4. Cria índice payload KEYWORD para content_type (idempotente)
     """
     try:
+        runtime_config = load_runtime_config()
+
         # Carregar configs
         embedder_config = load_embedder_config(
             ollama_url=args.ollama_url,
@@ -652,7 +640,7 @@ def _init_command(args: argparse.Namespace) -> int:
                 collection_names["docs"],
             )
 
-            for content_type in CONTENT_TYPES:
+            for content_type in runtime_config.content_types:
                 collection_name = collection_names[content_type]
                 result = store.ensure_collection(
                     collection_name=collection_name,
@@ -680,7 +668,7 @@ def _init_command(args: argparse.Namespace) -> int:
                     "name": collections_result[content_type]["collection"],
                     "action": collections_result[content_type]["action"],
                 }
-                for content_type in CONTENT_TYPES
+                for content_type in runtime_config.content_types
             },
             "distance": qdrant_config.distance,
             "qdrant_url": qdrant_config.url,
@@ -736,6 +724,8 @@ def _index_command(args: argparse.Namespace) -> int:
     started = perf_counter()
 
     try:
+        runtime_config = load_runtime_config()
+
         # Configs
         scan_config = _resolve_scan_config(args)
         chunk_config = _resolve_chunk_config(args)
@@ -762,7 +752,7 @@ def _index_command(args: argparse.Namespace) -> int:
                 vector_size=vector_size,
                 model_name=embedder_config.model,
             )
-            for content_type in CONTENT_TYPES:
+            for content_type in runtime_config.content_types:
                 target_collection = collection_names[content_type]
                 store.ensure_collection(
                     collection_name=target_collection,
@@ -795,12 +785,15 @@ def _index_command(args: argparse.Namespace) -> int:
         all_chunks: list[dict] = []
         chunk_errors: int = 0
         indexed_files: set[str] = set()
-        min_coverage = _resolve_min_file_coverage()
+        min_coverage = _resolve_min_file_coverage(runtime_config)
 
         for file_path in files:
             abs_path = scan_config.repo_root / file_path
             ext = Path(file_path).suffix.lower()
-            content_type, path_hint = _classify_content_type(str(file_path))
+            content_type, path_hint = _classify_content_type(
+                str(file_path),
+                runtime_config=runtime_config,
+            )
             classification_log = _build_classification_log_record(
                 file_path=str(file_path),
                 ext=ext,
@@ -879,7 +872,10 @@ def _index_command(args: argparse.Namespace) -> int:
 
         # 5. Montar pontos com IDs estáveis e payload rico
         logger.info("Montando pontos para upsert...")
-        points_by_type: dict[str, list[dict]] = {content_type: [] for content_type in CONTENT_TYPES}
+        points_by_type: dict[str, list[dict]] = {
+            content_type: []
+            for content_type in runtime_config.content_types
+        }
 
         for chunk, embedding in zip(all_chunks, embeddings):
             # Derivar content_hash do chunk
@@ -922,7 +918,7 @@ def _index_command(args: argparse.Namespace) -> int:
         logger.info("Iniciando upsert no Qdrant...")
         upsert_results: dict[str, dict[str, int]] = {}
         with QdrantStore(qdrant_config) as store:
-            for content_type in CONTENT_TYPES:
+            for content_type in runtime_config.content_types:
                 target_points = points_by_type[content_type]
                 target_collection = collection_names[content_type]
                 upsert_results[content_type] = store.upsert(
@@ -945,7 +941,7 @@ def _index_command(args: argparse.Namespace) -> int:
             "chunks_total": len(all_chunks),
             "chunks_by_type": {
                 content_type: len(points_by_type[content_type])
-                for content_type in CONTENT_TYPES
+                for content_type in runtime_config.content_types
             },
             "chunk_errors": chunk_errors,
             "embeddings_generated": len(embeddings),
@@ -991,6 +987,7 @@ def _search_command(args: argparse.Namespace) -> int:
             print("Erro: query vazia.", file=sys.stderr)
             return 1
 
+        runtime_config = load_runtime_config()
         embedder_config = load_embedder_config()
         qdrant_config = load_qdrant_config()
 
@@ -1009,7 +1006,7 @@ def _search_command(args: argparse.Namespace) -> int:
             )
             filters = _build_search_filters(args)
             searched_collections: list[str] = []
-            if content_type in CONTENT_TYPES:
+            if content_type in runtime_config.content_types:
                 target_collection = collection_names[content_type]
                 searched_collections = [target_collection]
                 results = store.search(
@@ -1020,9 +1017,12 @@ def _search_command(args: argparse.Namespace) -> int:
                     with_vector=args.with_vector,
                 )
             else:
-                searched_collections = [collection_names["code"], collection_names["docs"]]
+                searched_collections = [
+                    collection_names[key]
+                    for key in runtime_config.content_types
+                ]
                 merged: list[dict[str, object]] = []
-                for key in CONTENT_TYPES:
+                for key in runtime_config.content_types:
                     merged.extend(
                         store.search(
                             query_vector=query_vector,
