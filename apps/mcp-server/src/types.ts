@@ -36,8 +36,7 @@ export interface CollectionMeta {
 }
 
 export interface SearchCodeInput {
-  repo?: string;
-  scope?: Scope;
+  scope: Scope;
   query: string;
   topK?: number;
   pathPrefix?: string;
@@ -47,8 +46,7 @@ export interface SearchCodeInput {
 }
 
 export interface AskCodeInput {
-  repo?: string;
-  scope?: Scope;
+  scope: Scope;
   query: string;
   topK?: number;
   pathPrefix?: string;
