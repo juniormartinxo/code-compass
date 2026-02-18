@@ -10,7 +10,7 @@ export interface QdrantRuntimeConfig {
 }
 
 const DEFAULT_QDRANT_URL = 'http://localhost:6333';
-const DEFAULT_QDRANT_COLLECTION_STEM = 'compass__3584__manutic_nomic_embed_code';
+const DEFAULT_QDRANT_COLLECTION_STEM = 'compass__manutic_nomic_embed';
 const DEFAULT_QDRANT_TIMEOUT_MS = 5000;
 const DEFAULT_RRF_K = 60;
 const DEFAULT_DIVERSITY_FLOOR = 1;
