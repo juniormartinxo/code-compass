@@ -13,8 +13,8 @@ python -m indexer init [opções]
 O comando `init` prepara o ambiente para indexação:
 
 1. **Probe do Vector Size**: Conecta ao Ollama e descobre automaticamente o tamanho do vetor do modelo configurado
-2. **Resolução do Nome**: Gera ou usa o nome da collection especificado
-3. **Criação/Validação**: Cria a collection no Qdrant (se não existir) ou valida que a existente é compatível
+2. **Resolução dos Nomes**: Gera os nomes das collections de `code` e `docs`
+3. **Criação/Validação**: Cria as collections no Qdrant (se não existirem) ou valida as existentes
 
 ### Comportamento Idempotente
 
@@ -30,7 +30,6 @@ Este comando pode ser executado múltiplas vezes sem efeitos colaterais:
 | `--ollama-url` | URL do servidor Ollama | `http://localhost:11434` (env: `OLLAMA_URL`) |
 | `--model` | Modelo de embedding | `manutic/nomic-embed-code` (env: `EMBEDDING_MODEL`) |
 | `--qdrant-url` | URL do servidor Qdrant | `http://localhost:6333` (env: `QDRANT_URL`) |
-| `--collection` | Nome explícito da collection | Auto-gerado (env: `QDRANT_COLLECTION`) |
 
 ## Variáveis de Ambiente
 
@@ -40,8 +39,9 @@ As variáveis são lidas do ambiente e carregadas automaticamente de `.env` e `.
 - `EMBEDDING_MODEL`: Modelo de embedding
 - `QDRANT_URL`: URL do Qdrant
 - `QDRANT_API_KEY`: API key do Qdrant (opcional)
-- `QDRANT_COLLECTION_BASE`: Base para geração automática do nome
-- `QDRANT_COLLECTION`: Nome explícito da collection
+- `QDRANT_COLLECTION_BASE`: Base para geração automática dos nomes
+- `QDRANT_COLLECTION_CODE`: Override opcional da collection de código
+- `QDRANT_COLLECTION_DOCS`: Override opcional da collection de documentação
 - `QDRANT_DISTANCE`: Métrica de distância (COSINE, EUCLID, DOT)
 
 ## Saída
@@ -76,7 +76,7 @@ O comando retorna um JSON com informações da inicialização:
 
 ## Geração Automática de Nome
 
-Se `QDRANT_COLLECTION` não for definido, o nome é gerado automaticamente:
+O stem base é gerado automaticamente por:
 
 ```
 {QDRANT_COLLECTION_BASE}__{VECTOR_SIZE}__{slug(EMBEDDING_MODEL)}
@@ -87,7 +87,12 @@ Exemplo para o modelo padrão:
 compass__3584__manutic_nomic_embed_code
 ```
 
-Esta estratégia evita conflitos ao trocar de modelo de embedding.
+Os nomes finais usados no Qdrant são:
+
+- `{stem}__code`
+- `{stem}__docs`
+
+com possibilidade de override via `QDRANT_COLLECTION_CODE`/`QDRANT_COLLECTION_DOCS`.
 
 ## Exemplos
 
@@ -95,12 +100,6 @@ Esta estratégia evita conflitos ao trocar de modelo de embedding.
 
 ```bash
 python -m indexer init
-```
-
-### Com collection explícita
-
-```bash
-python -m indexer init --collection my_custom_collection
 ```
 
 ### Com URLs customizadas
@@ -131,7 +130,7 @@ ollama pull manutic/nomic-embed-code
 A collection já existe mas foi criada com outro modelo de embedding.
 
 **Solução:**
-- Use `QDRANT_COLLECTION` para especificar outro nome
+- Use outro `QDRANT_COLLECTION_BASE` (ou overrides `QDRANT_COLLECTION_CODE`/`QDRANT_COLLECTION_DOCS`)
 - Ou delete a collection existente
 
 ## Ver Também
