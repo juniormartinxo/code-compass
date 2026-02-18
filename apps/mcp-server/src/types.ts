@@ -21,6 +21,20 @@ export interface ResolvedScope {
   repos: string[];
 }
 
+export type ContentType = 'code' | 'docs' | 'all';
+
+export type CollectionContentType = Exclude<ContentType, 'all'>;
+
+export type CollectionStatus = 'ok' | 'partial' | 'unavailable';
+
+export interface CollectionMeta {
+  name: string;
+  contentType: CollectionContentType;
+  hits: number;
+  latencyMs: number;
+  status: CollectionStatus;
+}
+
 export interface SearchCodeInput {
   repo?: string;
   scope?: Scope;
@@ -28,6 +42,8 @@ export interface SearchCodeInput {
   topK?: number;
   pathPrefix?: string;
   vector?: number[];
+  contentType?: ContentType;
+  strict?: boolean;
 }
 
 export interface AskCodeInput {
@@ -40,6 +56,8 @@ export interface AskCodeInput {
   minScore?: number;
   llmModel?: string;
   grounded?: boolean;
+  contentType?: ContentType;
+  strict?: boolean;
 }
 
 export interface OpenFileInput {
@@ -57,6 +75,7 @@ export interface SearchCodeResult {
   startLine: number | null;
   endLine: number | null;
   snippet: string;
+  contentType: CollectionContentType;
 }
 
 export interface SearchCodeOutput {
@@ -66,6 +85,12 @@ export interface SearchCodeOutput {
     scope: ScopeMeta;
     topK: number;
     pathPrefix?: string;
+    contentType: ContentType;
+    strict: boolean;
+    collections: CollectionMeta[];
+    /**
+     * @deprecated Use `meta.collections` para ler as coleções consultadas.
+     */
     collection: string;
   };
 }
@@ -88,6 +113,12 @@ export interface AskCodeOutput {
     topK: number;
     minScore: number;
     llmModel: string;
+    contentType: ContentType;
+    strict: boolean;
+    collections: CollectionMeta[];
+    /**
+     * @deprecated Use `meta.collections` para ler as coleções consultadas.
+     */
     collection: string;
     totalMatches: number;
     contextsUsed: number;
@@ -106,7 +137,9 @@ export type StdioErrorCode =
   | 'UNSUPPORTED_MEDIA'
   | 'INTERNAL'
   | 'EMBEDDING_FAILED'
-  | 'EMBEDDING_INVALID';
+  | 'EMBEDDING_INVALID'
+  | 'QDRANT_UNAVAILABLE'
+  | 'CHAT_FAILED';
 
 export interface StdioToolRequest {
   id: string;
@@ -140,4 +173,10 @@ export interface QdrantSearchHit {
 
 export interface QdrantSearchResponse {
   result?: QdrantSearchHit[];
+}
+
+export interface QdrantSearchOutput {
+  hits: QdrantSearchHit[];
+  collection: string;
+  collections: CollectionMeta[];
 }
