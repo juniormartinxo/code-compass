@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from qdrant_client.http import models
 
-from indexer.__main__ import _build_search_header, _format_search_result_block, _resolve_search_snippet
+from indexer.__main__ import (
+    _build_search_header,
+    _format_search_result_block,
+    _normalize_snippet,
+    _resolve_search_snippet,
+)
 from indexer.qdrant_store import build_qdrant_filter
 
 
@@ -54,6 +61,13 @@ class SearchOutputFormattingTests(unittest.TestCase):
 
 
 class SearchSnippetFallbackTests(unittest.TestCase):
+    def test_normalize_snippet_uses_env_limit(self) -> None:
+        with patch.dict(os.environ, {"SEARCH_SNIPPET_MAX_CHARS": "20"}, clear=False):
+            snippet = _normalize_snippet("abc " * 30)
+
+        self.assertLessEqual(len(snippet), 20)
+        self.assertTrue(snippet.endswith("..."))
+
     def test_resolve_search_snippet_uses_payload_text_when_available(self) -> None:
         snippet = _resolve_search_snippet(
             payload={
