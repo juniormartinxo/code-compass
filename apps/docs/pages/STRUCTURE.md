@@ -73,7 +73,6 @@ code-compass/
         toad_acp.py              # integração Toad/ACP
       pyproject.toml
       README.md
-      TROUBLESHOOTING.md
 
     acp/                         # Agente ACP (Agent Client Protocol)
       src/code_compass_acp/
