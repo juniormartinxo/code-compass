@@ -10,7 +10,7 @@ function createTool(): AskCodeTool {
   process.env.EMBEDDING_PROVIDER_CODE = 'ollama';
   process.env.EMBEDDING_PROVIDER_DOCS = 'ollama';
   process.env.EMBEDDING_MODEL_CODE = 'manutic/nomic-embed-code';
-  process.env.EMBEDDING_MODEL_DOCS = 'manutic/nomic-embed-code';
+  process.env.EMBEDDING_MODEL_DOCS = 'bge-m3';
   process.env.LLM_MODEL = 'gpt-oss:latest';
 
   process.env.QDRANT_URL = 'http://localhost:6333';
