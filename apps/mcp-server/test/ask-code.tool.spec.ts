@@ -11,7 +11,7 @@ function createTool(): AskCodeTool {
   process.env.LLM_MODEL = 'gpt-oss:latest';
 
   process.env.QDRANT_URL = 'http://localhost:6333';
-  process.env.QDRANT_COLLECTION = 'compass__3584__manutic_nomic_embed_code';
+  process.env.QDRANT_COLLECTION_BASE = 'compass__3584__manutic_nomic_embed_code';
   process.env.MCP_QDRANT_MOCK_RESPONSE = JSON.stringify([
     {
       score: 0.95,
@@ -45,7 +45,12 @@ function createTool(): AskCodeTool {
 describe('AskCodeTool', () => {
   afterEach(() => {
     delete process.env.ALLOW_GLOBAL_SCOPE;
+    delete process.env.OLLAMA_URL;
+    delete process.env.EMBEDDING_MODEL;
+    delete process.env.LLM_MODEL;
+    delete process.env.QDRANT_URL;
     delete process.env.MCP_QDRANT_MOCK_RESPONSE;
+    delete process.env.QDRANT_COLLECTION_BASE;
   });
 
   it('deve falhar quando query estiver vazia', async () => {
@@ -53,13 +58,13 @@ describe('AskCodeTool', () => {
 
     await expect(
       tool.execute({
-        repo: 'acme-repo',
+        scope: { type: 'repo', repo: 'acme-repo' },
         query: '   ',
       }),
     ).rejects.toThrowError();
   });
 
-  it('deve falhar quando repo/scope não for informado', async () => {
+  it('deve falhar quando scope não for informado', async () => {
     const tool = createTool();
 
     await expect(
