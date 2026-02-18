@@ -1,6 +1,6 @@
 # MCP Server (`apps/mcp-server`)
 
-Servidor MCP em NestJS com transporte `stdio` (NDJSON) e tools `search_code`, `open_file` e `ask_code`.
+Servidor MCP em NestJS com transporte `stdio` (NDJSON/LSP) e `http` (JSON-RPC em `/mcp`) com tools `search_code`, `open_file` e `ask_code`.
 
 ## Rodando
 
@@ -14,6 +14,18 @@ Modo dev:
 ```bash
 pnpm -C apps/mcp-server mcp:dev
 ```
+
+Modo HTTP:
+
+```bash
+pnpm -C apps/mcp-server start:http
+```
+
+Variáveis HTTP:
+
+- `MCP_HTTP_HOST` (default `0.0.0.0`)
+- `MCP_HTTP_PORT` (default `3001`)
+- `MCP_SERVER_MODE=http` (alternativa ao `--transport http`)
 
 ## Protocolo STDIO (NDJSON)
 

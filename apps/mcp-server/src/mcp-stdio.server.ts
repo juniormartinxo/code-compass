@@ -1,13 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 
 import { ToolExecutionError, ToolInputError } from './errors';
-import { AskCodeTool } from './ask-code.tool';
-import { OpenFileTool } from './open-file.tool';
-import { SearchCodeTool } from './search-code.tool';
+import { McpJsonRpcResponse, McpProtocolHandler } from './mcp-protocol.handler';
 import {
   StdioErrorCode,
   StdioToolErrorResponse,
-  StdioToolOutput,
   StdioToolRequest,
   StdioToolResponse,
   StdioToolSuccessResponse,
@@ -21,11 +18,7 @@ export class McpStdioServer {
   private buffer: Buffer = Buffer.alloc(0);
   private processing: Promise<void> = Promise.resolve();
 
-  constructor(
-    private readonly searchCodeTool: SearchCodeTool,
-    private readonly openFileTool: OpenFileTool,
-    private readonly askCodeTool: AskCodeTool,
-  ) {}
+  constructor(private readonly protocolHandler: McpProtocolHandler) {}
 
   run(): void {
     if (this.running) {
@@ -175,8 +168,11 @@ export class McpStdioServer {
   }
 
   private async handleParsed(parsed: unknown): Promise<void> {
-    if (this.isMcpRequest(parsed)) {
-      await this.handleMcpRequest(parsed);
+    if (this.protocolHandler.isMcpRequest(parsed)) {
+      const response = await this.protocolHandler.handleMcpRequest(parsed);
+      if (response) {
+        this.writeMcpResponse(response);
+      }
       return;
     }
 
@@ -191,7 +187,7 @@ export class McpStdioServer {
     }
 
     try {
-      const output = await this.dispatchTool(request);
+      const output = await this.protocolHandler.dispatchTool(request);
       const response: StdioToolSuccessResponse = {
         id: request.id,
         ok: true,
@@ -235,22 +231,6 @@ export class McpStdioServer {
     }
   }
 
-  private async dispatchTool(request: StdioToolRequest): Promise<StdioToolOutput> {
-    if (request.tool === 'search_code') {
-      return this.searchCodeTool.execute(request.input);
-    }
-
-    if (request.tool === 'open_file') {
-      return this.openFileTool.execute(request.input);
-    }
-
-    if (request.tool === 'ask_code') {
-      return this.askCodeTool.execute(request.input);
-    }
-
-    throw new ToolExecutionError('BAD_REQUEST', `Tool não suportada: ${request.tool}`);
-  }
-
   private parseLegacyRequest(parsed: unknown): StdioToolRequest | null {
     if (!parsed || typeof parsed !== 'object') {
       this.writeProtocolError('BAD_REQUEST', 'Payload NDJSON inválido', 'unknown');
@@ -273,11 +253,7 @@ export class McpStdioServer {
     };
   }
 
-  private writeProtocolError(
-    code: StdioErrorCode,
-    message: string,
-    id: string,
-  ): void {
+  private writeProtocolError(code: StdioErrorCode, message: string, id: string): void {
     const response: StdioToolErrorResponse = {
       id,
       ok: false,
@@ -293,259 +269,21 @@ export class McpStdioServer {
     this.writeOutput(JSON.stringify(response));
   }
 
-  private isMcpRequest(parsed: unknown): parsed is McpJsonRpcRequest {
-    if (!parsed || typeof parsed !== 'object') {
-      return false;
-    }
-    const request = parsed as McpJsonRpcRequest;
-    return request.jsonrpc === '2.0' && typeof request.method === 'string';
-  }
-
-  private async handleMcpRequest(request: McpJsonRpcRequest): Promise<void> {
-    const id = request.id ?? null;
-
-    if (request.method === 'initialize') {
-      this.writeMcpResponse(id, {
-        protocolVersion: '2024-11-05',
-        capabilities: {
-          tools: {
-            listChanged: true,
-          },
-        },
-        serverInfo: {
-          name: 'code-compass',
-          version: '0.1.0',
-        },
-      });
-      return;
-    }
-
-    if (request.method === 'initialized') {
-      return;
-    }
-
-    if (request.method === 'tools/list') {
-      this.writeMcpResponse(id, {
-        tools: this.describeTools(),
-      });
-      return;
-    }
-
-    if (request.method === 'tools/call') {
-      const params = (request.params ?? {}) as Record<string, unknown>;
-      const name = typeof params.name === 'string' ? params.name : '';
-      const args = (params.arguments ?? {}) as Record<string, unknown>;
-
-      if (!name) {
-        this.writeMcpError(id, -32602, 'Campo "name" é obrigatório em tools/call');
-        return;
-      }
-
-      try {
-        const output = await this.dispatchTool({
-          id: 'mcp',
-          tool: name,
-          input: args,
-        });
-
-        this.writeMcpResponse(id, {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(output),
-            },
-          ],
-        });
-      } catch (error) {
-        if (error instanceof ToolInputError) {
-          this.writeMcpResponse(id, {
-            isError: true,
-            content: [
-              {
-                type: 'text',
-                text: error.message,
-              },
-            ],
-          });
-          return;
-        }
-
-        if (error instanceof ToolExecutionError) {
-          this.writeMcpResponse(id, {
-            isError: true,
-            content: [
-              {
-                type: 'text',
-                text: error.message,
-              },
-            ],
-          });
-          return;
-        }
-
-        this.writeMcpResponse(id, {
-          isError: true,
-          content: [
-            {
-              type: 'text',
-              text: 'Erro interno ao executar tool',
-            },
-          ],
-        });
-      }
-      return;
-    }
-
-    if (id === null) {
-      return;
-    }
-
-    this.writeMcpError(id, -32601, `Método não suportado: ${request.method}`);
-  }
-
-  private describeTools(): McpToolDescriptor[] {
-    return [
-      {
-        name: 'search_code',
-        description: 'Busca semântica por trechos de código com evidência (path + linhas).',
-        inputSchema: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['query'],
-          anyOf: [{ required: ['repo'] }, { required: ['scope'] }],
-          properties: {
-            repo: { type: 'string' },
-            scope: {
-              oneOf: [
-                {
-                  type: 'object',
-                  additionalProperties: false,
-                  required: ['type', 'repo'],
-                  properties: {
-                    type: { const: 'repo' },
-                    repo: { type: 'string' },
-                  },
-                },
-                {
-                  type: 'object',
-                  additionalProperties: false,
-                  required: ['type', 'repos'],
-                  properties: {
-                    type: { const: 'repos' },
-                    repos: {
-                      type: 'array',
-                      items: { type: 'string' },
-                    },
-                  },
-                },
-                {
-                  type: 'object',
-                  additionalProperties: false,
-                  required: ['type'],
-                  properties: {
-                    type: { const: 'all' },
-                  },
-                },
-              ],
-            },
-            query: { type: 'string' },
-            topK: { type: 'number' },
-            pathPrefix: { type: 'string' },
-            vector: { type: 'array', items: { type: 'number' } },
-          },
-        },
-      },
-      {
-        name: 'open_file',
-        description: 'Abre trecho de arquivo local com allowlist e limites de tamanho.',
-        inputSchema: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['repo', 'path'],
-          properties: {
-            repo: { type: 'string' },
-            path: { type: 'string' },
-            startLine: { type: 'number' },
-            endLine: { type: 'number' },
-            maxBytes: { type: 'number' },
-          },
-        },
-      },
-      {
-        name: 'ask_code',
-        description: 'Executa RAG completo (embed + busca + contexto + LLM) com política centralizada.',
-        inputSchema: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['query'],
-          anyOf: [{ required: ['repo'] }, { required: ['scope'] }],
-          properties: {
-            repo: { type: 'string' },
-            scope: {
-              oneOf: [
-                {
-                  type: 'object',
-                  additionalProperties: false,
-                  required: ['type', 'repo'],
-                  properties: {
-                    type: { const: 'repo' },
-                    repo: { type: 'string' },
-                  },
-                },
-                {
-                  type: 'object',
-                  additionalProperties: false,
-                  required: ['type', 'repos'],
-                  properties: {
-                    type: { const: 'repos' },
-                    repos: {
-                      type: 'array',
-                      items: { type: 'string' },
-                    },
-                  },
-                },
-                {
-                  type: 'object',
-                  additionalProperties: false,
-                  required: ['type'],
-                  properties: {
-                    type: { const: 'all' },
-                  },
-                },
-              ],
-            },
-            query: { type: 'string' },
-            topK: { type: 'number' },
-            pathPrefix: { type: 'string' },
-            language: { type: 'string' },
-            minScore: { type: 'number' },
-            llmModel: { type: 'string' },
-            grounded: { type: 'boolean' },
-          },
-        },
-      },
-    ];
-  }
-
-  private writeMcpResponse(id: McpJsonRpcId, result: Record<string, unknown>): void {
-    const response: McpJsonRpcResponse = {
-      jsonrpc: '2.0',
-      id,
-      result,
-    };
+  private writeMcpResponse(response: McpJsonRpcResponse): void {
     this.writeOutput(JSON.stringify(response));
   }
 
-  private writeMcpError(id: McpJsonRpcId, code: number, message: string): void {
-    const response: McpJsonRpcResponse = {
-      jsonrpc: '2.0',
-      id,
-      error: {
-        code,
-        message,
-      },
-    };
-    this.writeOutput(JSON.stringify(response));
+  private writeMcpError(id: string | number | null, code: number, message: string): void {
+    this.writeOutput(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id,
+        error: {
+          code,
+          message,
+        },
+      }),
+    );
   }
 
   private writeOutput(payload: string): void {
@@ -557,29 +295,4 @@ export class McpStdioServer {
 
     process.stdout.write(`${payload}\n`);
   }
-}
-
-type McpJsonRpcId = string | number | null;
-
-interface McpJsonRpcRequest {
-  jsonrpc: '2.0';
-  id?: McpJsonRpcId;
-  method: string;
-  params?: Record<string, unknown>;
-}
-
-interface McpJsonRpcResponse {
-  jsonrpc: '2.0';
-  id: McpJsonRpcId;
-  result?: Record<string, unknown>;
-  error?: {
-    code: number;
-    message: string;
-  };
-}
-
-interface McpToolDescriptor {
-  name: string;
-  description: string;
-  inputSchema: Record<string, unknown>;
 }
