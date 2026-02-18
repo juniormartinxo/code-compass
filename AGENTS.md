@@ -120,11 +120,10 @@ Handoff para <skill-destino>
 ## 8) Comandos padrão (copiáveis)
 
 ### 8.1 Estado atual do repositório
-- Não há `Makefile`, `apps/*`, `infra/docker-compose.yml`, `package.json` ou `requirements.txt` versionados neste snapshot.
-- Regra: não inventar execução local como "validada" sem os artefatos reais.
-- Por quê: evita falso positivo de entrega.
+- `Makefile`, `apps/*`, `infra/docker-compose.yml`, `package.json` e `requirements.txt` estão versionados.
+- Comandos canônicos abaixo estão disponíveis e validados.
 
-### 8.2 Comandos canônicos (quando o scaffold alvo existir)
+### 8.2 Comandos canônicos
 ```bash
 # subir infra local
 make up
