@@ -146,7 +146,6 @@ Opções:
 - `--ollama-url` - URL do Ollama
 - `--model` - Modelo de embedding
 - `--qdrant-url` - URL do Qdrant
-- `--collection` - Nome explícito da collection
 
 ### Index
 
@@ -239,12 +238,12 @@ Opções:
 Perguntas em linguagem natural usando RAG:
 
 ```bash
-python -m indexer ask "sua pergunta aqui" --repo code-compass
+python -m indexer ask "sua pergunta aqui" --scope-repo code-compass
 ```
 
 **Exemplo:**
 ```bash
-python -m indexer ask "qual banco de dados vetorial é usado neste projeto?" --repo code-compass --show-context
+python -m indexer ask "qual banco de dados vetorial é usado neste projeto?" --scope-repo code-compass --show-context
 ```
 
 **Saída:**
@@ -268,7 +267,6 @@ Opções:
 - `--ext` - Filtrar contexto por extensão
 - `--show-context` - Mostrar fontes consultadas
 - `--json` - Output em JSON
-- `--repo` - Repo alvo em modo compat (equivale a `scope: { type: "repo" }` no MCP)
 - `--scope-repo` - Escopo explícito para um repo
 - `--scope-repos` - Escopo explícito para vários repos (CSV)
 - `--scope-all` - Escopo global (depende de `ALLOW_GLOBAL_SCOPE=true` no MCP)
@@ -276,7 +274,7 @@ Opções:
 - `--strict` - Falha se alguma coleção estiver indisponível (sem retorno parcial)
 
 Importante:
-- Para `ask`, é obrigatório informar um escopo via `--repo` (compat) ou `--scope-*`.
+- Para `ask`, é obrigatório informar um escopo via `--scope-*`.
 
 ## Variáveis de Ambiente
 
@@ -361,7 +359,7 @@ Observação importante:
 
 ## Nome Automático de Collection
 
-Se `QDRANT_COLLECTION` não for definido, o nome é gerado automaticamente:
+O stem base da collection é gerado automaticamente por:
 
 ```
 {QDRANT_COLLECTION_BASE}__{VECTOR_SIZE}__{slug(EMBEDDING_MODEL)}
@@ -398,7 +396,7 @@ python -m pytest tests/ -v
 ### "Collection X tem vector size Y, mas embedding é size Z"
 
 O modelo de embedding mudou. Opções:
-1. Use `QDRANT_COLLECTION` para especificar outra collection
+1. Use outro `QDRANT_COLLECTION_BASE` (ou overrides `QDRANT_COLLECTION_CODE`/`QDRANT_COLLECTION_DOCS`)
 2. Delete a collection existente via API do Qdrant
 
 ### "Erro no Qdrant: conexão recusada"
@@ -407,6 +405,6 @@ O modelo de embedding mudou. Opções:
 
 ### "Sem evidencia suficiente" no `ask`
 
-- Confirme que `QDRANT_COLLECTION` no indexer e no MCP server é o mesmo valor.
+- Confirme que `QDRANT_COLLECTION_BASE` no indexer e no MCP server é o mesmo valor.
 - Verifique se o `repo` informado no comando bate com `payload.repo` indexado.
 - Reindexe para atualizar payloads antigos sem `repo`.
