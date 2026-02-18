@@ -15,7 +15,7 @@ O comando executa as seguintes etapas:
 ## Uso Básico
 
 ```bash
-python -m indexer ask "sua pergunta aqui" --repo code-compass
+python -m indexer ask "sua pergunta aqui" --scope-repo code-compass
 ```
 
 ### Opções Configuráveis
@@ -29,7 +29,6 @@ python -m indexer ask "sua pergunta aqui" --repo code-compass
 | `--min-score` | `0.6` | Score mínimo de similaridade para usar chunk no contexto |
 | `--show-context` | `false` | Mostrar fontes consultadas |
 | `--json` | `false` | Output em formato JSON |
-| `--repo` | - | Repo alvo em modo compatível com MCP |
 | `--scope-repo` | - | Escopo explícito para um único repo |
 | `--scope-repos` | - | Escopo explícito para múltiplos repos (CSV) |
 | `--scope-all` | `false` | Escopo global (exige `ALLOW_GLOBAL_SCOPE=true` no MCP) |
@@ -53,14 +52,14 @@ python -m indexer ask "sua pergunta aqui" --repo code-compass
 | `QDRANT_URL` | `http://localhost:6333` | URL do servidor Qdrant |
 | `QDRANT_COLLECTION_BASE` | `compass` | Base para nome da collection |
 
-> Dica operacional: para ambiente multi-repo, defina `QDRANT_COLLECTION` explicitamente e mantenha o mesmo valor no MCP server.
+> Dica operacional: para ambiente multi-repo, mantenha `QDRANT_COLLECTION_BASE` igual no indexer e no MCP server.
 
 ## Exemplos de Uso
 
 ### Pergunta Básica
 
 ```bash
-python -m indexer ask "qual banco de dados vetorial é usado neste projeto?" --repo code-compass
+python -m indexer ask "qual banco de dados vetorial é usado neste projeto?" --scope-repo code-compass
 ```
 
 **Saída:**
@@ -76,7 +75,7 @@ O banco de dados vetorial usado neste projeto é o **Qdrant**.
 ### Com Modelo Específico
 
 ```bash
-python -m indexer ask "como funciona o chunking?" --repo code-compass --model deepseek-r1:32b
+python -m indexer ask "como funciona o chunking?" --scope-repo code-compass --model deepseek-r1:32b
 ```
 
 ### Mostrar Fontes Consultadas
@@ -103,7 +102,7 @@ O projeto Code Compass é organizado em...
 ### Filtrar por Extensão
 
 ```bash
-python -m indexer ask "como fazer embeddings?" --repo code-compass --ext .py
+python -m indexer ask "como fazer embeddings?" --scope-repo code-compass --ext .py
 ```
 
 ### Buscar em múltiplos repos
@@ -135,7 +134,7 @@ python -m indexer ask "explique a arquitetura completa" -k 10
 ### Output em JSON
 
 ```bash
-python -m indexer ask "qual o propósito do indexer?" --repo code-compass --json
+python -m indexer ask "qual o propósito do indexer?" --scope-repo code-compass --json
 ```
 
 **Saída JSON:**
