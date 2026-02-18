@@ -102,12 +102,12 @@ describe('SearchCodeTool', () => {
     delete process.env.ALLOW_GLOBAL_SCOPE;
   });
 
-  it('deve aplicar clamp de topK e mapear payload snake_case (compat repo)', async () => {
+  it('deve aplicar clamp de topK e mapear payload snake_case (scope repo)', async () => {
     const mock = new QdrantServiceMock(createHits());
     const tool = new SearchCodeTool(mock as unknown as QdrantService);
 
     const output = await tool.execute({
-      repo: 'acme-repo',
+      scope: { type: 'repo', repo: 'acme-repo' },
       query: '  find foo  ',
       topK: 200,
       vector: [0.1, 0.2],
@@ -148,7 +148,7 @@ describe('SearchCodeTool', () => {
     const tool = new SearchCodeTool(mock as unknown as QdrantService);
 
     const output = await tool.execute({
-      repo: 'acme-repo',
+      scope: { type: 'repo', repo: 'acme-repo' },
       query: 'snippet',
       topK: 1,
       vector: [0.2, 0.4],
@@ -175,7 +175,7 @@ describe('SearchCodeTool', () => {
     const tool = new SearchCodeTool(mock as unknown as QdrantService);
 
     const output = await tool.execute({
-      repo: 'acme-repo',
+      scope: { type: 'repo', repo: 'acme-repo' },
       query: 'without text',
       topK: 1,
       vector: [1],
@@ -191,7 +191,7 @@ describe('SearchCodeTool', () => {
 
     await expect(
       tool.execute({
-        repo: 'acme-repo',
+        scope: { type: 'repo', repo: 'acme-repo' },
         query: 'test',
         topK: 1,
         pathPrefix: '../src',
@@ -206,13 +206,13 @@ describe('SearchCodeTool', () => {
 
     await expect(
       tool.execute({
-        repo: 'acme-repo',
+        scope: { type: 'repo', repo: 'acme-repo' },
         query: 'abc',
       }),
     ).rejects.toBeInstanceOf(ToolInputError);
   });
 
-  it('deve falhar sem repo quando scope não é informado', async () => {
+  it('deve falhar sem scope', async () => {
     const mock = new QdrantServiceMock([]);
     const tool = new SearchCodeTool(mock as unknown as QdrantService);
 
