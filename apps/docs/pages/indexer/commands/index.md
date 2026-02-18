@@ -75,8 +75,8 @@ O comando retorna um JSON com estatísticas da indexação:
   "status": "success",
   "repo_root": "/path/to/repo",
   "collections": {
-    "code": "compass__3584__manutic_nomic_embed_code__code",
-    "docs": "compass__3584__manutic_nomic_embed_code__docs"
+    "code": "compass__manutic_nomic_embed__code",
+    "docs": "compass__manutic_nomic_embed__docs"
   },
   "files_scanned": 42,
   "chunks_total": 156,
@@ -187,7 +187,7 @@ O comando emite logs informativos durante a execução:
 2026-02-09 02:15:37,120 [INFO] Repo root: /path/to/repo
 2026-02-09 02:15:37,120 [INFO] Conectando ao Ollama: http://localhost:11434
 2026-02-09 02:15:37,120 [INFO] Modelo: manutic/nomic-embed-code
-2026-02-09 02:15:37,120 [INFO] Collection: compass__3584__manutic_nomic_embed_code
+2026-02-09 02:15:37,120 [INFO] Collection: compass__manutic_nomic_embed
 2026-02-09 02:15:37,120 [INFO] Iniciando scan...
 2026-02-09 02:15:37,375 [INFO] Arquivos encontrados: 42
 2026-02-09 02:15:37,378 [INFO] Total de chunks: 156
