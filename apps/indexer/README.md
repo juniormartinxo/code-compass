@@ -337,6 +337,7 @@ Cada ponto indexado no Qdrant contém:
 
 ```json
 {
+  "repo": "my-project",
   "path": "src/main.py",
   "chunk_index": 0,
   "content_hash": "abc123...",
@@ -352,6 +353,11 @@ Cada ponto indexado no Qdrant contém:
   "repo_root": "/home/user/project"
 }
 ```
+
+Observação importante:
+- O valor de `repo` vem do nome do `REPO_ROOT` usado na execução.
+- Em ambiente multi-repo (`code-base/`), não use `REPO_ROOT` apontando para a pasta agregadora.
+- Indexe cada subdiretório (`code-base/<repo>`) separadamente para preservar o filtro por `repo` no MCP.
 
 ## Nome Automático de Collection
 
