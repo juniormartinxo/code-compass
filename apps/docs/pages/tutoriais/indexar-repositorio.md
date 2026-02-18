@@ -3,7 +3,7 @@
 Este tutorial mostra como indexar **um repositório específico** com o comando `index`, apontando explicitamente o `repo-root`. Se você usa múltiplos repos dentro de `code-base/`, repita o processo para cada repo.
 
 ## Pré-requisitos
-- Ollama em execução (`OLLAMA_URL`) e modelo configurado (`EMBEDDING_MODEL`).
+- Ollama em execução (`OLLAMA_URL`) e modelos configurados (`EMBEDDING_MODEL_CODE` e `EMBEDDING_MODEL_DOCS`).
 - Qdrant acessível (`QDRANT_URL`).
 - Repositório disponível em disco (pasta local).
 
