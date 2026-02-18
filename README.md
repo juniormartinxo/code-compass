@@ -143,7 +143,7 @@ pnpm docs:start
 O portal organiza toda a documentação técnica do projeto:
 
 - **Arquitetura** - Visão detalhada da arquitetura do sistema
-- **ADRs** - 6 decisões arquiteturais documentadas
+- **ADRs** - 7 decisões arquiteturais documentadas
 - **Indexer & RAG** - Pipeline de indexação e embeddings
 - **CLI** - Interface de linha de comando
 - **MCP Integration** - Integração com Model Context Protocol
