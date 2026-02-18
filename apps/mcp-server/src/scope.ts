@@ -5,8 +5,7 @@ import { ResolvedScope, Scope } from './types';
 const MAX_SCOPE_REPOS = 10;
 
 type ResolveScopeInput = {
-  scope?: unknown;
-  repo?: unknown;
+  scope: unknown;
 };
 
 function normalizeRepos(repos: unknown): string[] {
@@ -83,15 +82,9 @@ function parseScope(rawScope: unknown): Scope {
 }
 
 export function resolveScope(input: ResolveScopeInput, env: NodeJS.ProcessEnv): ResolvedScope {
-  if (input.scope !== undefined && input.scope !== null) {
-    const parsed = parseScope(input.scope);
-    return resolveFromScope(parsed, env);
+  if (input.scope === undefined || input.scope === null) {
+    throw new ToolInputError('Campo "scope" é obrigatório');
   }
-
-  const repo = validateRepoName(input.repo);
-  return {
-    type: 'repo',
-    repos: [repo],
-  };
+  const parsed = parseScope(input.scope);
+  return resolveFromScope(parsed, env);
 }
-
