@@ -62,9 +62,7 @@ As variáveis são lidas do ambiente e carregadas automaticamente de `.env` e `.
 ### Qdrant
 - `QDRANT_URL`: URL do Qdrant
 - `QDRANT_API_KEY`: API key (opcional)
-- `QDRANT_COLLECTION_BASE`: Base para nome auto-gerado
-- `QDRANT_COLLECTION_CODE`: Override opcional da collection de código
-- `QDRANT_COLLECTION_DOCS`: Override opcional da collection de documentação
+- `QDRANT_COLLECTION_BASE`: Stem base das collections
 - `QDRANT_DISTANCE`: Métrica de distância
 - `QDRANT_UPSERT_BATCH`: Pontos por batch de upsert
 
@@ -99,7 +97,7 @@ O comando retorna um JSON com estatísticas da indexação:
 |-------|-----------|
 | `status` | `success` ou `empty` (sem chunks) |
 | `repo_root` | Caminho do repositório indexado |
-| `collection_name` | Nome da collection no Qdrant |
+| `collections` | Nomes das collections finais (`code` e `docs`) |
 | `files_scanned` | Número de arquivos processados |
 | `chunks_total` | Total de chunks gerados |
 | `chunk_errors` | Erros durante chunking |
