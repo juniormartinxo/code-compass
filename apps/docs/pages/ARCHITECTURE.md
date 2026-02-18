@@ -58,7 +58,7 @@ Recomendado para MVP/Dev:
    - varre `REPO_ROOT` respeitando allowlist/blocklist.
    - gera chunks.
    - gera embeddings.
-   - upsert no Qdrant (collection configurável via `QDRANT_COLLECTION`).
+   - upsert no Qdrant (collections derivadas de `QDRANT_COLLECTION_BASE`, com sufixos `__code`/`__docs`).
 4. Resultado: repositório indexado e pronto para consultas via MCP.
 
 ### 3.2 Indexação incremental
@@ -93,7 +93,7 @@ Ações:
 
 ## 4) Modelo de dados
 
-### 4.1 Qdrant: collection configurável (`QDRANT_COLLECTION`)
+### 4.1 Qdrant: collections configuráveis (`QDRANT_COLLECTION_BASE`)
 **Vector**
 - `size`: conforme embeddings (ex.: 1536/3072)
 - `distance`: `Cosine` (default recomendado)
@@ -155,8 +155,7 @@ Tabelas sugeridas:
 **Objetivo:** responder perguntas sobre o código com evidências (RAG no MCP).
 - Input:
   - `query: string`
-  - `scope?: { type: "repo"|"repos"|"all", ... }`
-  - `repo?: string` (modo compatível quando `scope` não é enviado)
+  - `scope: { type: "repo"|"repos"|"all", ... }` (obrigatório)
   - `topK?: number`
   - `pathPrefix?: string`
   - `language?: string`
