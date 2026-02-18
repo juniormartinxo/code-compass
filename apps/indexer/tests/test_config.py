@@ -9,8 +9,15 @@ from unittest.mock import patch
 from indexer.config import (
     DEFAULT_CHUNK_LINES,
     DEFAULT_CHUNK_OVERLAP_LINES,
+    DEFAULT_CONTENT_TYPES,
+    DEFAULT_DOC_EXTENSIONS,
+    DEFAULT_DOC_PATH_HINTS,
+    DEFAULT_EXCLUDED_CONTEXT_PATH_PARTS,
     DEFAULT_IGNORE_DIRS,
+    DEFAULT_MIN_FILE_COVERAGE,
+    DEFAULT_SEARCH_SNIPPET_MAX_CHARS,
     load_chunk_config,
+    load_runtime_config,
     load_scan_config,
 )
 
@@ -118,6 +125,70 @@ class ChunkConfigTests(unittest.TestCase):
         with patch.dict(os.environ, {"CHUNK_LINES": "abc"}, clear=True):
             with self.assertRaisesRegex(ValueError, "CHUNK_LINES"):
                 load_chunk_config()
+
+
+class RuntimeConfigTests(unittest.TestCase):
+    def test_load_runtime_config_uses_defaults(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            config = load_runtime_config()
+
+        self.assertEqual(
+            config.excluded_context_path_parts,
+            DEFAULT_EXCLUDED_CONTEXT_PATH_PARTS,
+        )
+        self.assertEqual(
+            config.search_snippet_max_chars,
+            DEFAULT_SEARCH_SNIPPET_MAX_CHARS,
+        )
+        self.assertEqual(config.doc_extensions, DEFAULT_DOC_EXTENSIONS)
+        self.assertEqual(config.doc_path_hints, DEFAULT_DOC_PATH_HINTS)
+        self.assertEqual(config.content_types, DEFAULT_CONTENT_TYPES)
+        self.assertEqual(config.min_file_coverage, DEFAULT_MIN_FILE_COVERAGE)
+
+    def test_load_runtime_config_supports_env_overrides(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "EXCLUDED_CONTEXT_PATH_PARTS": ".venv,tmp/cache",
+                "SEARCH_SNIPPET_MAX_CHARS": "180",
+                "DOC_EXTENSIONS": "md,markdown",
+                "DOC_PATH_HINTS": "docs,handbook/",
+                "CONTENT_TYPES": "docs,code",
+                "INDEX_MIN_FILE_COVERAGE": "0.8",
+            },
+            clear=True,
+        ):
+            config = load_runtime_config()
+
+        self.assertEqual(config.excluded_context_path_parts, ("/.venv/", "/tmp/cache/"))
+        self.assertEqual(config.search_snippet_max_chars, 180)
+        self.assertEqual(config.doc_extensions, {".md", ".markdown"})
+        self.assertEqual(config.doc_path_hints, ("/docs", "/handbook/"))
+        self.assertEqual(config.content_types, ("docs", "code"))
+        self.assertEqual(config.min_file_coverage, 0.8)
+
+    def test_load_runtime_config_falls_back_when_env_is_invalid(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "SEARCH_SNIPPET_MAX_CHARS": "-1",
+                "DOC_EXTENSIONS": "",
+                "DOC_PATH_HINTS": "",
+                "CONTENT_TYPES": "docs",
+                "INDEX_MIN_FILE_COVERAGE": "abc",
+            },
+            clear=True,
+        ):
+            config = load_runtime_config()
+
+        self.assertEqual(
+            config.search_snippet_max_chars,
+            DEFAULT_SEARCH_SNIPPET_MAX_CHARS,
+        )
+        self.assertEqual(config.doc_extensions, DEFAULT_DOC_EXTENSIONS)
+        self.assertEqual(config.doc_path_hints, DEFAULT_DOC_PATH_HINTS)
+        self.assertEqual(config.content_types, DEFAULT_CONTENT_TYPES)
+        self.assertEqual(config.min_file_coverage, DEFAULT_MIN_FILE_COVERAGE)
 
 
 if __name__ == "__main__":
