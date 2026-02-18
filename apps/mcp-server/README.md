@@ -129,18 +129,17 @@ Resposta de erro:
 
 - Bloqueia path vazio, `\0`, path absoluto e `..`.
 - Resolve `realpath` do root e do arquivo para impedir escape por symlink.
-- Bloqueia acesso fora de `<CODEBASE_ROOT>/<repo>` (ou `REPO_ROOT` em modo compat) com erro `FORBIDDEN`.
+- Bloqueia acesso fora de `<CODEBASE_ROOT>/<repo>` com erro `FORBIDDEN`.
 - Bloqueia arquivo binário (byte nulo ou decode UTF-8 inválido) com `UNSUPPORTED_MEDIA`.
 
 ## Tool `search_code`
 
 ### Input
 
-- `scope` (opcional; recomendado):
+- `scope` (obrigatório):
   - `{ type: "repo", repo: string }`
   - `{ type: "repos", repos: string[] }`
   - `{ type: "all" }` (exige `ALLOW_GLOBAL_SCOPE=true`)
-- `repo` (string, compatibilidade; se `scope` ausente, equivale a `scope: { type: "repo", repo }`)
 - `query` (string, obrigatório, `trim`, 1..500)
 - `topK` (number opcional, default `10`, clamp `1..20`)
 - `pathPrefix` (string opcional, `trim`, max 200, bloqueia `\0` e `..`)
@@ -171,11 +170,10 @@ Executa o fluxo RAG completo no MCP: embedding da pergunta, busca no Qdrant, enr
 
 ### Input
 
-- `scope` (opcional; recomendado):
+- `scope` (obrigatório):
   - `{ type: "repo", repo: string }`
   - `{ type: "repos", repos: string[] }`
   - `{ type: "all" }` (exige `ALLOW_GLOBAL_SCOPE=true`)
-- `repo` (string, compatibilidade; se `scope` ausente, equivale a `scope: { type: "repo", repo }`)
 - `query` (string, obrigatório)
 - `topK` (number opcional, default `5`, clamp `1..20`)
 - `pathPrefix` (string opcional)
@@ -212,20 +210,17 @@ Executa o fluxo RAG completo no MCP: embedding da pergunta, busca no Qdrant, enr
 - `QDRANT_COLLECTION_DOCS` (opcional; default: `<base>__docs`)
 - `QDRANT_API_KEY` (opcional)
 
-## CODEBASE_ROOT e REPO_ROOT (env vars)
+## CODEBASE_ROOT (env var)
 
-- `CODEBASE_ROOT` (opcional): pasta contendo múltiplos repositórios (`<CODEBASE_ROOT>/<repo>`).
-  - quando definido, `repo` é obrigatório e o `open_file` só lê dentro de `<CODEBASE_ROOT>/<repo>`.
+- `CODEBASE_ROOT` (obrigatório): pasta contendo múltiplos repositórios (`<CODEBASE_ROOT>/<repo>`).
+  - `open_file` só lê dentro de `<CODEBASE_ROOT>/<repo>`.
   - validação de segurança de repo: bloqueia `\0`, `..` e separadores (`/` e `\\`).
-- `REPO_ROOT` (compat, usado quando `CODEBASE_ROOT` não está definido): raiz single-repo para tools de filesystem.
 
 ## ALLOW_GLOBAL_SCOPE (env var)
 
 - `ALLOW_GLOBAL_SCOPE` (opcional, default `false`):
   - quando `true`, habilita `scope: { type: "all" }` em `search_code`/`ask_code`.
   - quando ausente ou diferente de `true`, `scope: { type: "all" }` retorna `FORBIDDEN`.
-
-- Fallback quando ausente: inferência por subida de diretórios buscando `pnpm-workspace.yaml`, `.git/` ou `package.json` com `workspaces`.
 
 ### Carregamento de `.env.local`
 
