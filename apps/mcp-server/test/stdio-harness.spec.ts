@@ -41,7 +41,7 @@ function createServer(): McpStdioServer {
 }
 
 describe('MCP stdio harness', () => {
-  const baseCollection = 'compass__3584__manutic_nomic_embed_code';
+  const baseCollection = 'compass__manutic_nomic_embed';
   const codeCollection = `${baseCollection}__code`;
   const tempRoots: string[] = [];
 
