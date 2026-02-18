@@ -18,8 +18,8 @@ function createServer(): McpStdioServer {
 
 async function run(): Promise<void> {
   process.env.QDRANT_URL = process.env.QDRANT_URL || 'http://localhost:6333';
-  process.env.QDRANT_COLLECTION =
-    process.env.QDRANT_COLLECTION || 'compass__3584__manutic_nomic_embed_code';
+  process.env.QDRANT_COLLECTION_BASE =
+    process.env.QDRANT_COLLECTION_BASE || 'compass__3584__manutic_nomic_embed_code';
   process.env.MCP_QDRANT_MOCK_RESPONSE = JSON.stringify([
     {
       score: 0.88,
@@ -44,14 +44,14 @@ async function run(): Promise<void> {
 
   try {
     await (server as unknown as { handleLine: (line: string) => Promise<void> }).handleLine(
-      JSON.stringify({
-        id: 'req-h1',
-        tool: 'search_code',
-        input: {
-          repo: 'acme-repo',
-          query: 'bootstrap',
-          topK: 10,
-          pathPrefix: 'apps/mcp-server/',
+        JSON.stringify({
+          id: 'req-h1',
+          tool: 'search_code',
+          input: {
+            scope: { type: 'repo', repo: 'acme-repo' },
+            query: 'bootstrap',
+            topK: 10,
+            pathPrefix: 'apps/mcp-server/',
           vector: [0.1, 0.2],
         },
       }),
