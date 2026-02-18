@@ -155,6 +155,10 @@ for repo in code-base/*; do
 done
 ```
 
+> Atenção: `index` processa um único `repo_root` por execução e grava `payload.repo` com o nome desse diretório.  
+> Se você executar com `--repo-root /.../code-base`, todos os pontos ficarão com `repo="code-base"` (sem distinguir os sub-repos).  
+> Para multi-repo, execute por subdiretório (`code-base/<repo>`), como no exemplo acima.
+
 ### Com limite de arquivos (para testes)
 
 ```bash
