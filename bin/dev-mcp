@@ -89,9 +89,9 @@ if [[ ! -f "$MCP_SERVER_PACKAGE_JSON" ]]; then
 fi
 
 # Variáveis de ambiente com fallback
-export REPO_ROOT="${REPO_ROOT:-$ROOT}"
+export CODEBASE_ROOT="${CODEBASE_ROOT:-$ROOT/code-base}"
 export QDRANT_URL="${QDRANT_URL:-http://localhost:6333}"
-export QDRANT_COLLECTION="${QDRANT_COLLECTION:-compass__3584__manutic_nomic_embed_code}"
+export QDRANT_COLLECTION_BASE="${QDRANT_COLLECTION_BASE:-compass__3584__manutic_nomic_embed_code}"
 
 # Carrega .env.local/.env se existir (apenas linhas KEY=VALUE)
 if [[ -n "$ENV_FILE" ]]; then
