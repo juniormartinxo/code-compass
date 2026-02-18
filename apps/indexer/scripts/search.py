@@ -32,7 +32,7 @@ def search(
     Returns:
         Lista de resultados com score e payload
     """
-    embedder_config = load_embedder_config()
+    embedder_config = load_embedder_config(content_type="code")
     qdrant_config = load_qdrant_config()
     
     # Gerar embedding da query
