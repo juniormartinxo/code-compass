@@ -347,6 +347,7 @@ Observação sobre autenticação no Qdrant:
 | `REPO_ROOT` | `..` | Raiz do repositório |
 | `SCAN_IGNORE_DIRS` | `.git,node_modules,dist,build,.next,.qdrant_storage,coverage,.venv,venv,__pycache__,.pytest_cache,.mypy_cache,.ruff_cache` | Diretórios a ignorar |
 | `SCAN_ALLOW_EXTS` | `.ts,.tsx,.py,.md,...` | Extensões permitidas |
+| `SCAN_IGNORE_PATTERNS` | vazio | Padrões glob para ignorar arquivos específicos (ex.: `docs/**`, `**/*.test.ts`). Prioridade: CLI (`--ignore-patterns`) > Env > Default. |
 | `CHUNK_LINES` | `120` | Linhas por chunk |
 | `CHUNK_OVERLAP_LINES` | `20` | Overlap entre chunks |
 
