@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Mapping
 
 DEFAULT_IGNORE_DIRS: set[str] = {
     ".git",
@@ -38,6 +38,29 @@ DEFAULT_IGNORE_PATTERNS: list[str] = []
 DEFAULT_CHUNK_LINES = 120
 DEFAULT_CHUNK_OVERLAP_LINES = 20
 
+DEFAULT_EXCLUDED_CONTEXT_PATH_PARTS: tuple[str, ...] = (
+    "/.venv/",
+    "/venv/",
+    "/__pycache__/",
+    "/.pytest_cache/",
+    "/.mypy_cache/",
+    "/.ruff_cache/",
+)
+DEFAULT_SEARCH_SNIPPET_MAX_CHARS = 300
+DEFAULT_DOC_EXTENSIONS: set[str] = {".md", ".mdx", ".rst", ".adoc", ".txt"}
+DEFAULT_DOC_PATH_HINTS: tuple[str, ...] = (
+    "/docs/",
+    "/documentation/",
+    "/adr",
+    "/wiki/",
+    "/changelog",
+    "/contributing",
+    "/license",
+    "/readme",
+)
+DEFAULT_CONTENT_TYPES: tuple[str, str] = ("code", "docs")
+DEFAULT_MIN_FILE_COVERAGE = 0.95
+
 
 @dataclass(frozen=True)
 class ScanConfig:
@@ -52,6 +75,16 @@ class ChunkConfig:
     repo_root: Path
     chunk_lines: int
     overlap_lines: int
+
+
+@dataclass(frozen=True)
+class RuntimeConfig:
+    excluded_context_path_parts: tuple[str, ...]
+    search_snippet_max_chars: int
+    doc_extensions: set[str]
+    doc_path_hints: tuple[str, ...]
+    content_types: tuple[str, str]
+    min_file_coverage: float
 
 
 def _parse_csv(value: str | None) -> list[str]:
@@ -116,6 +149,87 @@ def _resolve_int_config(
         return int(selected)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{label} deve ser um inteiro válido") from exc
+
+
+def _parse_positive_int(value: str | None, *, default: int, minimum: int = 1) -> int:
+    if value is None or not value.strip():
+        return default
+    try:
+        parsed = int(value)
+    except ValueError:
+        return default
+    if parsed < minimum:
+        return default
+    return parsed
+
+
+def _parse_min_file_coverage(value: str | None, *, default: float) -> float:
+    if value is None or not value.strip():
+        return default
+    try:
+        parsed = float(value)
+    except ValueError:
+        return default
+    if parsed <= 0:
+        return default
+    if parsed > 1:
+        return 1.0
+    return parsed
+
+
+def _normalize_path_markers(
+    values: Iterable[str],
+    *,
+    ensure_trailing_slash: bool,
+) -> tuple[str, ...]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+
+    for value in values:
+        marker = value.strip().replace("\\", "/").lower()
+        if not marker:
+            continue
+        if not marker.startswith("/"):
+            marker = f"/{marker}"
+        if ensure_trailing_slash and not marker.endswith("/"):
+            marker = f"{marker}/"
+        if marker in seen:
+            continue
+        seen.add(marker)
+        normalized.append(marker)
+
+    return tuple(normalized)
+
+
+def _resolve_doc_extensions(raw_values: list[str]) -> set[str]:
+    if not raw_values:
+        return set(DEFAULT_DOC_EXTENSIONS)
+
+    normalized = _normalize_allow_exts(raw_values)
+    if not normalized:
+        return set(DEFAULT_DOC_EXTENSIONS)
+    return normalized
+
+
+def _resolve_content_types(raw_values: list[str]) -> tuple[str, str]:
+    if not raw_values:
+        return DEFAULT_CONTENT_TYPES
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in raw_values:
+        item = value.strip().lower()
+        if item not in {"code", "docs"}:
+            continue
+        if item in seen:
+            continue
+        seen.add(item)
+        normalized.append(item)
+
+    if len(normalized) != 2 or set(normalized) != {"code", "docs"}:
+        return DEFAULT_CONTENT_TYPES
+
+    return normalized[0], normalized[1]
 
 
 def load_scan_config(
@@ -194,4 +308,44 @@ def load_chunk_config(
         repo_root=_resolve_repo_root(repo_root_raw),
         chunk_lines=chunk_lines_value,
         overlap_lines=overlap_lines_value,
+    )
+
+
+def load_runtime_config(env: Mapping[str, str] | None = None) -> RuntimeConfig:
+    source = os.environ if env is None else env
+
+    excluded_raw = _parse_csv(source.get("EXCLUDED_CONTEXT_PATH_PARTS"))
+    excluded_context_path_parts = (
+        _normalize_path_markers(excluded_raw, ensure_trailing_slash=True)
+        if excluded_raw
+        else DEFAULT_EXCLUDED_CONTEXT_PATH_PARTS
+    )
+    if not excluded_context_path_parts:
+        excluded_context_path_parts = DEFAULT_EXCLUDED_CONTEXT_PATH_PARTS
+
+    doc_extensions = _resolve_doc_extensions(_parse_csv(source.get("DOC_EXTENSIONS")))
+
+    doc_path_hints_raw = _parse_csv(source.get("DOC_PATH_HINTS"))
+    doc_path_hints = (
+        _normalize_path_markers(doc_path_hints_raw, ensure_trailing_slash=False)
+        if doc_path_hints_raw
+        else DEFAULT_DOC_PATH_HINTS
+    )
+    if not doc_path_hints:
+        doc_path_hints = DEFAULT_DOC_PATH_HINTS
+
+    return RuntimeConfig(
+        excluded_context_path_parts=excluded_context_path_parts,
+        search_snippet_max_chars=_parse_positive_int(
+            source.get("SEARCH_SNIPPET_MAX_CHARS"),
+            default=DEFAULT_SEARCH_SNIPPET_MAX_CHARS,
+            minimum=4,
+        ),
+        doc_extensions=doc_extensions,
+        doc_path_hints=doc_path_hints,
+        content_types=_resolve_content_types(_parse_csv(source.get("CONTENT_TYPES"))),
+        min_file_coverage=_parse_min_file_coverage(
+            source.get("INDEX_MIN_FILE_COVERAGE"),
+            default=DEFAULT_MIN_FILE_COVERAGE,
+        ),
     )
