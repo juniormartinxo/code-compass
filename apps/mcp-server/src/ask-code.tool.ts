@@ -5,7 +5,7 @@ import { OpenFileTool } from './open-file.tool';
 import { SearchCodeTool } from './search-code.tool';
 import { ToolInputError, ToolExecutionError } from './errors';
 import { resolveScope } from './scope';
-import { AskCodeInput, AskCodeOutput, ResolvedScope, SearchCodeResult } from './types';
+import { AskCodeInput, AskCodeOutput, ContentType, ResolvedScope, SearchCodeResult } from './types';
 
 const DEFAULT_TOP_K = 5;
 const MIN_TOP_K = 1;
@@ -42,6 +42,8 @@ type ValidatedAskInput = {
   minScore: number;
   llmModel: string;
   grounded: boolean;
+  contentType: ContentType;
+  strict: boolean;
 };
 
 @Injectable()
@@ -62,6 +64,8 @@ export class AskCodeTool {
       topK: input.topK,
       pathPrefix: input.pathPrefix,
       vector,
+      contentType: input.contentType,
+      strict: input.strict,
     });
 
     const ranked = searchOutput.results
@@ -80,8 +84,11 @@ export class AskCodeTool {
           topK: input.topK,
           minScore: input.minScore,
           llmModel: input.llmModel,
+          contentType: input.contentType,
+          strict: input.strict,
           repo: input.scope.type === 'repo' ? input.scope.repos[0] : undefined,
           collection: searchOutput.meta.collection,
+          collections: searchOutput.meta.collections,
           totalMatches: searchOutput.results.length,
           contextsUsed: 0,
           elapsedMs: Date.now() - startedAt,
@@ -101,8 +108,11 @@ export class AskCodeTool {
           topK: input.topK,
           minScore: input.minScore,
           llmModel: input.llmModel,
+          contentType: input.contentType,
+          strict: input.strict,
           repo: input.scope.type === 'repo' ? input.scope.repos[0] : undefined,
           collection: searchOutput.meta.collection,
+          collections: searchOutput.meta.collections,
           totalMatches: searchOutput.results.length,
           contextsUsed: enriched.length,
           elapsedMs: Date.now() - startedAt,
@@ -123,8 +133,11 @@ export class AskCodeTool {
         topK: input.topK,
         minScore: input.minScore,
         llmModel: input.llmModel,
+        contentType: input.contentType,
+        strict: input.strict,
         repo: input.scope.type === 'repo' ? input.scope.repos[0] : undefined,
         collection: searchOutput.meta.collection,
+        collections: searchOutput.meta.collections,
         totalMatches: searchOutput.results.length,
         contextsUsed: enriched.length,
         elapsedMs: Date.now() - startedAt,
@@ -154,6 +167,8 @@ export class AskCodeTool {
     const minScore = this.validateMinScore(input.minScore);
     const llmModel = this.validateModel(input.llmModel);
     const grounded = this.validateGrounded(input.grounded);
+    const contentType = this.validateContentType(input.contentType);
+    const strict = this.validateStrict(input.strict);
 
     return {
       scope,
@@ -164,6 +179,8 @@ export class AskCodeTool {
       minScore,
       llmModel,
       grounded,
+      contentType,
+      strict,
     };
   }
 
@@ -261,6 +278,26 @@ export class AskCodeTool {
       throw new ToolInputError('Campo "grounded" deve ser boolean');
     }
     return grounded;
+  }
+
+  private validateContentType(contentType: unknown): ContentType {
+    if (contentType === undefined || contentType === null) {
+      return 'all';
+    }
+    if (contentType !== 'code' && contentType !== 'docs' && contentType !== 'all') {
+      throw new ToolInputError('Campo "contentType" deve ser "code", "docs" ou "all"');
+    }
+    return contentType;
+  }
+
+  private validateStrict(strict: unknown): boolean {
+    if (strict === undefined || strict === null) {
+      return false;
+    }
+    if (typeof strict !== 'boolean') {
+      throw new ToolInputError('Campo "strict" deve ser boolean');
+    }
+    return strict;
   }
 
   private matchesLanguage(pathValue: string, language: string): boolean {
@@ -454,21 +491,33 @@ export class AskCodeTool {
 
   private async chat(systemPrompt: string, userMessage: string, llmModel: string): Promise<string> {
     const ollamaUrl = process.env.OLLAMA_URL || DEFAULT_OLLAMA_URL;
-
-    const response = await axios.post<{ message?: { content?: string } }>(
-      `${ollamaUrl.replace(/\/$/, '')}/api/chat`,
-      {
-        model: llmModel,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMessage },
-        ],
-        stream: false,
-      },
-      {
-        timeout: DEFAULT_TIMEOUT_MS,
-      },
-    );
+    let response;
+    try {
+      response = await axios.post<{ message?: { content?: string } }>(
+        `${ollamaUrl.replace(/\/$/, '')}/api/chat`,
+        {
+          model: llmModel,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userMessage },
+          ],
+          stream: false,
+        },
+        {
+          timeout: DEFAULT_TIMEOUT_MS,
+        },
+      );
+    } catch (error) {
+      const details = axios.isAxiosError(error)
+        ? error.message
+        : error instanceof Error
+          ? error.message
+          : 'erro desconhecido';
+      throw new ToolExecutionError(
+        'CHAT_FAILED',
+        `Falha ao gerar resposta via Ollama (${ollamaUrl} / ${llmModel}): ${details}`,
+      );
+    }
 
     return response.data?.message?.content || '';
   }
