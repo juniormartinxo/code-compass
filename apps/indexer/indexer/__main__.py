@@ -315,12 +315,8 @@ def _build_ask_scope_payload(args: argparse.Namespace) -> dict[str, object]:
             }
         }
 
-    repo = getattr(args, "repo", None)
-    if repo:
-        return {"repo": repo}
-
     raise ValueError(
-        "Erro: informe --repo (compat) ou um escopo (--scope-repo, --scope-repos, --scope-all)"
+        "Erro: informe um escopo (--scope-repo, --scope-repos, --scope-all)"
     )
 
 
@@ -364,9 +360,6 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     init_parser.add_argument(
         "--qdrant-url", dest="qdrant_url", default=None, help="URL do Qdrant"
-    )
-    init_parser.add_argument(
-        "--collection", dest="collection", default=None, help="Nome da collection"
     )
 
     # Comando index
@@ -486,12 +479,6 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="strict",
         action="store_true",
         help="Falha em vez de retorno parcial quando uma coleção estiver indisponível.",
-    )
-    ask_parser.add_argument(
-        "--repo",
-        dest="repo",
-        default=None,
-        help="Repo alvo em modo compat (equivale a scope.repo no MCP)",
     )
     scope_group = ask_parser.add_mutually_exclusive_group()
     scope_group.add_argument(
@@ -615,7 +602,6 @@ def _init_command(args: argparse.Namespace) -> int:
         )
         qdrant_config = load_qdrant_config(
             url=args.qdrant_url,
-            collection=args.collection,
         )
 
         logger.info(f"Conectando ao Ollama: {embedder_config.ollama_url}")
