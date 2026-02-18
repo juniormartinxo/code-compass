@@ -83,32 +83,14 @@ class TestQdrantConfig(unittest.TestCase):
 class TestGenerateCollectionName(unittest.TestCase):
     """Testes para generate_collection_name."""
 
-    def test_basic_generation(self) -> None:
-        """Deve gerar nome no formato esperado."""
+    def test_returns_collection_base(self) -> None:
+        """Deve retornar exatamente o stem informado."""
         name = generate_collection_name(
             collection_base="compass",
             vector_size=3584,
             model_name="manutic/nomic-embed-code",
         )
-        self.assertEqual(name, "compass__3584__manutic_nomic_embed_code")
-
-    def test_slugifies_model_name(self) -> None:
-        """Deve slugificar nome do modelo."""
-        name = generate_collection_name(
-            collection_base="test",
-            vector_size=768,
-            model_name="OpenAI/Text-Embedding-3-Large",
-        )
-        self.assertEqual(name, "test__768__openai_text_embedding_3_large")
-
-    def test_handles_special_chars(self) -> None:
-        """Deve remover caracteres especiais."""
-        name = generate_collection_name(
-            collection_base="base",
-            vector_size=1024,
-            model_name="model@v1.2.3!",
-        )
-        self.assertEqual(name, "base__1024__model_v1_2_3")
+        self.assertEqual(name, "compass")
 
 
 class TestQdrantStore(unittest.TestCase):
@@ -131,7 +113,7 @@ class TestQdrantStore(unittest.TestCase):
             vector_size=3584,
             model_name="manutic/nomic-embed-code",
         )
-        self.assertEqual(name, "test__3584__manutic_nomic_embed_code")
+        self.assertEqual(name, "test")
 
     @patch("indexer.qdrant_store.QdrantClient")
     def test_client_does_not_send_api_key_when_none(
@@ -325,11 +307,11 @@ class TestQdrantStore(unittest.TestCase):
 
         self.assertEqual(
             names["code"],
-            "test__3584__manutic_nomic_embed_code__code",
+            "test__code",
         )
         self.assertEqual(
             names["docs"],
-            "test__3584__manutic_nomic_embed_code__docs",
+            "test__docs",
         )
 
     @patch("indexer.qdrant_store.QdrantClient")
