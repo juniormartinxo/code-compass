@@ -41,6 +41,8 @@ function createServer(): McpStdioServer {
 }
 
 describe('MCP stdio harness', () => {
+  const baseCollection = 'compass__3584__manutic_nomic_embed_code';
+  const codeCollection = `${baseCollection}__code`;
   const tempRoots: string[] = [];
 
   afterEach(async () => {
@@ -48,13 +50,14 @@ describe('MCP stdio harness', () => {
     delete process.env.REPO_ROOT;
     delete process.env.MCP_QDRANT_MOCK_RESPONSE;
     delete process.env.QDRANT_COLLECTION;
+    delete process.env.QDRANT_COLLECTION_BASE;
     delete process.env.QDRANT_URL;
     await Promise.all(tempRoots.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
   });
 
   it('deve validar fluxo NDJSON para search_code', async () => {
     process.env.QDRANT_URL = 'http://localhost:6333';
-    process.env.QDRANT_COLLECTION = 'compass__3584__manutic_nomic_embed_code';
+    process.env.QDRANT_COLLECTION_BASE = baseCollection;
     process.env.MCP_QDRANT_MOCK_RESPONSE = JSON.stringify([
       {
         score: 0.88,
@@ -64,6 +67,7 @@ describe('MCP stdio harness', () => {
           startLine: 1,
           endLine: 30,
           text: 'async function bootstrap() { /* ... */ }',
+          content_type: 'code',
         },
       },
     ]);
@@ -112,12 +116,13 @@ describe('MCP stdio harness', () => {
     expect(responseOutput.results[0].path).toBe('apps/mcp-server/src/main.ts');
     expect(responseOutput.meta.repo).toBe('acme-repo');
     expect(responseOutput.meta.scope).toEqual({ type: 'repo', repos: ['acme-repo'] });
-    expect(responseOutput.meta.collection).toBe('compass__3584__manutic_nomic_embed_code');
+    expect(responseOutput.meta.collection).toBe(codeCollection);
+    expect(Array.isArray(responseOutput.meta.collections)).toBe(true);
   });
 
   it('deve aceitar scope repo no fluxo NDJSON de search_code', async () => {
     process.env.QDRANT_URL = 'http://localhost:6333';
-    process.env.QDRANT_COLLECTION = 'compass__3584__manutic_nomic_embed_code';
+    process.env.QDRANT_COLLECTION_BASE = baseCollection;
     process.env.MCP_QDRANT_MOCK_RESPONSE = JSON.stringify([
       {
         score: 0.88,
@@ -127,6 +132,7 @@ describe('MCP stdio harness', () => {
           startLine: 1,
           endLine: 10,
           text: 'export const shared = true;',
+          content_type: 'code',
         },
       },
     ]);
