@@ -34,3 +34,23 @@ def serve(port: int, host: str, public_url: str | None = None) -> None:
 ```
 
 This ensures that `python -m toad serve` works correctly without needing to rely on the `toad` binary being in the PATH or executable permissions on package files.
+
+## Mensagem `Falha ao consultar o MCP`
+
+**Issue:**
+No `ask`/`chat`, a CLI mostra erro parecido com:
+`Falha ao consultar o MCP. Detalhe técnico: Falha ao gerar embedding via Ollama (...)`
+
+**Cause:**
+O agente ACP conseguiu iniciar, mas a tool `ask_code` falhou no backend MCP.
+O caso mais comum é `OLLAMA_URL` indisponível (ex.: `http://localhost:11434` fora do ar).
+
+**Checks rápidos:**
+
+```bash
+make health
+curl -sS http://localhost:11434/api/tags
+```
+
+Se o segundo comando falhar, inicie/configure o Ollama e o modelo de embedding esperado
+(`EMBEDDING_MODEL`, padrão `manutic/nomic-embed-code`).
