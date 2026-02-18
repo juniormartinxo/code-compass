@@ -15,13 +15,14 @@ O Indexer é responsável por:
 ## Pré-requisitos
 
 - Python 3.12+
-- **Ollama** rodando localmente com o modelo `manutic/nomic-embed-code`
+- **Ollama** rodando localmente com os modelos `manutic/nomic-embed-code` (code) e `bge-m3` (docs)
 - **Qdrant** rodando localmente
 
 ### Instalar Modelo no Ollama
 
 ```bash
 ollama pull manutic/nomic-embed-code
+ollama pull bge-m3
 ```
 
 ### Iniciar Qdrant
@@ -48,7 +49,10 @@ pip install httpx qdrant-client
 ```bash
 # Ollama
 export OLLAMA_URL=http://localhost:11434
-export EMBEDDING_MODEL=manutic/nomic-embed-code
+export EMBEDDING_PROVIDER_CODE=ollama
+export EMBEDDING_PROVIDER_DOCS=ollama
+export EMBEDDING_MODEL_CODE=manutic/nomic-embed-code
+export EMBEDDING_MODEL_DOCS=bge-m3
 export EMBEDDING_BATCH_SIZE=16
 
 # Qdrant
@@ -103,7 +107,7 @@ python -m indexer init
 ```
 
 Este comando:
-1. Conecta ao Ollama e **descobre o vector_size** automaticamente
+1. Conecta ao Ollama e **descobre o vector_size** de `code` e `docs` automaticamente
 2. Resolve/gera os nomes das collections de `code` e `docs`
 3. Cria/valida collections no Qdrant
 4. Garante índice payload `content_type` (`keyword`)
@@ -111,10 +115,20 @@ Este comando:
 **Saída:**
 ```json
 {
-  "provider": "ollama",
-  "ollama_url": "http://localhost:11434",
-  "model": "manutic/nomic-embed-code",
-  "vector_size": 3584,
+  "embedding": {
+    "code": {
+      "provider": "ollama",
+      "ollama_url": "http://localhost:11434",
+      "model": "manutic/nomic-embed-code",
+      "vector_size": 3584
+    },
+    "docs": {
+      "provider": "ollama",
+      "ollama_url": "http://localhost:11434",
+      "model": "bge-m3",
+      "vector_size": 3584
+    }
+  },
   "collections": {
     "code": {
       "name": "compass__manutic_nomic_embed__code",
@@ -141,7 +155,10 @@ Este comando:
 
 Opções:
 - `--ollama-url` - URL do Ollama
-- `--model` - Modelo de embedding
+- `--provider-code` - Provider de embedding para `code`
+- `--provider-docs` - Provider de embedding para `docs`
+- `--model-code` - Modelo de embedding para `code`
+- `--model-docs` - Modelo de embedding para `docs`
 - `--qdrant-url` - URL do Qdrant
 
 ### Index
@@ -155,7 +172,7 @@ python -m indexer index --repo-root /path/to/repo
 Este comando:
 1. **Scan** - Escaneia o repositório
 2. **Chunk** - Divide cada arquivo em chunks
-3. **Embed** - Gera embeddings em batches via Ollama
+3. **Embed** - Gera embeddings em batches via Ollama por tipo de conteúdo
 4. **Upsert** - Armazena vetores no Qdrant com IDs estáveis
 
 **IDs estáveis**: Reindexar o mesmo arquivo/chunk não duplica pontos. Se o texto não mudou, o ID permanece o mesmo e o upsert é um no-op/overwrite.
@@ -179,13 +196,27 @@ Este comando:
   },
   "chunk_errors": 0,
   "embeddings_generated": 156,
+  "embeddings_generated_by_type": {
+    "code": 120,
+    "docs": 36
+  },
   "points_upserted": 156,
   "upsert_by_type": {
     "code": { "points_upserted": 120, "batches": 2 },
     "docs": { "points_upserted": 36, "batches": 1 }
   },
-  "vector_size": 3584,
-  "model": "manutic/nomic-embed-code",
+  "embedding": {
+    "code": {
+      "provider": "ollama",
+      "model": "manutic/nomic-embed-code",
+      "vector_size": 3584
+    },
+    "docs": {
+      "provider": "ollama",
+      "model": "bge-m3",
+      "vector_size": 3584
+    }
+  },
   "elapsed_ms": 12345,
   "elapsed_sec": 12.35
 }
@@ -279,9 +310,11 @@ Importante:
 
 | Variável | Default | Descrição |
 |----------|---------|-----------|
-| `EMBEDDING_PROVIDER` | `ollama` | Provider de embeddings |
+| `EMBEDDING_PROVIDER_CODE` | `ollama` | Provider de embeddings para `code` |
+| `EMBEDDING_PROVIDER_DOCS` | `ollama` | Provider de embeddings para `docs` |
 | `OLLAMA_URL` | `http://localhost:11434` | URL do Ollama |
-| `EMBEDDING_MODEL` | `manutic/nomic-embed-code` | Modelo de embedding |
+| `EMBEDDING_MODEL_CODE` | `manutic/nomic-embed-code` | Modelo de embedding para `code` |
+| `EMBEDDING_MODEL_DOCS` | `bge-m3` | Modelo de embedding para `docs` |
 | `EMBEDDING_BATCH_SIZE` | `16` | Textos por batch de embedding |
 | `EMBEDDING_MAX_RETRIES` | `5` | Máximo de tentativas em caso de erro |
 | `EMBEDDING_BACKOFF_BASE_MS` | `500` | Base para backoff exponencial (ms) |
