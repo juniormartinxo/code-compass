@@ -54,7 +54,10 @@ As variáveis são lidas do ambiente e carregadas automaticamente de `.env` e `.
 
 ### Embeddings (Ollama)
 - `OLLAMA_URL`: URL do Ollama
-- `EMBEDDING_MODEL`: Modelo de embedding
+- `EMBEDDING_PROVIDER_CODE`: Provider de embedding para `code`
+- `EMBEDDING_PROVIDER_DOCS`: Provider de embedding para `docs`
+- `EMBEDDING_MODEL_CODE`: Modelo de embedding para `code`
+- `EMBEDDING_MODEL_DOCS`: Modelo de embedding para `docs`
 - `EMBEDDING_BATCH_SIZE`: Textos por batch
 - `EMBEDDING_MAX_RETRIES`: Máximo de tentativas
 - `EMBEDDING_BACKOFF_BASE_MS`: Base para backoff exponencial
@@ -82,10 +85,27 @@ O comando retorna um JSON com estatísticas da indexação:
   "chunks_total": 156,
   "chunk_errors": 0,
   "embeddings_generated": 156,
+  "embeddings_generated_by_type": {
+    "code": 120,
+    "docs": 36
+  },
   "points_upserted": 156,
-  "upsert_batches": 3,
-  "vector_size": 3584,
-  "model": "manutic/nomic-embed-code",
+  "upsert_by_type": {
+    "code": { "points_upserted": 120, "batches": 2 },
+    "docs": { "points_upserted": 36, "batches": 1 }
+  },
+  "embedding": {
+    "code": {
+      "provider": "ollama",
+      "model": "manutic/nomic-embed-code",
+      "vector_size": 3584
+    },
+    "docs": {
+      "provider": "ollama",
+      "model": "bge-m3",
+      "vector_size": 3584
+    }
+  },
   "elapsed_ms": 12345,
   "elapsed_sec": 12.35
 }
@@ -102,10 +122,10 @@ O comando retorna um JSON com estatísticas da indexação:
 | `chunks_total` | Total de chunks gerados |
 | `chunk_errors` | Erros durante chunking |
 | `embeddings_generated` | Embeddings criados |
+| `embeddings_generated_by_type` | Embeddings criados por tipo (`code`, `docs`) |
 | `points_upserted` | Pontos inseridos/atualizados |
-| `upsert_batches` | Número de batches de upsert |
-| `vector_size` | Tamanho do vetor |
-| `model` | Modelo de embedding usado |
+| `upsert_by_type` | Totais de upsert por tipo (`code`, `docs`) |
+| `embedding` | Configuração efetiva por tipo (`provider`, `model`, `vector_size`) |
 | `elapsed_ms` | Tempo total em milissegundos |
 | `elapsed_sec` | Tempo total em segundos |
 
@@ -185,9 +205,9 @@ O comando emite logs informativos durante a execução:
 
 ```
 2026-02-09 02:15:37,120 [INFO] Repo root: /path/to/repo
-2026-02-09 02:15:37,120 [INFO] Conectando ao Ollama: http://localhost:11434
-2026-02-09 02:15:37,120 [INFO] Modelo: manutic/nomic-embed-code
-2026-02-09 02:15:37,120 [INFO] Collection: compass__manutic_nomic_embed
+2026-02-09 02:15:37,120 [INFO] Embedding config [code]: provider=ollama model=manutic/nomic-embed-code ollama=http://localhost:11434
+2026-02-09 02:15:37,121 [INFO] Embedding config [docs]: provider=ollama model=bge-m3 ollama=http://localhost:11434
+2026-02-09 02:15:37,122 [INFO] Collections: code=compass__manutic_nomic_embed__code docs=compass__manutic_nomic_embed__docs
 2026-02-09 02:15:37,120 [INFO] Iniciando scan...
 2026-02-09 02:15:37,375 [INFO] Arquivos encontrados: 42
 2026-02-09 02:15:37,378 [INFO] Total de chunks: 156
