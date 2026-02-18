@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from indexer.qdrant_store import (
+    CONTENT_TYPE_FIELD,
     DEFAULT_QDRANT_COLLECTION_BASE,
     DEFAULT_QDRANT_DISTANCE,
     DEFAULT_QDRANT_UPSERT_BATCH,
@@ -339,6 +340,53 @@ class TestQdrantStore(unittest.TestCase):
         self.assertEqual(results[0]["id"], "result_1")
         self.assertEqual(results[0]["score"], 0.95)
         self.assertEqual(results[0]["payload"]["path"], "src/main.py")
+
+    def test_resolve_split_collection_names_uses_suffixes(self) -> None:
+        config = self._make_config()
+        store = QdrantStore(config)
+
+        names = store.resolve_split_collection_names(
+            vector_size=3584,
+            model_name="manutic/nomic-embed-code",
+        )
+
+        self.assertEqual(
+            names["code"],
+            "test__3584__manutic_nomic_embed_code__code",
+        )
+        self.assertEqual(
+            names["docs"],
+            "test__3584__manutic_nomic_embed_code__docs",
+        )
+
+    @patch("indexer.qdrant_store.QdrantClient")
+    def test_ensure_payload_keyword_index_is_idempotent(
+        self, mock_client_class: MagicMock
+    ) -> None:
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+
+        config = self._make_config()
+        store = QdrantStore(config)
+        store.ensure_payload_keyword_index("test_collection", field_name=CONTENT_TYPE_FIELD)
+
+        mock_client.create_payload_index.assert_called_once()
+
+    @patch("indexer.qdrant_store.QdrantClient")
+    def test_has_payload_field_true_when_present(
+        self, mock_client_class: MagicMock
+    ) -> None:
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+
+        info = MagicMock()
+        info.payload_schema = {CONTENT_TYPE_FIELD: {"type": "keyword"}}
+        mock_client.get_collection.return_value = info
+
+        config = self._make_config()
+        store = QdrantStore(config)
+
+        self.assertTrue(store.has_payload_field("test_collection", field_name=CONTENT_TYPE_FIELD))
 
 
 if __name__ == "__main__":
