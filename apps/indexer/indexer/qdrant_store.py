@@ -39,6 +39,8 @@ class QdrantConfig:
     collection: str | None
     distance: str
     upsert_batch: int
+    collection_code: str | None = None
+    collection_docs: str | None = None
 
 
 def load_qdrant_config(
@@ -57,7 +59,11 @@ def load_qdrant_config(
         if collection_base is not None
         else os.getenv("QDRANT_COLLECTION_BASE")
     )
+    if resolved_collection_base is None:
+        resolved_collection_base = os.getenv("QDRANT_COLLECTION")
     resolved_collection = collection if collection is not None else os.getenv("QDRANT_COLLECTION")
+    resolved_collection_code = os.getenv("QDRANT_COLLECTION_CODE")
+    resolved_collection_docs = os.getenv("QDRANT_COLLECTION_DOCS")
     resolved_distance = distance if distance is not None else os.getenv("QDRANT_DISTANCE")
 
     normalized_url = _normalize_optional_string(resolved_url) or DEFAULT_QDRANT_URL
@@ -67,6 +73,8 @@ def load_qdrant_config(
         or DEFAULT_QDRANT_COLLECTION_BASE
     )
     normalized_collection = _normalize_optional_string(resolved_collection)
+    normalized_collection_code = _normalize_optional_string(resolved_collection_code)
+    normalized_collection_docs = _normalize_optional_string(resolved_collection_docs)
     normalized_distance = _normalize_optional_string(resolved_distance) or DEFAULT_QDRANT_DISTANCE
 
     return QdrantConfig(
@@ -74,6 +82,8 @@ def load_qdrant_config(
         api_key=normalized_api_key,
         collection_base=normalized_collection_base,
         collection=normalized_collection,
+        collection_code=normalized_collection_code,
+        collection_docs=normalized_collection_docs,
         distance=normalized_distance,
         upsert_batch=upsert_batch
         or int(os.getenv("QDRANT_UPSERT_BATCH", str(DEFAULT_QDRANT_UPSERT_BATCH))),
@@ -86,6 +96,9 @@ class QdrantStoreError(Exception):
 
 class QdrantCollectionError(QdrantStoreError):
     """Erro relacionado a collection (criação, validação)."""
+
+
+CONTENT_TYPE_FIELD = "content_type"
 
 
 def build_qdrant_filter(filters: dict[str, Any] | None) -> models.Filter | None:
@@ -230,6 +243,34 @@ class QdrantStore:
             )
         return self._collection_name
 
+    def resolve_split_collection_names(
+        self,
+        vector_size: int,
+        model_name: str,
+    ) -> dict[str, str]:
+        """
+        Resolve nomes das collections para code/docs.
+
+        Prioridade:
+        - QDRANT_COLLECTION_CODE / QDRANT_COLLECTION_DOCS (se definidos)
+        - senão, stem + sufixos "__code" e "__docs"
+        """
+        if self.config.collection:
+            stem = self.config.collection
+        else:
+            stem = generate_collection_name(
+                self.config.collection_base,
+                vector_size,
+                model_name,
+            )
+
+        code_collection = self.config.collection_code or f"{stem}__code"
+        docs_collection = self.config.collection_docs or f"{stem}__docs"
+        return {
+            "code": code_collection,
+            "docs": docs_collection,
+        }
+
     def _collection_exists(self, collection_name: str) -> bool:
         """Verifica se collection existe."""
         try:
@@ -330,6 +371,42 @@ class QdrantStore:
             "vector_size": existing_size,
             "distance": self.config.distance,
         }
+
+    def ensure_payload_keyword_index(
+        self,
+        collection_name: str,
+        field_name: str = CONTENT_TYPE_FIELD,
+    ) -> None:
+        """
+        Garante índice de payload KEYWORD para um campo.
+
+        A operação é idempotente no Qdrant.
+        """
+        try:
+            self.client.create_payload_index(
+                collection_name=collection_name,
+                field_name=field_name,
+                field_schema=models.PayloadSchemaType.KEYWORD,
+            )
+        except Exception as exc:
+            raise QdrantStoreError(
+                f"Erro ao criar índice de payload '{field_name}' na collection '{collection_name}': {exc}"
+            ) from exc
+
+    def has_payload_field(
+        self,
+        collection_name: str,
+        field_name: str = CONTENT_TYPE_FIELD,
+    ) -> bool:
+        """Verifica se campo existe no payload_schema da collection."""
+        info = self._get_collection_info(collection_name)
+        if info is None:
+            return False
+
+        payload_schema = getattr(info, "payload_schema", None)
+        if not isinstance(payload_schema, dict):
+            return False
+        return field_name in payload_schema
 
     def upsert(
         self,
