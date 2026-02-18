@@ -13,7 +13,9 @@ export class ToolExecutionError extends Error {
       | 'NOT_FOUND'
       | 'UNSUPPORTED_MEDIA'
       | 'EMBEDDING_FAILED'
-      | 'EMBEDDING_INVALID',
+      | 'EMBEDDING_INVALID'
+      | 'QDRANT_UNAVAILABLE'
+      | 'CHAT_FAILED',
     message: string,
   ) {
     super(message);
