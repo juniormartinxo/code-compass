@@ -345,6 +345,14 @@ Script bash que automatiza a indexação de todos os repositórios dentro de `co
 4. Define `REPO_ROOT` e executa `python -m indexer index` para cada repo
 5. Exibe um resumo final com contagem de sucessos e falhas
 
+**Atenção (comportamento atual do indexador):**
+
+- O comando `index` processa **um único** `repo_root` por execução.
+- O campo `payload.repo` é preenchido com o nome do diretório informado em `--repo-root`/`REPO_ROOT`.
+- Se você rodar com `REPO_ROOT=/.../code-base`, todos os pontos serão gravados com `payload.repo="code-base"`.
+- Nesse cenário, o filtro por `repo` no MCP não consegue separar corretamente `repo-frontend`, `repo-backend`, etc.
+- Para multi-repo real, indexe cada subdiretório individualmente (ex.: `scripts/index-all.sh`).
+
 **Uso:**
 
 ```bash
