@@ -8,6 +8,7 @@ import os
 import shlex
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
 
@@ -15,7 +16,7 @@ from .chunk import chunk_file, read_text
 from .config import ChunkConfig, ScanConfig, load_chunk_config, load_scan_config
 from .env import load_env_files
 from .embedder import EmbedderError, OllamaEmbedder, load_embedder_config
-from .qdrant_store import QdrantStore, QdrantStoreError, load_qdrant_config
+from .qdrant_store import CONTENT_TYPE_FIELD, QdrantStore, QdrantStoreError, load_qdrant_config
 from .scan import scan_repo
 
 # Configurar logging
@@ -35,6 +36,20 @@ EXCLUDED_CONTEXT_PATH_PARTS: tuple[str, ...] = (
 )
 
 SEARCH_SNIPPET_MAX_CHARS = 300
+
+DOC_EXTENSIONS: set[str] = {".md", ".mdx", ".rst", ".adoc", ".txt"}
+DOC_PATH_HINTS: tuple[str, ...] = (
+    "/docs/",
+    "/documentation/",
+    "/adr",
+    "/wiki/",
+    "/changelog",
+    "/contributing",
+    "/license",
+    "/readme",
+)
+CONTENT_TYPES: tuple[str, str] = ("code", "docs")
+DEFAULT_MIN_FILE_COVERAGE = 0.95
 
 
 def _should_exclude_context_path(path: str | None) -> bool:
@@ -233,6 +248,55 @@ def _build_search_filters(args: argparse.Namespace) -> dict[str, object] | None:
     return filters or None
 
 
+def _find_doc_path_hint(path: str) -> str | None:
+    normalized = f"/{path.replace('\\', '/').strip('/').lower()}"
+    for hint in DOC_PATH_HINTS:
+        if hint in normalized:
+            return hint
+    return None
+
+
+def _classify_content_type(path: str) -> tuple[str, str | None]:
+    ext = Path(path).suffix.lower()
+    path_hint = _find_doc_path_hint(path)
+    if path_hint is not None or ext in DOC_EXTENSIONS:
+        return "docs", path_hint
+    return "code", path_hint
+
+
+def _build_classification_log_record(
+    *,
+    file_path: str,
+    ext: str,
+    path_hint: str | None,
+    classified_as: str,
+) -> dict[str, object]:
+    return {
+        "file": file_path,
+        "ext": ext,
+        "path_hint": path_hint,
+        "classified_as": classified_as,
+        "ts": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _resolve_min_file_coverage() -> float:
+    raw = os.getenv("INDEX_MIN_FILE_COVERAGE")
+    if not raw:
+        return DEFAULT_MIN_FILE_COVERAGE
+
+    try:
+        parsed = float(raw)
+    except ValueError:
+        return DEFAULT_MIN_FILE_COVERAGE
+
+    if parsed <= 0:
+        return DEFAULT_MIN_FILE_COVERAGE
+    if parsed > 1:
+        return 1.0
+    return parsed
+
+
 def _parse_scope_repos(raw_repos: str) -> list[str]:
     repos = [item.strip() for item in raw_repos.split(",")]
     normalized = [item for item in repos if item]
@@ -374,6 +438,13 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Output em JSON"
     )
+    search_parser.add_argument(
+        "--content-type",
+        dest="content_type",
+        choices=["code", "docs", "all"],
+        default="all",
+        help="Filtrar por tipo de conteúdo indexado (code, docs, all).",
+    )
 
     # Comando ask (RAG - Retrieval Augmented Generation)
     ask_parser = subparsers.add_parser(
@@ -416,6 +487,19 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="json_output",
         action="store_true",
         help="Output em JSON"
+    )
+    ask_parser.add_argument(
+        "--content-type",
+        dest="content_type",
+        choices=["code", "docs", "all"],
+        default="all",
+        help="Tipo de conteúdo alvo no MCP (code, docs, all).",
+    )
+    ask_parser.add_argument(
+        "--strict",
+        dest="strict",
+        action="store_true",
+        help="Falha em vez de retorno parcial quando uma coleção estiver indisponível.",
     )
     ask_parser.add_argument(
         "--repo",
@@ -528,11 +612,12 @@ def _chunk_command(args: argparse.Namespace) -> int:
 
 def _init_command(args: argparse.Namespace) -> int:
     """
-    Inicializa a collection no Qdrant.
+    Inicializa collections no Qdrant para code/docs.
 
     1. Probe vector_size via Ollama
-    2. Resolve/gera collection_name
-    3. Cria/valida collection no Qdrant
+    2. Resolve/gera collection_names
+    3. Cria/valida collections no Qdrant
+    4. Cria índice payload KEYWORD para content_type (idempotente)
     """
     try:
         # Carregar configs
@@ -553,18 +638,36 @@ def _init_command(args: argparse.Namespace) -> int:
             vector_size = embedder.probe_vector_size()
             logger.info(f"Vector size descoberto: {vector_size}")
 
-        # Conectar ao Qdrant e garantir collection
+        # Conectar ao Qdrant e garantir collections
+        collections_result: dict[str, dict[str, object]] = {}
+        payload_index_ok: dict[str, bool] = {}
         with QdrantStore(qdrant_config) as store:
-            collection_name = store.resolve_collection_name(
+            collection_names = store.resolve_split_collection_names(
                 vector_size=vector_size,
                 model_name=embedder_config.model,
             )
-            logger.info(f"Collection name: {collection_name}")
-
-            result = store.ensure_collection(
-                collection_name=collection_name,
-                vector_size=vector_size,
+            logger.info(
+                "Collections resolved: code=%s docs=%s",
+                collection_names["code"],
+                collection_names["docs"],
             )
+
+            for content_type in CONTENT_TYPES:
+                collection_name = collection_names[content_type]
+                result = store.ensure_collection(
+                    collection_name=collection_name,
+                    vector_size=vector_size,
+                )
+                collections_result[content_type] = result
+
+                store.ensure_payload_keyword_index(
+                    collection_name=collection_name,
+                    field_name=CONTENT_TYPE_FIELD,
+                )
+                payload_index_ok[content_type] = store.has_payload_field(
+                    collection_name=collection_name,
+                    field_name=CONTENT_TYPE_FIELD,
+                )
 
         # Output JSON
         output = {
@@ -572,11 +675,27 @@ def _init_command(args: argparse.Namespace) -> int:
             "ollama_url": embedder_config.ollama_url,
             "model": embedder_config.model,
             "vector_size": vector_size,
-            "collection_name": collection_name,
+            "collections": {
+                content_type: {
+                    "name": collections_result[content_type]["collection"],
+                    "action": collections_result[content_type]["action"],
+                }
+                for content_type in CONTENT_TYPES
+            },
             "distance": qdrant_config.distance,
             "qdrant_url": qdrant_config.url,
-            "action": result["action"],
+            "payload_index": {
+                CONTENT_TYPE_FIELD: {
+                    "schema": "keyword",
+                    "status": payload_index_ok,
+                }
+            },
         }
+
+        if not all(payload_index_ok.values()):
+            raise QdrantStoreError(
+                f"Índice de payload '{CONTENT_TYPE_FIELD}' não está disponível em todas as collections"
+            )
 
         print(json.dumps(output, ensure_ascii=False, indent=2))
         return 0
@@ -639,16 +758,26 @@ def _index_command(args: argparse.Namespace) -> int:
             vector_size = embedder.probe_vector_size()
 
         with QdrantStore(qdrant_config) as store:
-            collection_name = store.resolve_collection_name(
+            collection_names = store.resolve_split_collection_names(
                 vector_size=vector_size,
                 model_name=embedder_config.model,
             )
-            store.ensure_collection(
-                collection_name=collection_name,
-                vector_size=vector_size,
-            )
+            for content_type in CONTENT_TYPES:
+                target_collection = collection_names[content_type]
+                store.ensure_collection(
+                    collection_name=target_collection,
+                    vector_size=vector_size,
+                )
+                store.ensure_payload_keyword_index(
+                    collection_name=target_collection,
+                    field_name=CONTENT_TYPE_FIELD,
+                )
 
-        logger.info(f"Collection: {collection_name}")
+        logger.info(
+            "Collections: code=%s docs=%s",
+            collection_names["code"],
+            collection_names["docs"],
+        )
 
         # 2. Scan
         logger.info("Iniciando scan...")
@@ -665,9 +794,20 @@ def _index_command(args: argparse.Namespace) -> int:
         logger.info("Iniciando chunking...")
         all_chunks: list[dict] = []
         chunk_errors: int = 0
+        indexed_files: set[str] = set()
+        min_coverage = _resolve_min_file_coverage()
 
         for file_path in files:
             abs_path = scan_config.repo_root / file_path
+            ext = Path(file_path).suffix.lower()
+            content_type, path_hint = _classify_content_type(str(file_path))
+            classification_log = _build_classification_log_record(
+                file_path=str(file_path),
+                ext=ext,
+                path_hint=path_hint,
+                classified_as=content_type,
+            )
+            logger.info("classification=%s", json.dumps(classification_log, ensure_ascii=False))
             try:
                 result = chunk_file(
                     file_path=abs_path,
@@ -681,24 +821,49 @@ def _index_command(args: argparse.Namespace) -> int:
                     chunk["_chunk_index"] = idx
                     chunk["_file_mtime"] = abs_path.stat().st_mtime
                     chunk["_file_size"] = abs_path.stat().st_size
+                    chunk["_content_type"] = content_type
                     all_chunks.append(chunk)
+                indexed_files.add(str(file_path))
             except Exception as exc:
                 logger.warning(f"Erro ao chunkar {file_path}: {exc}")
                 chunk_errors += 1
 
         logger.info(f"Total de chunks: {len(all_chunks)}")
+        file_coverage = (len(indexed_files) / len(files)) if files else 1.0
 
         if not all_chunks:
             logger.warning("Nenhum chunk gerado. Encerrando.")
             output = {
                 "status": "empty",
                 "files_scanned": len(files),
+                "files_indexed": len(indexed_files),
+                "file_coverage": round(file_coverage, 4),
                 "chunks_total": 0,
                 "points_upserted": 0,
                 "elapsed_ms": int((perf_counter() - started) * 1000),
             }
             print(json.dumps(output, ensure_ascii=False, indent=2))
             return 0
+
+        if file_coverage < min_coverage:
+            output = {
+                "status": "insufficient_coverage",
+                "repo_root": str(scan_config.repo_root),
+                "files_scanned": len(files),
+                "files_indexed": len(indexed_files),
+                "file_coverage": round(file_coverage, 4),
+                "required_file_coverage": min_coverage,
+                "chunk_errors": chunk_errors,
+            }
+            print(json.dumps(output, ensure_ascii=False, indent=2))
+            print(
+                (
+                    f"Cobertura de arquivos insuficiente: {file_coverage:.2%} "
+                    f"(mínimo: {min_coverage:.2%})"
+                ),
+                file=sys.stderr,
+            )
+            return 1
 
         # 4. Embed em batches
         logger.info("Iniciando embedding...")
@@ -714,7 +879,7 @@ def _index_command(args: argparse.Namespace) -> int:
 
         # 5. Montar pontos com IDs estáveis e payload rico
         logger.info("Montando pontos para upsert...")
-        points: list[dict] = []
+        points_by_type: dict[str, list[dict]] = {content_type: [] for content_type in CONTENT_TYPES}
 
         for chunk, embedding in zip(all_chunks, embeddings):
             # Derivar content_hash do chunk
@@ -741,36 +906,51 @@ def _index_command(args: argparse.Namespace) -> int:
                 "start_line": chunk["startLine"],
                 "end_line": chunk["endLine"],
                 "language": chunk["language"],
+                "content_type": chunk["_content_type"],
                 "source": "repo",
                 "repo_root": str(scan_config.repo_root),
             }
 
-            points.append({
+            point = {
                 "id": point_id,
                 "vector": embedding,
                 "payload": payload,
-            })
+            }
+            points_by_type[chunk["_content_type"]].append(point)
 
         # 6. Upsert no Qdrant
         logger.info("Iniciando upsert no Qdrant...")
-
+        upsert_results: dict[str, dict[str, int]] = {}
         with QdrantStore(qdrant_config) as store:
-            store._collection_name = collection_name
-            upsert_result = store.upsert(points=points)
+            for content_type in CONTENT_TYPES:
+                target_points = points_by_type[content_type]
+                target_collection = collection_names[content_type]
+                upsert_results[content_type] = store.upsert(
+                    points=target_points,
+                    collection_name=target_collection,
+                )
 
         elapsed_ms = int((perf_counter() - started) * 1000)
+        total_points_upserted = sum(item["points_upserted"] for item in upsert_results.values())
 
         # Output
         output = {
             "status": "success",
             "repo_root": str(scan_config.repo_root),
-            "collection_name": collection_name,
+            "collections": collection_names,
             "files_scanned": len(files),
+            "files_indexed": len(indexed_files),
+            "file_coverage": round(file_coverage, 4),
+            "required_file_coverage": min_coverage,
             "chunks_total": len(all_chunks),
+            "chunks_by_type": {
+                content_type: len(points_by_type[content_type])
+                for content_type in CONTENT_TYPES
+            },
             "chunk_errors": chunk_errors,
             "embeddings_generated": len(embeddings),
-            "points_upserted": upsert_result["points_upserted"],
-            "upsert_batches": upsert_result["batches"],
+            "points_upserted": total_points_upserted,
+            "upsert_by_type": upsert_results,
             "vector_size": vector_size,
             "model": embedder_config.model,
             "elapsed_ms": elapsed_ms,
@@ -821,25 +1001,46 @@ def _search_command(args: argparse.Namespace) -> int:
             vector_size = len(query_vector)
 
         # Buscar no Qdrant
+        content_type = getattr(args, "content_type", "all")
         with QdrantStore(qdrant_config) as store:
-            collection_name = store.resolve_collection_name(
+            collection_names = store.resolve_split_collection_names(
                 vector_size=vector_size,
                 model_name=embedder_config.model,
             )
-
             filters = _build_search_filters(args)
-
-            results = store.search(
-                query_vector=query_vector,
-                collection_name=collection_name,
-                filters=filters,
-                top_k=args.top_k,
-                with_vector=args.with_vector,
-            )
+            searched_collections: list[str] = []
+            if content_type in CONTENT_TYPES:
+                target_collection = collection_names[content_type]
+                searched_collections = [target_collection]
+                results = store.search(
+                    query_vector=query_vector,
+                    collection_name=target_collection,
+                    filters=filters,
+                    top_k=args.top_k,
+                    with_vector=args.with_vector,
+                )
+            else:
+                searched_collections = [collection_names["code"], collection_names["docs"]]
+                merged: list[dict[str, object]] = []
+                for key in CONTENT_TYPES:
+                    merged.extend(
+                        store.search(
+                            query_vector=query_vector,
+                            collection_name=collection_names[key],
+                            filters=filters,
+                            top_k=args.top_k,
+                            with_vector=args.with_vector,
+                        )
+                    )
+                results = sorted(
+                    merged,
+                    key=lambda item: float(item.get("score", 0.0) or 0.0),
+                    reverse=True,
+                )[: args.top_k]
 
         if not results:
             print(
-                f"Nenhum resultado na collection '{collection_name}' "
+                f"Nenhum resultado nas collections {searched_collections} "
                 "(collection ausente/vazia ou sem matches)."
             )
             return 0
@@ -913,6 +1114,8 @@ def _call_mcp_ask_code(
     min_score: float,
     llm_model: str,
     ext: str | None,
+    content_type: str,
+    strict: bool,
     scope_payload: dict[str, object],
     timeout_sec: float,
 ) -> dict[str, object]:
@@ -926,6 +1129,8 @@ def _call_mcp_ask_code(
     }
     if ext:
         input_payload["language"] = ext
+    input_payload["contentType"] = content_type
+    input_payload["strict"] = strict
     input_payload.update(scope_payload)
 
     init_req = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
@@ -1041,6 +1246,8 @@ def _ask_command(args: argparse.Namespace) -> int:
             min_score=args.min_score,
             llm_model=llm_model,
             ext=args.ext,
+            content_type=args.content_type,
+            strict=bool(args.strict),
             scope_payload=scope_payload,
             timeout_sec=120.0,
         )
