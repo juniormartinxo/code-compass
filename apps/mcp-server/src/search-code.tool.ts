@@ -73,7 +73,6 @@ export class SearchCodeTool {
     const input = rawInput as SearchCodeInput;
     const scope = resolveScope({
       scope: input.scope,
-      repo: input.repo,
     }, process.env);
     const query = this.validateQuery(input.query);
     const topK = this.clampTopK(input.topK);
