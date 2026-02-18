@@ -23,7 +23,7 @@ O script `bin/dev-mcp` define defaults seguros:
 
 - `CODEBASE_ROOT=<raiz>/code-base` (modo multi-repo)
 - `QDRANT_URL=http://localhost:6333` (se ausente)
-- `QDRANT_COLLECTION_BASE=compass__3584__manutic_nomic_embed_code` (se ausente)
+- `QDRANT_COLLECTION_BASE=compass__manutic_nomic_embed` (se ausente)
 
 Se você usa múltiplos repos em `code-base/`, defina:
 
