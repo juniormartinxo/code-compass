@@ -1,11 +1,18 @@
 import { Injectable } from '@nestjs/common';
-import axios from 'axios';
+import axios, { AxiosResponse } from 'axios';
 
 import { OpenFileTool } from './open-file.tool';
 import { SearchCodeTool } from './search-code.tool';
 import { ToolInputError, ToolExecutionError } from './errors';
 import { resolveScope } from './scope';
-import { AskCodeInput, AskCodeOutput, ContentType, ResolvedScope, SearchCodeResult } from './types';
+import {
+  AskCodeInput,
+  AskCodeOutput,
+  ContentType,
+  ResolvedScope,
+  SearchCodeOutput,
+  SearchCodeResult,
+} from './types';
 
 const DEFAULT_TOP_K = 5;
 const MIN_TOP_K = 1;
@@ -15,10 +22,15 @@ const MAX_PATH_PREFIX_CHARS = 200;
 const MAX_LANGUAGE_CHARS = 32;
 const DEFAULT_MIN_SCORE = 0.6;
 const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
-const DEFAULT_EMBEDDING_MODEL = 'manutic/nomic-embed-code';
+const DEFAULT_EMBEDDING_PROVIDER_CODE = 'ollama';
+const DEFAULT_EMBEDDING_PROVIDER_DOCS = 'ollama';
+const DEFAULT_EMBEDDING_MODEL_CODE = 'manutic/nomic-embed-code';
+const DEFAULT_EMBEDDING_MODEL_DOCS = 'bge-m3';
 const DEFAULT_LLM_MODEL = 'gpt-oss:latest';
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_CONTEXTS_PER_REPO_WIDE_SCOPE = 2;
+
+type EmbeddingContentType = Exclude<ContentType, 'all'>;
 
 const LANGUAGE_EXTENSIONS: Record<string, string[]> = {
   ts: ['.ts', '.tsx'],
@@ -57,16 +69,7 @@ export class AskCodeTool {
     const startedAt = Date.now();
     const input = this.validateInput(rawInput);
 
-    const vector = await this.embedQuestion(input.query);
-    const searchOutput = await this.searchCodeTool.execute({
-      scope: this.toScopeInput(input.scope),
-      query: input.query,
-      topK: input.topK,
-      pathPrefix: input.pathPrefix,
-      vector,
-      contentType: input.contentType,
-      strict: input.strict,
-    });
+    const searchOutput = await this.searchWithEmbeddings(input);
 
     const ranked = searchOutput.results
       .filter((result) => this.matchesLanguage(result.path, input.language))
@@ -449,11 +452,128 @@ export class AskCodeTool {
     return [header, '', ...items].join('\n');
   }
 
-  private async embedQuestion(query: string): Promise<number[]> {
-    const ollamaUrl = process.env.OLLAMA_URL || DEFAULT_OLLAMA_URL;
-    const embeddingModel = process.env.EMBEDDING_MODEL || DEFAULT_EMBEDDING_MODEL;
+  private async searchWithEmbeddings(input: ValidatedAskInput): Promise<SearchCodeOutput> {
+    if (input.contentType === 'code' || input.contentType === 'docs') {
+      return this.searchSingleContentType(input, input.contentType, input.topK);
+    }
 
-    let response;
+    const expandedTopK = Math.min(MAX_TOP_K, input.topK * 2);
+    const settled = await Promise.allSettled([
+      this.searchSingleContentType(input, 'code', expandedTopK),
+      this.searchSingleContentType(input, 'docs', expandedTopK),
+    ]);
+
+    const successful: SearchCodeOutput[] = [];
+    const failures: Error[] = [];
+    for (const result of settled) {
+      if (result.status === 'fulfilled') {
+        successful.push(result.value);
+      } else {
+        failures.push(
+          result.reason instanceof Error
+            ? result.reason
+            : new Error('Erro desconhecido ao consultar coleções code/docs'),
+        );
+      }
+    }
+
+    if (input.strict && failures.length > 0) {
+      throw failures[0];
+    }
+
+    if (successful.length === 0) {
+      if (failures.length > 0) {
+        throw failures[0];
+      }
+      throw new ToolExecutionError(
+        'QDRANT_UNAVAILABLE',
+        'Falha ao consultar Qdrant: coleções code/docs indisponíveis',
+      );
+    }
+
+    const mergedResults = successful
+      .flatMap((output) => output.results)
+      .sort((left, right) => right.score - left.score)
+      .slice(0, expandedTopK);
+    const mergedCollections = successful.flatMap((output) => output.meta.collections);
+
+    return {
+      results: mergedResults,
+      meta: {
+        scope: this.toScopeMeta(input.scope),
+        topK: input.topK,
+        pathPrefix: input.pathPrefix || undefined,
+        contentType: 'all',
+        strict: input.strict,
+        collection: mergedCollections[0]?.name || '',
+        collections: mergedCollections,
+        repo: input.scope.type === 'repo' ? input.scope.repos[0] : undefined,
+      },
+    };
+  }
+
+  private async searchSingleContentType(
+    input: ValidatedAskInput,
+    contentType: EmbeddingContentType,
+    topK: number,
+  ): Promise<SearchCodeOutput> {
+    const vector = await this.embedQuestion(input.query, contentType);
+
+    return this.searchCodeTool.execute({
+      scope: this.toScopeInput(input.scope),
+      query: input.query,
+      topK,
+      pathPrefix: input.pathPrefix,
+      vector,
+      contentType,
+      strict: input.strict,
+    });
+  }
+
+  private embeddingProviderEnvKey(contentType: EmbeddingContentType): string {
+    return contentType === 'code' ? 'EMBEDDING_PROVIDER_CODE' : 'EMBEDDING_PROVIDER_DOCS';
+  }
+
+  private embeddingModelEnvKey(contentType: EmbeddingContentType): string {
+    return contentType === 'code' ? 'EMBEDDING_MODEL_CODE' : 'EMBEDDING_MODEL_DOCS';
+  }
+
+  private resolveEmbeddingProvider(contentType: EmbeddingContentType): string {
+    const envKey = this.embeddingProviderEnvKey(contentType);
+    const fallback = contentType === 'code'
+      ? DEFAULT_EMBEDDING_PROVIDER_CODE
+      : DEFAULT_EMBEDDING_PROVIDER_DOCS;
+    const raw = process.env[envKey];
+    const normalized = raw?.trim().toLowerCase();
+    return normalized || fallback;
+  }
+
+  private resolveEmbeddingModel(contentType: EmbeddingContentType): string {
+    const envKey = this.embeddingModelEnvKey(contentType);
+    const fallback = contentType === 'code'
+      ? DEFAULT_EMBEDDING_MODEL_CODE
+      : DEFAULT_EMBEDDING_MODEL_DOCS;
+    const raw = process.env[envKey];
+    const normalized = raw?.trim();
+    return normalized || fallback;
+  }
+
+  private async embedQuestion(query: string, contentType: EmbeddingContentType): Promise<number[]> {
+    const ollamaUrl = process.env.OLLAMA_URL || DEFAULT_OLLAMA_URL;
+    const embeddingProvider = this.resolveEmbeddingProvider(contentType);
+    const embeddingProviderEnv = this.embeddingProviderEnvKey(contentType);
+    const embeddingModelEnv = this.embeddingModelEnvKey(contentType);
+    const embeddingModel = this.resolveEmbeddingModel(contentType);
+
+    if (embeddingProvider !== 'ollama') {
+      throw new ToolExecutionError(
+        'EMBEDDING_FAILED',
+        `Provider de embedding não suportado para ${contentType}: ${embeddingProvider}. `
+          + `Use ${embeddingProviderEnv}=ollama.`,
+      );
+    }
+
+    let response: AxiosResponse<{ embeddings?: number[][] }>;
     try {
       response = await axios.post<{ embeddings?: number[][] }>(
         `${ollamaUrl.replace(/\/$/, '')}/api/embed`,
@@ -481,7 +601,7 @@ export class AskCodeTool {
     if (!Array.isArray(embeddings) || embeddings.length === 0 || !Array.isArray(embeddings[0])) {
       throw new ToolExecutionError(
         'EMBEDDING_INVALID',
-        'Resposta de embedding inválida do Ollama. Verifique OLLAMA_URL e EMBEDDING_MODEL.',
+        `Resposta de embedding inválida do Ollama. Verifique OLLAMA_URL e ${embeddingModelEnv}.`,
       );
     }
 
@@ -490,7 +610,7 @@ export class AskCodeTool {
 
   private async chat(systemPrompt: string, userMessage: string, llmModel: string): Promise<string> {
     const ollamaUrl = process.env.OLLAMA_URL || DEFAULT_OLLAMA_URL;
-    let response;
+    let response: AxiosResponse<{ message?: { content?: string } }>;
     try {
       response = await axios.post<{ message?: { content?: string } }>(
         `${ollamaUrl.replace(/\/$/, '')}/api/chat`,
