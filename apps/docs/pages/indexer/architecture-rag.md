@@ -196,7 +196,7 @@ O LLM (ex: `qwen3-coder:30b`, `gpt-oss:latest`):
 
 **Pergunta:**
 ```bash
-python -m indexer ask "qual banco de dados vetorial é usado neste projeto?" --repo code-compass
+python -m indexer ask "qual banco de dados vetorial é usado neste projeto?" --scope-repo code-compass
 ```
 
 **Logs (o que acontece):**
