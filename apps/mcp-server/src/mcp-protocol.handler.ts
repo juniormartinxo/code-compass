@@ -155,10 +155,8 @@ export class McpProtocolHandler {
         inputSchema: {
           type: 'object',
           additionalProperties: false,
-          required: ['query'],
-          anyOf: [{ required: ['repo'] }, { required: ['scope'] }],
+          required: ['query', 'scope'],
           properties: {
-            repo: { type: 'string' },
             scope: {
               oneOf: [
                 {
@@ -232,10 +230,8 @@ export class McpProtocolHandler {
         inputSchema: {
           type: 'object',
           additionalProperties: false,
-          required: ['query'],
-          anyOf: [{ required: ['repo'] }, { required: ['scope'] }],
+          required: ['query', 'scope'],
           properties: {
-            repo: { type: 'string' },
             scope: {
               oneOf: [
                 {
