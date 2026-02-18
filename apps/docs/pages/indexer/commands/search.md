@@ -34,7 +34,10 @@ O comando utiliza as mesmas variáveis de ambiente do `init` e `index`:
 | Variável | Default | Descrição |
 |----------|---------|-----------|
 | `OLLAMA_URL` | `http://localhost:11434` | URL do servidor Ollama |
-| `EMBEDDING_MODEL` | `manutic/nomic-embed-code` | Modelo de embedding |
+| `EMBEDDING_PROVIDER_CODE` | `ollama` | Provider de embedding para `code` |
+| `EMBEDDING_PROVIDER_DOCS` | `ollama` | Provider de embedding para `docs` |
+| `EMBEDDING_MODEL_CODE` | `manutic/nomic-embed-code` | Modelo de embedding para `code` |
+| `EMBEDDING_MODEL_DOCS` | `bge-m3` | Modelo de embedding para `docs` |
 
 **Qdrant:**
 | Variável | Default | Descrição |
@@ -114,7 +117,10 @@ python -m indexer search "class definition" --language python
 ## Detalhes de Implementação
 
 ### Geração de Embedding
-O comando usa o mesmo modelo de embedding configurado para indexação (`EMBEDDING_MODEL`). Isso garante que a query seja representada no mesmo espaço vetorial dos chunks indexados.
+O comando usa o modelo de embedding correspondente ao `content-type`:
+- `code`: `EMBEDDING_MODEL_CODE`
+- `docs`: `EMBEDDING_MODEL_DOCS`
+- `all`: gera embeddings separados para `code` e `docs`
 
 ### Resolução da Collection
 Os nomes das collections são resolvidos automaticamente:
@@ -163,8 +169,9 @@ curl http://localhost:11434
 # Verificar modelo
 ollama list
 
-# Instalar modelo se necessário
+# Instalar modelos se necessário
 ollama pull manutic/nomic-embed-code
+ollama pull bge-m3
 ```
 
 ### "Erro no Qdrant: conexão recusada"
