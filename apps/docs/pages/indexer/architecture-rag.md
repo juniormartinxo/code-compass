@@ -28,7 +28,7 @@ Entrada: "como funciona o chunking?"
 Saída:   [0.12, -0.45, 0.78, ..., 0.33]  (vetor 3584-dim)
 ```
 
-- Usa o mesmo modelo de embedding do indexador (`manutic/nomic-embed-code`)
+- Usa o modelo de embedding por tipo de conteúdo do indexador (`EMBEDDING_MODEL_CODE` e `EMBEDDING_MODEL_DOCS`)
 - Transforma a pergunta em um vetor no mesmo espaço dos chunks indexados
 - Permite comparar semanticamente a pergunta com o código
 
