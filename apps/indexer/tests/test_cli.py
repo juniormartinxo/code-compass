@@ -168,7 +168,7 @@ class AskCliTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 1)
         self.assertIn("Erro: pergunta vazia.", completed.stderr)
 
-    def test_cli_ask_requires_repo_or_scope(self) -> None:
+    def test_cli_ask_requires_scope(self) -> None:
         completed = subprocess.run(
             [
                 sys.executable,
@@ -184,7 +184,7 @@ class AskCliTests(unittest.TestCase):
         )
 
         self.assertEqual(completed.returncode, 1)
-        self.assertIn("informe --repo", completed.stderr)
+        self.assertIn("informe um escopo", completed.stderr)
 
 
 class AskScopePayloadTests(unittest.TestCase):
@@ -200,13 +200,6 @@ class AskScopePayloadTests(unittest.TestCase):
             else:
                 base.extend([f"--{key.replace('_', '-')}", str(value)])
         return parser.parse_args(base)
-
-    def test_scope_payload_uses_repo_compat(self) -> None:
-        from indexer.__main__ import _build_ask_scope_payload
-
-        args = self._ask_args(repo="acme-portal")
-        payload = _build_ask_scope_payload(args)
-        self.assertEqual(payload, {"repo": "acme-portal"})
 
     def test_scope_payload_uses_scope_repo(self) -> None:
         from indexer.__main__ import _build_ask_scope_payload
