@@ -3,7 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { ToolInputError } from './errors';
 import { resolveScope } from './scope';
 import { QdrantService } from './qdrant.service';
-import { QdrantSearchHit, ResolvedScope, SearchCodeInput, SearchCodeOutput } from './types';
+import { ContentType, QdrantSearchHit, ResolvedScope, SearchCodeInput, SearchCodeOutput } from './types';
 
 const DEFAULT_TOP_K = 10;
 const MIN_TOP_K = 1;
@@ -20,6 +20,8 @@ type ValidatedSearchInput = {
   topK: number;
   pathPrefix: string;
   vector: number[];
+  contentType: ContentType;
+  strict: boolean;
 };
 
 @Injectable()
@@ -28,20 +30,25 @@ export class SearchCodeTool {
 
   async execute(rawInput: unknown): Promise<SearchCodeOutput> {
     const input = this.validateInput(rawInput);
-    const hits = await this.qdrantService.searchPoints({
+    const searchOutput = await this.qdrantService.searchPoints({
       vector: input.vector,
       topK: input.topK,
       pathPrefix: input.pathPrefix,
       repos: input.scope.type === 'all' ? undefined : input.scope.repos,
+      contentType: input.contentType,
+      strict: input.strict,
     });
 
-    const mapped = hits.map((hit) => this.mapHitToResult(hit));
+    const mapped = searchOutput.hits.map((hit) => this.mapHitToResult(hit));
     const results = this.applyScopeResultGuards(mapped, input.scope, input.topK);
 
     const meta: SearchCodeOutput['meta'] = {
       scope: this.toScopeMeta(input.scope),
       topK: input.topK,
-      collection: this.qdrantService.getCollectionName(),
+      collection: searchOutput.collection,
+      collections: searchOutput.collections,
+      contentType: input.contentType,
+      strict: input.strict,
     };
 
     if (input.scope.type === 'repo') {
@@ -72,6 +79,8 @@ export class SearchCodeTool {
     const topK = this.clampTopK(input.topK);
     const pathPrefix = this.validatePathPrefix(input.pathPrefix);
     const vector = this.validateVector(input.vector);
+    const contentType = this.validateContentType(input.contentType);
+    const strict = this.validateStrict(input.strict);
 
     return {
       scope,
@@ -79,6 +88,8 @@ export class SearchCodeTool {
       topK,
       pathPrefix,
       vector,
+      contentType,
+      strict,
     };
   }
 
@@ -142,6 +153,26 @@ export class SearchCodeTool {
     return vector;
   }
 
+  private validateContentType(contentType: unknown): ContentType {
+    if (contentType === undefined || contentType === null) {
+      return 'all';
+    }
+    if (contentType !== 'code' && contentType !== 'docs' && contentType !== 'all') {
+      throw new ToolInputError('Campo "contentType" deve ser "code", "docs" ou "all"');
+    }
+    return contentType;
+  }
+
+  private validateStrict(strict: unknown): boolean {
+    if (strict === undefined || strict === null) {
+      return false;
+    }
+    if (typeof strict !== 'boolean') {
+      throw new ToolInputError('Campo "strict" deve ser boolean');
+    }
+    return strict;
+  }
+
   private mapHitToResult(hit: QdrantSearchHit) {
     const payload = this.ensurePayload(hit.payload);
     const snippet = this.extractSnippet(payload);
@@ -153,6 +184,7 @@ export class SearchCodeTool {
       startLine: this.toNumberOrNull(payload.startLine ?? payload.start_line),
       endLine: this.toNumberOrNull(payload.endLine ?? payload.end_line),
       snippet,
+      contentType: this.ensureContentType(payload.content_type, payload.path),
     };
   }
 
@@ -193,6 +225,19 @@ export class SearchCodeTool {
       return Math.trunc(value);
     }
     return null;
+  }
+
+  private ensureContentType(contentType: unknown, path: unknown): 'code' | 'docs' {
+    if (contentType === 'code' || contentType === 'docs') {
+      return contentType;
+    }
+    if (typeof path === 'string') {
+      const normalized = path.toLowerCase();
+      if (normalized.endsWith('.md') || normalized.endsWith('.mdx') || normalized.includes('/docs/')) {
+        return 'docs';
+      }
+    }
+    return 'code';
   }
 
   private extractSnippet(payload: Record<string, unknown>): string {
