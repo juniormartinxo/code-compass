@@ -156,7 +156,6 @@ export class AskCodeTool {
     const scope = resolveScope(
       {
         scope: input.scope,
-        repo: input.repo,
       },
       process.env,
     );
