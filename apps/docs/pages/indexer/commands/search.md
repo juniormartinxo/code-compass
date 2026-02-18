@@ -41,11 +41,9 @@ O comando utiliza as mesmas variáveis de ambiente do `init` e `index`:
 |----------|---------|-----------|
 | `QDRANT_URL` | `http://localhost:6333` | URL do servidor Qdrant |
 | `QDRANT_API_KEY` | - | API key (opcional) |
-| `QDRANT_COLLECTION_BASE` | `compass` | Base para nome da collection |
-| `QDRANT_COLLECTION_CODE` | - | Nome explícito da collection de código |
-| `QDRANT_COLLECTION_DOCS` | - | Nome explícito da collection de documentação |
+| `QDRANT_COLLECTION_BASE` | `compass__3584__manutic_nomic_embed_code` | Stem base das collections |
 
-> Dica operacional: para evitar mismatch entre indexação e consulta, mantenha `QDRANT_COLLECTION_BASE` (e overrides `CODE`/`DOCS`) iguais no indexer e no MCP.
+> Dica operacional: para evitar mismatch entre indexação e consulta, mantenha `QDRANT_COLLECTION_BASE` igual no indexer e no MCP.
 >
 > Se `QDRANT_API_KEY` estiver vazia (`QDRANT_API_KEY=`), o cliente não envia API key. Isso é útil em ambiente local com `http://` para evitar warnings de conexão insegura.
 
@@ -120,9 +118,8 @@ O comando usa o mesmo modelo de embedding configurado para indexação (`EMBEDDI
 
 ### Resolução da Collection
 Os nomes das collections são resolvidos automaticamente:
-- stem: `{QDRANT_COLLECTION_BASE}__{vector_size}__{model_slug}`
-- finais: `{stem}__code` e `{stem}__docs`
-- com overrides opcionais via `QDRANT_COLLECTION_CODE`/`QDRANT_COLLECTION_DOCS`
+- stem: `{QDRANT_COLLECTION_BASE}`
+- finais: `{QDRANT_COLLECTION_BASE}__code` e `{QDRANT_COLLECTION_BASE}__docs`
 
 ### Score de Similaridade
 O score retornado é a **similaridade de cosseno** (ou outra métrica configurada via `QDRANT_DISTANCE`):
