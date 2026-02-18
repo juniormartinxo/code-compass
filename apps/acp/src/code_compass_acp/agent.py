@@ -106,6 +106,8 @@ class CodeCompassAgent(acp.Agent):
                 min_score = os.getenv("ACP_MIN_SCORE", "").strip()
                 llm_model = (state.model_override or os.getenv("LLM_MODEL", "")).strip()
                 grounded = os.getenv("ACP_GROUNDED", "").strip().lower()
+                content_type = os.getenv("ACP_CONTENT_TYPE", "").strip().lower()
+                strict = os.getenv("ACP_STRICT", "").strip().lower()
 
                 if "," in raw_repo:
                     repos = [r.strip() for r in raw_repo.split(",") if r.strip()]
@@ -131,14 +133,23 @@ class CodeCompassAgent(acp.Agent):
                     payload["llmModel"] = llm_model
                 if grounded in {"1", "true", "yes", "on"}:
                     payload["grounded"] = True
+                if content_type in {"code", "docs", "all"}:
+                    payload["contentType"] = content_type
+                if strict in {"1", "true", "yes", "on"}:
+                    payload["strict"] = True
                 result = await state.mcp_bridge.ask_code(payload, state.cancel_event)
             except asyncio.CancelledError:
                 return acp.PromptResponse(stop_reason="cancelled")
             except Exception as exc:
                 if state.mcp_bridge:
                     await state.mcp_bridge.close()
+                error_message = (
+                    "Falha ao consultar o MCP. "
+                    f"Detalhe técnico: {exc}"
+                )
                 print(f"Erro MCP: {exc}", file=sys.stderr)
-                return acp.PromptResponse(stop_reason="refusal")
+                await self._send_update(session_id, error_message)
+                return acp.PromptResponse(stop_reason="end_turn")
 
             answer = str(result.get("answer", ""))
             show_meta = os.getenv("ACP_SHOW_META", "").strip().lower() in {"1", "true", "yes", "on"}
