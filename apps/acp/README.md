@@ -36,3 +36,5 @@ Env vars úteis:
 - `MCP_COMMAND`: comando do MCP server (`--transport stdio`)
 - `LLM_MODEL`: repassado ao MCP
 - `ACP_REPO`: repo padrão enviado ao `ask_code`
+- `ACP_CONTENT_TYPE`: tipo de conteúdo (`code`, `docs`, `all`)
+- `ACP_STRICT`: quando `true`, falha em vez de retorno parcial se alguma coleção estiver indisponível
