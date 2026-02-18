@@ -32,19 +32,12 @@ function readPositiveInt(
 
 export function resolveQdrantConfig(env: NodeJS.ProcessEnv): QdrantRuntimeConfig {
   const collectionBase = (env.QDRANT_COLLECTION_BASE || DEFAULT_QDRANT_COLLECTION_STEM).trim();
-  const codeCollection = (env.QDRANT_COLLECTION_CODE || `${collectionBase}__code`).trim();
-  const docsCollection = (env.QDRANT_COLLECTION_DOCS || `${collectionBase}__docs`).trim();
+  const codeCollection = `${collectionBase}__code`;
+  const docsCollection = `${collectionBase}__docs`;
 
   if (!collectionBase) {
     throw new Error('QDRANT_COLLECTION_BASE inválida: valor vazio');
   }
-  if (!codeCollection || !docsCollection) {
-    throw new Error('QDRANT_COLLECTION_CODE/QDRANT_COLLECTION_DOCS inválidas: valor vazio');
-  }
-  if (codeCollection === docsCollection) {
-    throw new Error('QDRANT_COLLECTION_CODE e QDRANT_COLLECTION_DOCS devem ser diferentes');
-  }
-
   return {
     url: env.QDRANT_URL || DEFAULT_QDRANT_URL,
     collectionBase,
