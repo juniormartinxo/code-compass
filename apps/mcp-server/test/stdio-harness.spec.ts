@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -49,7 +49,6 @@ describe('MCP stdio harness', () => {
     delete process.env.CODEBASE_ROOT;
     delete process.env.REPO_ROOT;
     delete process.env.MCP_QDRANT_MOCK_RESPONSE;
-    delete process.env.QDRANT_COLLECTION;
     delete process.env.QDRANT_COLLECTION_BASE;
     delete process.env.QDRANT_URL;
     await Promise.all(tempRoots.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
@@ -87,7 +86,7 @@ describe('MCP stdio harness', () => {
           id: 'req-h1',
           tool: 'search_code',
           input: {
-            repo: 'acme-repo',
+            scope: { type: 'repo', repo: 'acme-repo' },
             query: 'bootstrap',
             topK: 10,
             pathPrefix: 'apps/mcp-server/',
@@ -181,12 +180,12 @@ describe('MCP stdio harness', () => {
   });
 
   it('deve validar fluxo NDJSON para open_file', async () => {
-    const repoRoot = mkdtempSync(join(tmpdir(), 'mcp-open-file-stdio-'));
-    tempRoots.push(repoRoot);
+    const codebaseRoot = mkdtempSync(join(tmpdir(), 'mcp-open-file-stdio-'));
+    const repoRoot = join(codebaseRoot, 'single-repo');
+    tempRoots.push(codebaseRoot);
+    mkdirSync(repoRoot, { recursive: true });
     writeFileSync(join(repoRoot, 'safe.txt'), 'a\nb\nc\nd\n', 'utf8');
-
-    delete process.env.CODEBASE_ROOT;
-    process.env.REPO_ROOT = repoRoot;
+    process.env.CODEBASE_ROOT = codebaseRoot;
 
     const server = createServer();
     const sink = createWritableMemorySink();
