@@ -37,6 +37,7 @@ Isso significa que reindexar o mesmo repositório:
 | `--repo-root` | Caminho do repositório | Env: `REPO_ROOT` ou diretório pai |
 | `--allow-exts` | Extensões permitidas (CSV) | `.ts,.tsx,.js,.jsx,.py,.md,.json,.yaml,.yml` |
 | `--ignore-dirs` | Diretórios a ignorar (CSV) | `.git,node_modules,dist,build,...` |
+| `--ignore-patterns` | Padrões glob para ignorar arquivos (CSV) | CLI > `SCAN_IGNORE_PATTERNS` > vazio |
 | `--max-files` | Limite máximo de arquivos | Sem limite |
 | `--chunk-lines` | Linhas por chunk | `120` |
 | `--overlap-lines` | Overlap entre chunks | `20` |
@@ -49,6 +50,7 @@ As variáveis são lidas do ambiente e carregadas automaticamente de `.env` e `.
 - `REPO_ROOT`: Raiz do repositório
 - `SCAN_IGNORE_DIRS`: Diretórios a ignorar
 - `SCAN_ALLOW_EXTS`: Extensões permitidas
+- `SCAN_IGNORE_PATTERNS`: Padrões glob para ignorar arquivos (ex.: `docs/**`, `**/*.test.ts`)
 - `CHUNK_LINES`: Linhas por chunk
 - `CHUNK_OVERLAP_LINES`: Overlap entre chunks
 
