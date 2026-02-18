@@ -21,9 +21,9 @@ pnpm mcp:start
 
 O script `bin/dev-mcp` define defaults seguros:
 
-- `REPO_ROOT=<raiz do repositório>` (modo compat)
+- `CODEBASE_ROOT=<raiz>/code-base` (modo multi-repo)
 - `QDRANT_URL=http://localhost:6333` (se ausente)
-- `QDRANT_COLLECTION=compass__3584__manutic_nomic_embed_code` (se ausente)
+- `QDRANT_COLLECTION_BASE=compass__3584__manutic_nomic_embed_code` (se ausente)
 
 Se você usa múltiplos repos em `code-base/`, defina:
 
@@ -36,8 +36,7 @@ Use o template em `apps/docs/assets/codex-config-example.toml` e ajuste o path a
 
 Importante sobre escopo em `ask_code`:
 
-- Em modo single-repo (`CODEBASE_ROOT` ausente), passe `repo` com o nome do repositório indexado (ex.: `code-compass`) ou use `scope` equivalente.
-- Evite `repo: "."`, pois o MCP valida nome simples de repo e usa esse valor como filtro de payload.
+- `scope` é obrigatório nas tools `ask_code` e `search_code`.
 - Garanta que os dados indexados tenham `payload.repo` preenchido (indexações antigas podem precisar reindexação).
 
 ## Fluxo E2E recomendado
@@ -70,30 +69,11 @@ Escopo por repo (recomendado):
 }
 ```
 
-Modo compat com `repo`:
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 2,
-  "method": "tools/call",
-  "params": {
-    "name": "ask_code",
-    "arguments": {
-      "repo": "golyzer",
-      "query": "Como funciona o Modo de Interação?",
-      "topK": 5
-    }
-  }
-}
-```
-
 ## Troubleshooting rápido
 
 - **"Sem evidencia suficiente"**
-  - Confirme `QDRANT_COLLECTION` no cliente/MCP e no indexador.
+  - Confirme `QDRANT_COLLECTION_BASE` no cliente/MCP e no indexador.
   - Reindexe para garantir `payload.repo` nos pontos antigos (`make index-all`).
-  - Evite `repo: "."`; use o nome do diretório do repo indexado.
 - **"Global scope não está habilitado"**
   - Defina `ALLOW_GLOBAL_SCOPE=true` antes de subir o MCP server.
 - **"Campo \"vector\" é obrigatório"**
