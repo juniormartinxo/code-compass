@@ -53,10 +53,12 @@ export EMBEDDING_BATCH_SIZE=16
 
 # Qdrant
 export QDRANT_URL=http://localhost:6333
-export QDRANT_COLLECTION_BASE=compass
+export QDRANT_COLLECTION_BASE=compass__3584__manutic_nomic_embed_code
 export QDRANT_DISTANCE=COSINE
 export QDRANT_UPSERT_BATCH=64
-export QDRANT_COLLECTION=compass__3584__manutic_nomic_embed_code
+# opcionais:
+# export QDRANT_COLLECTION_CODE=${QDRANT_COLLECTION_BASE}__code
+# export QDRANT_COLLECTION_DOCS=${QDRANT_COLLECTION_BASE}__docs
 
 # Repositório
 export REPO_ROOT=/path/to/your/repository
@@ -97,7 +99,7 @@ Opções:
 
 ### Init
 
-Inicializa a collection no Qdrant (**idempotente**):
+Inicializa as collections de `code` e `docs` no Qdrant (**idempotente**):
 
 ```bash
 python -m indexer init
@@ -105,9 +107,9 @@ python -m indexer init
 
 Este comando:
 1. Conecta ao Ollama e **descobre o vector_size** automaticamente
-2. Resolve/gera o nome da collection
-3. Cria a collection no Qdrant (se não existir)
-4. Valida se collection existente tem size compatível
+2. Resolve/gera os nomes das collections de `code` e `docs`
+3. Cria/valida collections no Qdrant
+4. Garante índice payload `content_type` (`keyword`)
 
 **Saída:**
 ```json
@@ -116,10 +118,27 @@ Este comando:
   "ollama_url": "http://localhost:11434",
   "model": "manutic/nomic-embed-code",
   "vector_size": 3584,
-  "collection_name": "compass__3584__manutic_nomic_embed_code",
+  "collections": {
+    "code": {
+      "name": "compass__3584__manutic_nomic_embed_code__code",
+      "action": "created"
+    },
+    "docs": {
+      "name": "compass__3584__manutic_nomic_embed_code__docs",
+      "action": "created"
+    }
+  },
   "distance": "COSINE",
   "qdrant_url": "http://localhost:6333",
-  "action": "created"
+  "payload_index": {
+    "content_type": {
+      "schema": "keyword",
+      "status": {
+        "code": true,
+        "docs": true
+      }
+    }
+  }
 }
 ```
 
@@ -150,13 +169,25 @@ Este comando:
 {
   "status": "success",
   "repo_root": "/path/to/repo",
-  "collection_name": "compass__3584__manutic_nomic_embed_code",
+  "collections": {
+    "code": "compass__3584__manutic_nomic_embed_code__code",
+    "docs": "compass__3584__manutic_nomic_embed_code__docs"
+  },
   "files_scanned": 42,
+  "files_indexed": 42,
+  "file_coverage": 1.0,
   "chunks_total": 156,
+  "chunks_by_type": {
+    "code": 120,
+    "docs": 36
+  },
   "chunk_errors": 0,
   "embeddings_generated": 156,
   "points_upserted": 156,
-  "upsert_batches": 3,
+  "upsert_by_type": {
+    "code": { "points_upserted": 120, "batches": 2 },
+    "docs": { "points_upserted": 36, "batches": 1 }
+  },
   "vector_size": 3584,
   "model": "manutic/nomic-embed-code",
   "elapsed_ms": 12345,
@@ -200,6 +231,7 @@ Opções:
 - `-k`, `--top-k`, `--topk` - Número de resultados (default: 10)
 - `--ext` - Filtrar por extensão (ex: `.py`)
 - `--language` - Filtrar por linguagem (ex: `python`)
+- `--content-type` - Filtrar por tipo (`code`, `docs`, `all`)
 - `--json` - Output em JSON
 
 ### Ask (RAG)
@@ -240,6 +272,8 @@ Opções:
 - `--scope-repo` - Escopo explícito para um repo
 - `--scope-repos` - Escopo explícito para vários repos (CSV)
 - `--scope-all` - Escopo global (depende de `ALLOW_GLOBAL_SCOPE=true` no MCP)
+- `--content-type` - Tipo de conteúdo no MCP (`code`, `docs`, `all`)
+- `--strict` - Falha se alguma coleção estiver indisponível (sem retorno parcial)
 
 Importante:
 - Para `ask`, é obrigatório informar um escopo via `--repo` (compat) ou `--scope-*`.
@@ -264,10 +298,12 @@ Importante:
 |----------|---------|-----------|
 | `QDRANT_URL` | `http://localhost:6333` | URL do Qdrant |
 | `QDRANT_API_KEY` | - | API key (opcional) |
-| `QDRANT_COLLECTION_BASE` | `compass` | Base para nome da collection |
-| `QDRANT_COLLECTION` | - | Nome explícito (se não definido, auto-gera) |
+| `QDRANT_COLLECTION_BASE` | `compass__3584__manutic_nomic_embed_code` | Stem para nome das collections |
+| `QDRANT_COLLECTION_CODE` | - | Nome explícito da collection de código |
+| `QDRANT_COLLECTION_DOCS` | - | Nome explícito da collection de documentação |
 | `QDRANT_DISTANCE` | `COSINE` | Métrica de distância (COSINE, EUCLID, DOT) |
 | `QDRANT_UPSERT_BATCH` | `64` | Pontos por batch de upsert |
+| `INDEX_MIN_FILE_COVERAGE` | `0.95` | Cobertura mínima de arquivos no `index` |
 
 Observação sobre autenticação no Qdrant:
 - Se `QDRANT_API_KEY` estiver vazia (ex.: `QDRANT_API_KEY=`), o cliente é inicializado sem API key.
@@ -306,6 +342,7 @@ Cada ponto indexado no Qdrant contém:
   "start_line": 1,
   "end_line": 120,
   "language": "python",
+  "content_type": "code",
   "source": "repo",
   "repo_root": "/home/user/project"
 }
