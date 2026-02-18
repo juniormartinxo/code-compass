@@ -40,7 +40,9 @@ Cada linha em `stdin` é um request JSON:
     "query": "find qdrant",
     "topK": 10,
     "pathPrefix": "apps/indexer/",
-    "vector": [0.12, -0.43, 0.08]
+    "vector": [0.12, -0.43, 0.08],
+    "contentType": "all",
+    "strict": false
   }
 }
 ```
@@ -67,7 +69,25 @@ Resposta de sucesso (`stdout`, uma linha):
       "repo": "acme-monorepo",
       "topK": 10,
       "pathPrefix": "apps/indexer/",
-      "collection": "compass__3584__manutic_nomic_embed_code"
+      "contentType": "all",
+      "strict": false,
+      "collection": "compass__3584__manutic_nomic_embed_code__code",
+      "collections": [
+        {
+          "name": "compass__3584__manutic_nomic_embed_code__code",
+          "contentType": "code",
+          "hits": 10,
+          "latencyMs": 8,
+          "status": "ok"
+        },
+        {
+          "name": "compass__3584__manutic_nomic_embed_code__docs",
+          "contentType": "docs",
+          "hits": 3,
+          "latencyMs": 7,
+          "status": "ok"
+        }
+      ]
     }
   }
 }
@@ -125,6 +145,8 @@ Resposta de erro:
 - `topK` (number opcional, default `10`, clamp `1..20`)
 - `pathPrefix` (string opcional, `trim`, max 200, bloqueia `\0` e `..`)
 - `vector` (fallback operacional obrigatório neste módulo enquanto não houver provider de embeddings em Node)
+- `contentType` (string opcional: `code`, `docs`, `all`; default `all`)
+- `strict` (boolean opcional; default `false`; quando `true`, falha se alguma coleção estiver indisponível)
 
 ### Output
 
@@ -135,7 +157,7 @@ Resposta de erro:
   - `startLine` (`number | null`)
   - `endLine` (`number | null`)
   - `snippet` (string, normalizado e truncado para até 300 chars)
-- `meta`: `{ scope, repo?, topK, pathPrefix?, collection }`
+- `meta`: `{ scope, repo?, topK, pathPrefix?, contentType, strict, collection, collections }`
 
 ### Regras importantes
 
@@ -160,6 +182,8 @@ Executa o fluxo RAG completo no MCP: embedding da pergunta, busca no Qdrant, enr
 - `language` (string opcional, ex: `ts`, `py`, `.tsx`)
 - `minScore` (number opcional, default `0.6`)
 - `llmModel` (string opcional, default `LLM_MODEL`)
+- `contentType` (string opcional: `code`, `docs`, `all`; default `all`)
+- `strict` (boolean opcional; default `false`)
 
 ### Output
 
@@ -167,7 +191,9 @@ Executa o fluxo RAG completo no MCP: embedding da pergunta, busca no Qdrant, enr
 - `evidences` (array de evidências no mesmo formato do `search_code`)
 - `meta`:
   - `scope`, `repo?`, `topK`, `minScore`, `llmModel`
-  - `collection`
+  - `contentType`, `strict`
+  - `collection` (deprecated)
+  - `collections`
   - `totalMatches` e `contextsUsed`
   - `elapsedMs`
   - `pathPrefix?`, `language?`
@@ -181,7 +207,9 @@ Executa o fluxo RAG completo no MCP: embedding da pergunta, busca no Qdrant, enr
 ## Qdrant (env vars)
 
 - `QDRANT_URL` (default: `http://localhost:6333`)
-- `QDRANT_COLLECTION` (default: `compass__3584__manutic_nomic_embed_code`)
+- `QDRANT_COLLECTION_BASE` (default: `compass__3584__manutic_nomic_embed_code`)
+- `QDRANT_COLLECTION_CODE` (opcional; default: `<base>__code`)
+- `QDRANT_COLLECTION_DOCS` (opcional; default: `<base>__docs`)
 - `QDRANT_API_KEY` (opcional)
 
 ## CODEBASE_ROOT e REPO_ROOT (env vars)
@@ -208,7 +236,7 @@ No bootstrap, o MCP server tenta carregar automaticamente (nesta ordem):
 3. `.env.local` na raiz do monorepo
 4. `.env` na raiz do monorepo
 
-Isso permite usar `QDRANT_COLLECTION=goapice_3584_manutic_nomic_embed_code` em `.env.local` sem precisar exportar no comando.
+Isso permite usar `QDRANT_COLLECTION_BASE=goapice_3584_manutic_nomic_embed_code` em `.env.local` sem precisar exportar no comando.
 
 ## Testes
 
