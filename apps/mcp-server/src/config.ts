@@ -31,7 +31,7 @@ function readPositiveInt(
 }
 
 export function resolveQdrantConfig(env: NodeJS.ProcessEnv): QdrantRuntimeConfig {
-  const collectionBase = (env.QDRANT_COLLECTION_BASE || env.QDRANT_COLLECTION || DEFAULT_QDRANT_COLLECTION_STEM).trim();
+  const collectionBase = (env.QDRANT_COLLECTION_BASE || DEFAULT_QDRANT_COLLECTION_STEM).trim();
   const codeCollection = (env.QDRANT_COLLECTION_CODE || `${collectionBase}__code`).trim();
   const docsCollection = (env.QDRANT_COLLECTION_DOCS || `${collectionBase}__docs`).trim();
 
