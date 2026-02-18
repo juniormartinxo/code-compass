@@ -53,4 +53,4 @@ curl -sS http://localhost:11434/api/tags
 ```
 
 Se o segundo comando falhar, inicie/configure o Ollama e o modelo de embedding esperado
-(`EMBEDDING_MODEL`, padrão `manutic/nomic-embed-code`).
+(`EMBEDDING_MODEL_CODE` e `EMBEDDING_MODEL_DOCS`, padrão `manutic/nomic-embed-code` e `bge-m3`, respectivamente).
