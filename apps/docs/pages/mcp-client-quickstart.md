@@ -78,7 +78,7 @@ Escopo por repo (recomendado):
   - Defina `ALLOW_GLOBAL_SCOPE=true` antes de subir o MCP server.
 - **"Campo \"vector\" é obrigatório"**
   - O MCP não conseguiu gerar embeddings.
-  - Verifique `OLLAMA_URL` e `EMBEDDING_MODEL` no MCP server.
+  - Verifique `OLLAMA_URL`, `EMBEDDING_MODEL_CODE` e `EMBEDDING_MODEL_DOCS` no MCP server.
 
 ### Exemplos de input com `scope`
 
