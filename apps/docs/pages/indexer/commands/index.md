@@ -63,7 +63,8 @@ As variáveis são lidas do ambiente e carregadas automaticamente de `.env` e `.
 - `QDRANT_URL`: URL do Qdrant
 - `QDRANT_API_KEY`: API key (opcional)
 - `QDRANT_COLLECTION_BASE`: Base para nome auto-gerado
-- `QDRANT_COLLECTION`: Nome explícito da collection
+- `QDRANT_COLLECTION_CODE`: Override opcional da collection de código
+- `QDRANT_COLLECTION_DOCS`: Override opcional da collection de documentação
 - `QDRANT_DISTANCE`: Métrica de distância
 - `QDRANT_UPSERT_BATCH`: Pontos por batch de upsert
 
@@ -75,7 +76,10 @@ O comando retorna um JSON com estatísticas da indexação:
 {
   "status": "success",
   "repo_root": "/path/to/repo",
-  "collection_name": "compass__3584__manutic_nomic_embed_code",
+  "collections": {
+    "code": "compass__3584__manutic_nomic_embed_code__code",
+    "docs": "compass__3584__manutic_nomic_embed_code__docs"
+  },
   "files_scanned": 42,
   "chunks_total": 156,
   "chunk_errors": 0,
