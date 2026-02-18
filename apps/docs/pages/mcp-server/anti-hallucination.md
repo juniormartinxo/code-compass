@@ -18,11 +18,11 @@ Antes de qualquer busca, todos os campos são validados e sanitizados.
 
 | Campo        | Restrição                              | Referência                    |
 |-------------|----------------------------------------|-------------------------------|
-| `query`     | `string`, não vazio, máx 500 chars     | `ask-code.tool.ts:146-158`   |
-| `topK`      | `number`, clamp entre 1 e 20           | `ask-code.tool.ts:160-168`   |
-| `pathPrefix`| sem `..`, sem `\0`, máx 200 chars      | `ask-code.tool.ts:170-190`   |
-| `language`  | `string`, máx 32 chars, lowercase      | `ask-code.tool.ts:192-206`   |
-| `minScore`  | `number` finito                         | `ask-code.tool.ts:208-216`   |
+| `query`     | `string`, não vazio, máx 500 chars     | `ask-code.tool.ts:189-200`   |
+| `topK`      | `number`, clamp entre 1 e 20           | `ask-code.tool.ts:203-211`   |
+| `pathPrefix`| sem `..`, sem `\0`, máx 200 chars      | `ask-code.tool.ts:213-233`   |
+| `language`  | `string`, máx 32 chars, lowercase      | `ask-code.tool.ts:235-249`   |
+| `minScore`  | `number` finito                         | `ask-code.tool.ts:251-259`   |
 
 Isso impede que inputs malformados ou maliciosos gerem resultados imprevisíveis.
 
@@ -31,7 +31,7 @@ Isso impede que inputs malformados ou maliciosos gerem resultados imprevisíveis
 Após a busca vetorial no Qdrant, apenas resultados com **score ≥ `minScore`** (default: `0.6`) são considerados:
 
 ```typescript
-// ask-code.tool.ts:66-69
+// ask-code.tool.ts:74-77
 const ranked = searchOutput.results
   .filter((result) => this.matchesLanguage(result.path, input.language))
   .filter((result) => result.score >= input.minScore)
@@ -58,7 +58,7 @@ Esses limites evitam **diluição de contexto**: poucos trechos relevantes são 
 Se **nenhuma** evidência sobrevive aos filtros, o sistema retorna uma resposta fixa **sem chamar o LLM**:
 
 ```typescript
-// ask-code.tool.ts:73-91
+// ask-code.tool.ts:81-100
 if (enriched.length === 0) {
   return {
     answer: 'Sem evidencia suficiente. Tente refinar a pergunta ou ajustar os filtros.',
@@ -75,7 +75,7 @@ Esse é o guardrail mais importante: **0 contexto = 0 chance de alucinação**.
 Antes de montar o prompt, cada evidência é **verificada contra o arquivo real** no disco via `openFileTool.execute()`:
 
 ```typescript
-// ask-code.tool.ts:272-278
+// ask-code.tool.ts:345-351
 const file = await this.openFileTool.execute({
   repo: evidence.repo,
   path: evidence.path,
@@ -92,7 +92,7 @@ Isso garante que o snippet enviado ao LLM é a **versão atual do código**, nã
 O prompt de sistema instrui o LLM com **3 regras anti-alucinação**:
 
 ```typescript
-// ask-code.tool.ts:331-336
+// ask-code.tool.ts:408-415
 const system = [
   'Voce e um assistente especializado em analisar codigo-fonte.',
   'Responda as perguntas do usuario baseando-se APENAS no contexto fornecido.',
@@ -162,13 +162,13 @@ Query do Agente
 
 | Arquivo                              | Linhas      | Responsabilidade                          |
 |--------------------------------------|-------------|-------------------------------------------|
-| `apps/mcp-server/src/ask-code.tool.ts`   | 10-21     | Constantes de limites (topK, minScore)   |
-| `apps/mcp-server/src/ask-code.tool.ts`   | 66-69     | Filtros de score e linguagem             |
-| `apps/mcp-server/src/ask-code.tool.ts`   | 73-91     | Fail-safe sem evidência                  |
-| `apps/mcp-server/src/ask-code.tool.ts`   | 251-292   | Enriquecimento via open_file             |
-| `apps/mcp-server/src/ask-code.tool.ts`   | 330-357   | Construção do prompt (grounding)         |
+| `apps/mcp-server/src/ask-code.tool.ts`   | 17-31     | Constantes de limites (topK, minScore)   |
+| `apps/mcp-server/src/ask-code.tool.ts`   | 74-77     | Filtros de score e linguagem             |
+| `apps/mcp-server/src/ask-code.tool.ts`   | 81-100    | Fail-safe sem evidência                  |
+| `apps/mcp-server/src/ask-code.tool.ts`   | 324-365   | Enriquecimento via open_file             |
+| `apps/mcp-server/src/ask-code.tool.ts`   | 403-436   | Construção do prompt (grounding)         |
 | `apps/mcp-server/src/search-code.tool.ts`| 15        | `MAX_PER_REPO_ON_ALL_SCOPE`             |
-| `apps/mcp-server/src/search-code.tool.ts`| 216-243   | Guardas de escopo nos resultados         |
+| `apps/mcp-server/src/search-code.tool.ts`| 260-287   | Guardas de escopo nos resultados         |
 | `apps/docs/pages/ARCHITECTURE.md`        | 8, 266-267| Pilar Evidence-first e ADR               |
 
 ---
