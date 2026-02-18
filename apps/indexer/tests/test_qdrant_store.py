@@ -30,7 +30,6 @@ class TestQdrantConfig(unittest.TestCase):
             self.assertEqual(config.url, DEFAULT_QDRANT_URL)
             self.assertIsNone(config.api_key)
             self.assertEqual(config.collection_base, DEFAULT_QDRANT_COLLECTION_BASE)
-            self.assertIsNone(config.collection)
             self.assertEqual(config.distance, DEFAULT_QDRANT_DISTANCE)
             self.assertEqual(config.upsert_batch, DEFAULT_QDRANT_UPSERT_BATCH)
 
@@ -40,7 +39,6 @@ class TestQdrantConfig(unittest.TestCase):
             "QDRANT_URL": "http://custom:6333",
             "QDRANT_API_KEY": "secret-key",
             "QDRANT_COLLECTION_BASE": "custom_base",
-            "QDRANT_COLLECTION": "custom_collection",
             "QDRANT_DISTANCE": "EUCLID",
             "QDRANT_UPSERT_BATCH": "128",
         }
@@ -49,7 +47,6 @@ class TestQdrantConfig(unittest.TestCase):
             self.assertEqual(config.url, "http://custom:6333")
             self.assertEqual(config.api_key, "secret-key")
             self.assertEqual(config.collection_base, "custom_base")
-            self.assertEqual(config.collection, "custom_collection")
             self.assertEqual(config.distance, "EUCLID")
             self.assertEqual(config.upsert_batch, 128)
 
@@ -58,7 +55,6 @@ class TestQdrantConfig(unittest.TestCase):
             "QDRANT_URL": "   ",
             "QDRANT_API_KEY": "   ",
             "QDRANT_COLLECTION_BASE": "   ",
-            "QDRANT_COLLECTION": "   ",
             "QDRANT_DISTANCE": "   ",
             "QDRANT_UPSERT_BATCH": "64",
         }
@@ -67,7 +63,6 @@ class TestQdrantConfig(unittest.TestCase):
             self.assertEqual(config.url, DEFAULT_QDRANT_URL)
             self.assertIsNone(config.api_key)
             self.assertEqual(config.collection_base, DEFAULT_QDRANT_COLLECTION_BASE)
-            self.assertIsNone(config.collection)
             self.assertEqual(config.distance, DEFAULT_QDRANT_DISTANCE)
 
     def test_load_qdrant_config_normalizes_blank_args_to_defaults(self) -> None:
@@ -76,14 +71,12 @@ class TestQdrantConfig(unittest.TestCase):
                 url="   ",
                 api_key="   ",
                 collection_base="   ",
-                collection="   ",
                 distance="   ",
             )
 
         self.assertEqual(config.url, DEFAULT_QDRANT_URL)
         self.assertIsNone(config.api_key)
         self.assertEqual(config.collection_base, DEFAULT_QDRANT_COLLECTION_BASE)
-        self.assertIsNone(config.collection)
         self.assertEqual(config.distance, DEFAULT_QDRANT_DISTANCE)
 
 
@@ -126,27 +119,9 @@ class TestQdrantStore(unittest.TestCase):
             url="http://localhost:6333",
             api_key=None,
             collection_base="test",
-            collection=None,
             distance="COSINE",
             upsert_batch=10,
         )
-
-    def test_resolve_collection_name_explicit(self) -> None:
-        """Deve usar collection explícita se fornecida."""
-        config = QdrantConfig(
-            url="http://localhost:6333",
-            api_key=None,
-            collection_base="test",
-            collection="explicit_collection",
-            distance="COSINE",
-            upsert_batch=10,
-        )
-        store = QdrantStore(config)
-        name = store.resolve_collection_name(
-            vector_size=3584,
-            model_name="some-model",
-        )
-        self.assertEqual(name, "explicit_collection")
 
     def test_resolve_collection_name_auto(self) -> None:
         """Deve gerar collection automaticamente se não fornecida."""
@@ -177,7 +152,6 @@ class TestQdrantStore(unittest.TestCase):
             url="http://localhost:6333",
             api_key="secret-key",
             collection_base="test",
-            collection=None,
             distance="COSINE",
             upsert_batch=10,
         )
@@ -288,7 +262,6 @@ class TestQdrantStore(unittest.TestCase):
             url="http://localhost:6333",
             api_key=None,
             collection_base="test",
-            collection=None,
             distance="COSINE",
             upsert_batch=3,  # Batch pequeno para teste
         )
