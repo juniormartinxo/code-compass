@@ -42,9 +42,10 @@ O comando utiliza as mesmas variáveis de ambiente do `init` e `index`:
 | `QDRANT_URL` | `http://localhost:6333` | URL do servidor Qdrant |
 | `QDRANT_API_KEY` | - | API key (opcional) |
 | `QDRANT_COLLECTION_BASE` | `compass` | Base para nome da collection |
-| `QDRANT_COLLECTION` | - | Nome explícito da collection |
+| `QDRANT_COLLECTION_CODE` | - | Nome explícito da collection de código |
+| `QDRANT_COLLECTION_DOCS` | - | Nome explícito da collection de documentação |
 
-> Dica operacional: para evitar mismatch entre indexação e consulta, prefira definir `QDRANT_COLLECTION` explicitamente.
+> Dica operacional: para evitar mismatch entre indexação e consulta, mantenha `QDRANT_COLLECTION_BASE` (e overrides `CODE`/`DOCS`) iguais no indexer e no MCP.
 >
 > Se `QDRANT_API_KEY` estiver vazia (`QDRANT_API_KEY=`), o cliente não envia API key. Isso é útil em ambiente local com `http://` para evitar warnings de conexão insegura.
 
@@ -118,9 +119,10 @@ python -m indexer search "class definition" --language python
 O comando usa o mesmo modelo de embedding configurado para indexação (`EMBEDDING_MODEL`). Isso garante que a query seja representada no mesmo espaço vetorial dos chunks indexados.
 
 ### Resolução da Collection
-O nome da collection é resolvido automaticamente baseado em:
-- `QDRANT_COLLECTION` (se definido explicitamente)
-- Ou gerado: `{QDRANT_COLLECTION_BASE}__{vector_size}__{model_slug}`
+Os nomes das collections são resolvidos automaticamente:
+- stem: `{QDRANT_COLLECTION_BASE}__{vector_size}__{model_slug}`
+- finais: `{stem}__code` e `{stem}__docs`
+- com overrides opcionais via `QDRANT_COLLECTION_CODE`/`QDRANT_COLLECTION_DOCS`
 
 ### Score de Similaridade
 O score retornado é a **similaridade de cosseno** (ou outra métrica configurada via `QDRANT_DISTANCE`):
