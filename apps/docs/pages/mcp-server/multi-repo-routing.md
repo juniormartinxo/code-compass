@@ -140,10 +140,15 @@ Todos os resultados agora carregam `repo` e o `meta.scope` devolve o escopo efet
 
 ## Nota sobre payload `repo`
 
-O filtro por `scope` depende do payload `repo` estar presente na collection do Qdrant. Se sua indexação ainda grava apenas `repo_root`, o MCP não consegue filtrar por repo de forma precisa. Neste caso:
+O filtro por `scope` depende do payload `repo` estar consistente na collection do Qdrant. O MCP filtra por esse campo em `search_code` e `ask_code`.
 
-- `scope: { type: "repo" | "repos" }` funciona como best effort (retorna resultados com `repo` `(unknown)`).
-- Para ativar o filtro preciso, ajuste o indexer para gravar `repo` no payload.
+Regras práticas:
+
+- O indexador define `payload.repo` como o nome do `REPO_ROOT` de cada execução.
+- Se você indexar com `REPO_ROOT=/.../code-base` (pasta agregadora), todos os pontos recebem `repo="code-base"`.
+- Nesse cenário, `scope: { type: "repo" | "repos" }` não separa os sub-repos corretamente.
+- Para multi-repo real, indexe cada subdiretório (`code-base/<repo>`) individualmente (ex.: `scripts/index-all.sh`).
+- Para dados antigos sem `payload.repo`, reindexe para restaurar o filtro preciso por repositório.
 
 ## Compatibilidade com clientes antigos
 
