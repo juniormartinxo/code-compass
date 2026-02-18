@@ -438,7 +438,7 @@ QDRANT_STORAGE_PATH=../.qdrant_storage
 # -----------------------------
 QDRANT_URL=http://localhost:6333
 QDRANT_API_KEY=
-QDRANT_COLLECTION_BASE=compass__3584__manutic_nomic_embed_code
+QDRANT_COLLECTION_BASE=compass__manutic_nomic_embed
 QDRANT_DISTANCE=COSINE
 QDRANT_UPSERT_BATCH=64
 
@@ -502,7 +502,7 @@ PATH_TRAVERSAL_GUARD=true
 
 ### Collection
 
-* `compass__3584__manutic_nomic_embed_code` (exemplo)
+* `compass__manutic_nomic_embed` (exemplo)
 
 ### Point
 
