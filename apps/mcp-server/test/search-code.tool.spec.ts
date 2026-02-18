@@ -9,7 +9,7 @@ class QdrantServiceMock {
   constructor(private readonly hits: QdrantSearchHit[]) {}
 
   getCollectionName(): string {
-    return 'compass__3584__manutic_nomic_embed_code__code';
+    return 'compass__manutic_nomic_embed__code';
   }
 
   async searchPoints(args: { repos?: string[]; contentType?: 'code' | 'docs' | 'all'; topK?: number }): Promise<{
@@ -20,7 +20,7 @@ class QdrantServiceMock {
     if (!Array.isArray(args.repos) || args.repos.length === 0) {
       return {
         hits: this.filterByContentType(this.hits, args.contentType).slice(0, args.topK ?? this.hits.length),
-        collection: 'compass__3584__manutic_nomic_embed_code__code',
+        collection: 'compass__manutic_nomic_embed__code',
         collections: this.defaultCollections(),
       };
     }
@@ -32,7 +32,7 @@ class QdrantServiceMock {
     });
     return {
       hits: filtered,
-      collection: 'compass__3584__manutic_nomic_embed_code__code',
+      collection: 'compass__manutic_nomic_embed__code',
       collections: this.defaultCollections(),
     };
   }
@@ -40,14 +40,14 @@ class QdrantServiceMock {
   private defaultCollections(): CollectionMeta[] {
     return [
       {
-        name: 'compass__3584__manutic_nomic_embed_code__code',
+        name: 'compass__manutic_nomic_embed__code',
         contentType: 'code',
         hits: this.hits.length,
         latencyMs: 1,
         status: 'ok',
       },
       {
-        name: 'compass__3584__manutic_nomic_embed_code__docs',
+        name: 'compass__manutic_nomic_embed__docs',
         contentType: 'docs',
         hits: this.hits.length,
         latencyMs: 1,
