@@ -22,7 +22,7 @@ from .config import (
     load_scan_config,
 )
 from .env import load_env_files
-from .embedder import EmbedderError, OllamaEmbedder, load_embedder_config
+from .embedder import EmbedderConfig, EmbedderError, OllamaEmbedder, load_embedder_config
 from .qdrant_store import CONTENT_TYPE_FIELD, QdrantStore, QdrantStoreError, load_qdrant_config
 from .scan import scan_repo
 
@@ -356,7 +356,28 @@ def _build_parser() -> argparse.ArgumentParser:
         "--ollama-url", dest="ollama_url", default=None, help="URL do Ollama"
     )
     init_parser.add_argument(
-        "--model", dest="model", default=None, help="Modelo de embedding"
+        "--provider-code",
+        dest="provider_code",
+        default=None,
+        help="Provider de embedding para code (env: EMBEDDING_PROVIDER_CODE)",
+    )
+    init_parser.add_argument(
+        "--provider-docs",
+        dest="provider_docs",
+        default=None,
+        help="Provider de embedding para docs (env: EMBEDDING_PROVIDER_DOCS)",
+    )
+    init_parser.add_argument(
+        "--model-code",
+        dest="model_code",
+        default=None,
+        help="Modelo de embedding para code (env: EMBEDDING_MODEL_CODE)",
+    )
+    init_parser.add_argument(
+        "--model-docs",
+        dest="model_docs",
+        default=None,
+        help="Modelo de embedding para docs (env: EMBEDDING_MODEL_DOCS)",
     )
     init_parser.add_argument(
         "--qdrant-url", dest="qdrant_url", default=None, help="URL do Qdrant"
@@ -595,30 +616,43 @@ def _init_command(args: argparse.Namespace) -> int:
     try:
         runtime_config = load_runtime_config()
 
-        # Carregar configs
-        embedder_config = load_embedder_config(
-            ollama_url=args.ollama_url,
-            model=args.model,
-        )
+        # Carregar configs de embedding por tipo de conteúdo
+        embedder_configs: dict[str, EmbedderConfig] = {}
+        for content_type in runtime_config.content_types:
+            embedder_configs[content_type] = load_embedder_config(
+                content_type=content_type,
+                ollama_url=args.ollama_url,
+                provider=getattr(args, f"provider_{content_type}", None),
+                model=getattr(args, f"model_{content_type}", None),
+            )
+
         qdrant_config = load_qdrant_config(
             url=args.qdrant_url,
         )
 
-        logger.info(f"Conectando ao Ollama: {embedder_config.ollama_url}")
-        logger.info(f"Modelo de embedding: {embedder_config.model}")
-
-        # Descobrir vector_size via probe
-        with OllamaEmbedder(embedder_config) as embedder:
-            vector_size = embedder.probe_vector_size()
-            logger.info(f"Vector size descoberto: {vector_size}")
+        vector_sizes: dict[str, int] = {}
+        for content_type in runtime_config.content_types:
+            config = embedder_configs[content_type]
+            logger.info(
+                "Embedding config [%s]: provider=%s model=%s ollama=%s",
+                content_type,
+                config.provider,
+                config.model,
+                config.ollama_url,
+            )
+            with OllamaEmbedder(config) as embedder:
+                vector_size = embedder.probe_vector_size()
+                vector_sizes[content_type] = vector_size
+                logger.info("Vector size [%s]: %s", content_type, vector_size)
 
         # Conectar ao Qdrant e garantir collections
         collections_result: dict[str, dict[str, object]] = {}
         payload_index_ok: dict[str, bool] = {}
         with QdrantStore(qdrant_config) as store:
+            reference_content_type = runtime_config.content_types[0]
             collection_names = store.resolve_split_collection_names(
-                vector_size=vector_size,
-                model_name=embedder_config.model,
+                vector_size=vector_sizes[reference_content_type],
+                model_name=embedder_configs[reference_content_type].model,
             )
             logger.info(
                 "Collections resolved: code=%s docs=%s",
@@ -630,7 +664,7 @@ def _init_command(args: argparse.Namespace) -> int:
                 collection_name = collection_names[content_type]
                 result = store.ensure_collection(
                     collection_name=collection_name,
-                    vector_size=vector_size,
+                    vector_size=vector_sizes[content_type],
                 )
                 collections_result[content_type] = result
 
@@ -645,10 +679,15 @@ def _init_command(args: argparse.Namespace) -> int:
 
         # Output JSON
         output = {
-            "provider": "ollama",
-            "ollama_url": embedder_config.ollama_url,
-            "model": embedder_config.model,
-            "vector_size": vector_size,
+            "embedding": {
+                content_type: {
+                    "provider": embedder_configs[content_type].provider,
+                    "ollama_url": embedder_configs[content_type].ollama_url,
+                    "model": embedder_configs[content_type].model,
+                    "vector_size": vector_sizes[content_type],
+                }
+                for content_type in runtime_config.content_types
+            },
             "collections": {
                 content_type: {
                     "name": collections_result[content_type]["collection"],
@@ -715,7 +754,10 @@ def _index_command(args: argparse.Namespace) -> int:
         # Configs
         scan_config = _resolve_scan_config(args)
         chunk_config = _resolve_chunk_config(args)
-        embedder_config = load_embedder_config()
+        embedder_configs: dict[str, EmbedderConfig] = {
+            content_type: load_embedder_config(content_type=content_type)
+            for content_type in runtime_config.content_types
+        }
         qdrant_config = load_qdrant_config()
 
         if not scan_config.repo_root.exists() or not scan_config.repo_root.is_dir():
@@ -726,23 +768,31 @@ def _index_command(args: argparse.Namespace) -> int:
             return 1
 
         logger.info(f"Repo root: {scan_config.repo_root}")
-        logger.info(f"Conectando ao Ollama: {embedder_config.ollama_url}")
-        logger.info(f"Modelo: {embedder_config.model}")
 
-        # 1. Probe vector_size e preparar collection
-        with OllamaEmbedder(embedder_config) as embedder:
-            vector_size = embedder.probe_vector_size()
+        vector_sizes: dict[str, int] = {}
+        for content_type in runtime_config.content_types:
+            config = embedder_configs[content_type]
+            logger.info(
+                "Embedding config [%s]: provider=%s model=%s ollama=%s",
+                content_type,
+                config.provider,
+                config.model,
+                config.ollama_url,
+            )
+            with OllamaEmbedder(config) as embedder:
+                vector_sizes[content_type] = embedder.probe_vector_size()
 
         with QdrantStore(qdrant_config) as store:
+            reference_content_type = runtime_config.content_types[0]
             collection_names = store.resolve_split_collection_names(
-                vector_size=vector_size,
-                model_name=embedder_config.model,
+                vector_size=vector_sizes[reference_content_type],
+                model_name=embedder_configs[reference_content_type].model,
             )
             for content_type in runtime_config.content_types:
                 target_collection = collection_names[content_type]
                 store.ensure_collection(
                     collection_name=target_collection,
-                    vector_size=vector_size,
+                    vector_size=vector_sizes[content_type],
                 )
                 store.ensure_payload_keyword_index(
                     collection_name=target_collection,
@@ -844,17 +894,37 @@ def _index_command(args: argparse.Namespace) -> int:
             )
             return 1
 
-        # 4. Embed em batches
+        # 4. Embed em batches por tipo de conteúdo
         logger.info("Iniciando embedding...")
-        texts = [c["content"] for c in all_chunks]
+        chunks_by_type: dict[str, list[dict]] = {
+            content_type: []
+            for content_type in runtime_config.content_types
+        }
+        for chunk in all_chunks:
+            chunks_by_type[chunk["_content_type"]].append(chunk)
 
-        with OllamaEmbedder(embedder_config) as embedder:
-            embeddings = embedder.embed_texts_batched(
-                texts=texts,
-                expected_vector_size=vector_size,
-            )
+        embeddings_by_type: dict[str, list[list[float]]] = {
+            content_type: []
+            for content_type in runtime_config.content_types
+        }
+        for content_type in runtime_config.content_types:
+            target_chunks = chunks_by_type[content_type]
+            if not target_chunks:
+                continue
 
-        logger.info(f"Embeddings gerados: {len(embeddings)}")
+            config = embedder_configs[content_type]
+            texts = [chunk["content"] for chunk in target_chunks]
+            with OllamaEmbedder(config) as embedder:
+                embeddings_by_type[content_type] = embedder.embed_texts_batched(
+                    texts=texts,
+                    expected_vector_size=vector_sizes[content_type],
+                )
+
+        embeddings_generated = sum(
+            len(embeddings_by_type[content_type])
+            for content_type in runtime_config.content_types
+        )
+        logger.info(f"Embeddings gerados: {embeddings_generated}")
 
         # 5. Montar pontos com IDs estáveis e payload rico
         logger.info("Montando pontos para upsert...")
@@ -863,42 +933,46 @@ def _index_command(args: argparse.Namespace) -> int:
             for content_type in runtime_config.content_types
         }
 
-        for chunk, embedding in zip(all_chunks, embeddings):
-            # Derivar content_hash do chunk
-            chunk_text = chunk["content"]
-            content_hash = hashlib.sha1(chunk_text.encode("utf-8")).hexdigest()
+        for content_type in runtime_config.content_types:
+            for chunk, embedding in zip(
+                chunks_by_type[content_type],
+                embeddings_by_type[content_type],
+            ):
+                # Derivar content_hash do chunk
+                chunk_text = chunk["content"]
+                content_hash = hashlib.sha1(chunk_text.encode("utf-8")).hexdigest()
 
-            # ID estável
-            point_id = _make_point_id(
-                rel_path=chunk["path"],
-                chunk_index=chunk["_chunk_index"],
-                content_hash=content_hash,
-            )
+                # ID estável
+                point_id = _make_point_id(
+                    rel_path=chunk["path"],
+                    chunk_index=chunk["_chunk_index"],
+                    content_hash=content_hash,
+                )
 
-            # Payload rico
-            payload = {
-                "repo": scan_config.repo_root.name,
-                "path": chunk["path"],
-                "chunk_index": chunk["_chunk_index"],
-                "content_hash": content_hash,
-                "ext": Path(chunk["path"]).suffix.lower(),
-                "mtime": chunk["_file_mtime"],
-                "size_bytes": chunk["_file_size"],
-                "text_len": len(chunk_text),
-                "start_line": chunk["startLine"],
-                "end_line": chunk["endLine"],
-                "language": chunk["language"],
-                "content_type": chunk["_content_type"],
-                "source": "repo",
-                "repo_root": str(scan_config.repo_root),
-            }
+                # Payload rico
+                payload = {
+                    "repo": scan_config.repo_root.name,
+                    "path": chunk["path"],
+                    "chunk_index": chunk["_chunk_index"],
+                    "content_hash": content_hash,
+                    "ext": Path(chunk["path"]).suffix.lower(),
+                    "mtime": chunk["_file_mtime"],
+                    "size_bytes": chunk["_file_size"],
+                    "text_len": len(chunk_text),
+                    "start_line": chunk["startLine"],
+                    "end_line": chunk["endLine"],
+                    "language": chunk["language"],
+                    "content_type": chunk["_content_type"],
+                    "source": "repo",
+                    "repo_root": str(scan_config.repo_root),
+                }
 
-            point = {
-                "id": point_id,
-                "vector": embedding,
-                "payload": payload,
-            }
-            points_by_type[chunk["_content_type"]].append(point)
+                point = {
+                    "id": point_id,
+                    "vector": embedding,
+                    "payload": payload,
+                }
+                points_by_type[content_type].append(point)
 
         # 6. Upsert no Qdrant
         logger.info("Iniciando upsert no Qdrant...")
@@ -930,11 +1004,21 @@ def _index_command(args: argparse.Namespace) -> int:
                 for content_type in runtime_config.content_types
             },
             "chunk_errors": chunk_errors,
-            "embeddings_generated": len(embeddings),
+            "embeddings_generated": embeddings_generated,
+            "embeddings_generated_by_type": {
+                content_type: len(embeddings_by_type[content_type])
+                for content_type in runtime_config.content_types
+            },
             "points_upserted": total_points_upserted,
             "upsert_by_type": upsert_results,
-            "vector_size": vector_size,
-            "model": embedder_config.model,
+            "embedding": {
+                content_type: {
+                    "provider": embedder_configs[content_type].provider,
+                    "model": embedder_configs[content_type].model,
+                    "vector_size": vector_sizes[content_type],
+                }
+                for content_type in runtime_config.content_types
+            },
             "elapsed_ms": elapsed_ms,
             "elapsed_sec": round(elapsed_ms / 1000, 2),
         }
@@ -974,50 +1058,54 @@ def _search_command(args: argparse.Namespace) -> int:
             return 1
 
         runtime_config = load_runtime_config()
-        embedder_config = load_embedder_config()
         qdrant_config = load_qdrant_config()
-
-        # Gerar embedding da query
-        with OllamaEmbedder(embedder_config) as embedder:
-            embeddings = embedder.embed_texts([query])
-            query_vector = embeddings[0]
-            vector_size = len(query_vector)
-
-        # Buscar no Qdrant
         content_type = getattr(args, "content_type", "all")
+        if content_type in runtime_config.content_types:
+            target_content_types = [content_type]
+        else:
+            target_content_types = list(runtime_config.content_types)
+
+        embedder_configs: dict[str, EmbedderConfig] = {
+            target_content_type: load_embedder_config(content_type=target_content_type)
+            for target_content_type in target_content_types
+        }
+
+        query_vectors: dict[str, list[float]] = {}
+        vector_sizes: dict[str, int] = {}
+        for target_content_type in target_content_types:
+            config = embedder_configs[target_content_type]
+            with OllamaEmbedder(config) as embedder:
+                embeddings = embedder.embed_texts([query])
+                query_vector = embeddings[0]
+                query_vectors[target_content_type] = query_vector
+                vector_sizes[target_content_type] = len(query_vector)
+
         with QdrantStore(qdrant_config) as store:
+            reference_content_type = target_content_types[0]
             collection_names = store.resolve_split_collection_names(
-                vector_size=vector_size,
-                model_name=embedder_config.model,
+                vector_size=vector_sizes[reference_content_type],
+                model_name=embedder_configs[reference_content_type].model,
             )
             filters = _build_search_filters(args)
-            searched_collections: list[str] = []
-            if content_type in runtime_config.content_types:
-                target_collection = collection_names[content_type]
-                searched_collections = [target_collection]
-                results = store.search(
-                    query_vector=query_vector,
-                    collection_name=target_collection,
-                    filters=filters,
-                    top_k=args.top_k,
-                    with_vector=args.with_vector,
-                )
-            else:
-                searched_collections = [
-                    collection_names[key]
-                    for key in runtime_config.content_types
-                ]
-                merged: list[dict[str, object]] = []
-                for key in runtime_config.content_types:
-                    merged.extend(
-                        store.search(
-                            query_vector=query_vector,
-                            collection_name=collection_names[key],
-                            filters=filters,
-                            top_k=args.top_k,
-                            with_vector=args.with_vector,
-                        )
+            searched_collections: list[str] = [
+                collection_names[target_content_type]
+                for target_content_type in target_content_types
+            ]
+            merged: list[dict[str, object]] = []
+            for target_content_type in target_content_types:
+                merged.extend(
+                    store.search(
+                        query_vector=query_vectors[target_content_type],
+                        collection_name=collection_names[target_content_type],
+                        filters=filters,
+                        top_k=args.top_k,
+                        with_vector=args.with_vector,
                     )
+                )
+
+            if len(target_content_types) == 1:
+                results = merged[: args.top_k]
+            else:
                 results = sorted(
                     merged,
                     key=lambda item: float(item.get("score", 0.0) or 0.0),
