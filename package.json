@@ -4,6 +4,8 @@
   "packageManager": "pnpm@10.4.1",
   "scripts": {
     "dev": "pnpm mcp:start",
+    "index": "make index",
+    "index:all": "make index-all",
     "indexer:activate": ". apps/indexer/.venv/bin/activate",
     "mcp:start": "bash ./bin/dev-mcp",
     "mcp:stdio": "pnpm -C apps/mcp-server mcp:stdio",
