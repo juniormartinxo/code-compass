@@ -7,7 +7,7 @@ import shlex
 import signal
 import sys
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -17,6 +17,7 @@ from uuid import uuid4
 class McpBridgeConfig:
     command: list[str]
     llm_model: str | None = None
+    env_overrides: dict[str, str] = field(default_factory=dict)
 
 
 class McpBridge:
@@ -35,6 +36,8 @@ class McpBridge:
         env = os.environ.copy()
         if self._config.llm_model:
             env["LLM_MODEL"] = self._config.llm_model
+        if self._config.env_overrides:
+            env.update(self._config.env_overrides)
 
         self._stderr_tail.clear()
         self._process = await asyncio.create_subprocess_exec(
@@ -280,5 +283,35 @@ def resolve_mcp_command() -> list[str]:
     return ["node", str(entry), "--transport", "stdio"]
 
 
-def build_bridge(llm_model: str | None = None) -> McpBridge:
-    return McpBridge(McpBridgeConfig(command=resolve_mcp_command(), llm_model=llm_model))
+def _coerce_optional_string(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def build_bridge(
+    llm_model: str | None = None,
+    llm_provider: str | None = None,
+    llm_api_url: str | None = None,
+    llm_api_key: str | None = None,
+) -> McpBridge:
+    env_overrides: dict[str, str] = {}
+    provider = _coerce_optional_string(llm_provider)
+    api_url = _coerce_optional_string(llm_api_url)
+    api_key = _coerce_optional_string(llm_api_key)
+
+    if provider:
+        env_overrides["LLM_MODEL_PROVIDER"] = provider
+    if api_url:
+        env_overrides["LLM_MODEL_API_URL"] = api_url
+    if api_key:
+        env_overrides["LLM_MODEL_API_KEY"] = api_key
+
+    return McpBridge(
+        McpBridgeConfig(
+            command=resolve_mcp_command(),
+            llm_model=_coerce_optional_string(llm_model),
+            env_overrides=env_overrides,
+        )
+    )
