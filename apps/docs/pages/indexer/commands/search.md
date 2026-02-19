@@ -6,7 +6,7 @@ O comando `search` permite realizar **busca semântica** na collection de códig
 ## Visão Geral
 
 O comando:
-1. Gera um embedding da query usando o Ollama
+1. Gera um embedding da query usando o provider configurado
 2. Busca os vetores mais similares no Qdrant
 3. Retorna os chunks mais relevantes com score de similaridade e snippet contextual
 
@@ -30,12 +30,15 @@ python -m indexer search "sua query aqui"
 
 O comando utiliza as mesmas variáveis de ambiente do `init` e `index`:
 
-**Embeddings (Ollama):**
+**Embeddings:**
 | Variável | Default | Descrição |
 |----------|---------|-----------|
-| `OLLAMA_URL` | `http://localhost:11434` | URL do servidor Ollama |
 | `EMBEDDING_PROVIDER_CODE` | `ollama` | Provider de embedding para `code` |
 | `EMBEDDING_PROVIDER_DOCS` | `ollama` | Provider de embedding para `docs` |
+| `EMBEDDING_PROVIDER_CODE_API_URL` | `http://localhost:11434` | URL da API para `code` |
+| `EMBEDDING_PROVIDER_DOCS_API_URL` | `http://localhost:11434` | URL da API para `docs` |
+| `EMBEDDING_PROVIDER_CODE_API_KEY` | vazio | API key para `code` (opcional no `ollama`) |
+| `EMBEDDING_PROVIDER_DOCS_API_KEY` | vazio | API key para `docs` (opcional no `ollama`) |
 | `EMBEDDING_MODEL_CODE` | `manutic/nomic-embed-code` | Modelo de embedding para `code` |
 | `EMBEDDING_MODEL_DOCS` | `bge-m3` | Modelo de embedding para `docs` |
 
@@ -152,7 +155,7 @@ Os filtros são aplicados diretamente no Qdrant, permitindo refinar resultados s
 
 | Cenário | Comportamento |
 |---------|---------------|
-| Ollama indisponível | Exit code `1`, mensagem de erro |
+| API de embedding indisponível | Exit code `1`, mensagem de erro |
 | Qdrant indisponível | Exit code `1`, mensagem de erro |
 | Collection não existe | Exit code `1`, mensagem de erro |
 | Nenhum resultado | Lista vazia, exit code `0` |
@@ -160,11 +163,11 @@ Os filtros são aplicados diretamente no Qdrant, permitindo refinar resultados s
 ## Troubleshooting
 
 ### "Erro no embedder: Falha ao obter vector size"
-O Ollama não está acessível ou o modelo não está instalado.
+A API do provider de embedding não está acessível ou o modelo não está disponível.
 
 ```bash
-# Verificar Ollama
-curl http://localhost:11434
+# Verificar API (exemplo Ollama)
+curl http://localhost:11434/api/tags
 
 # Verificar modelo
 ollama list
