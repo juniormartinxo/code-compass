@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 
 import pytest
 
@@ -127,7 +128,7 @@ def test_new_session_announces_available_slash_commands(
         }
         assert hints_by_name["repo"] == "<repo[,repo2,...]>"
         assert hints_by_name["config"] is None
-        assert hints_by_name["model"] == "<model|reset>"
+        assert hints_by_name["model"] == "<model|perfil|reset>"
         assert hints_by_name["grounded"] == "<on|off|reset>"
         assert hints_by_name["content-type"] == "<code|docs|all|reset>"
 
@@ -403,6 +404,137 @@ def test_config_command_reflects_runtime_overrides(monkeypatch: pytest.MonkeyPat
         assert payload["contentType"]["env"] is None
         assert payload["askCodePayloadPreview"]["scope"] == {"type": "repo", "repo": "base"}
         assert payload["askCodePayloadPreview"]["llmModel"] == "gpt-5"
+
+    asyncio.run(run())
+
+
+def test_model_command_uses_profile_from_toml(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from code_compass_acp import agent as agent_mod
+
+    profiles_file = tmp_path / "model-profiles.toml"
+    profiles_file.write_text(
+        "\n".join(
+            [
+                "[profiles.deepseek]",
+                "model = \"deepseek-reasoner\"",
+                "provider = \"deepseek\"",
+                "api_url = \"https://api.deepseek.com\"",
+                "api_key_env = \"DEEPSEEK_API_KEY\"",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ACP_MODEL_PROFILES_FILE", str(profiles_file))
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "token-123")
+
+    build_calls: list[dict[str, str | None]] = []
+
+    def fake_build_bridge(
+        llm_model: str | None = None,
+        llm_provider: str | None = None,
+        llm_api_url: str | None = None,
+        llm_api_key: str | None = None,
+    ) -> DummyBridge:
+        build_calls.append(
+            {
+                "llm_model": llm_model,
+                "llm_provider": llm_provider,
+                "llm_api_url": llm_api_url,
+                "llm_api_key": llm_api_key,
+            }
+        )
+        return DummyBridge()
+
+    monkeypatch.setattr(agent_mod, "build_bridge", fake_build_bridge)
+
+    async def run() -> None:
+        agent = agent_mod.CodeCompassAgent()
+        conn = DummyConn()
+        agent.on_connect(conn)  # type: ignore[arg-type]
+
+        session = await agent.new_session(cwd=".", mcpServers=[])
+        response = await agent.prompt(
+            acp.PromptRequest(
+                prompt=[acp.text_block("/model profile:deepseek")],
+                session_id=session.session_id,
+            )
+        )
+
+        assert response.stop_reason == "end_turn"
+        assert len(build_calls) >= 2
+        assert build_calls[-1]["llm_model"] == "deepseek-reasoner"
+        assert build_calls[-1]["llm_provider"] == "deepseek"
+        assert build_calls[-1]["llm_api_url"] == "https://api.deepseek.com"
+        assert build_calls[-1]["llm_api_key"] == "token-123"
+
+        state = agent._sessions[session.session_id]
+        assert state.model_override == "deepseek-reasoner"
+        assert state.model_profile_override == "deepseek"
+        assert state.llm_provider_override == "deepseek"
+        assert state.llm_api_url_override == "https://api.deepseek.com"
+        assert state.llm_api_key_override == "token-123"
+        assert any("Perfil 'deepseek' ativado:" in text for _, text in conn.updates)
+
+        config_response = await agent.prompt(
+            acp.PromptRequest(
+                prompt=[acp.text_block("/config")],
+                session_id=session.session_id,
+            )
+        )
+        assert config_response.stop_reason == "end_turn"
+        _, config_text = conn.updates[-1]
+        config_payload = _extract_config_payload(config_text)
+        assert config_payload["model"]["active"] == "deepseek-reasoner"
+        assert config_payload["model"]["profile"] == "deepseek"
+        assert config_payload["model"]["provider"]["active"] == "deepseek"
+        assert config_payload["model"]["apiUrl"]["active"] == "https://api.deepseek.com"
+        assert config_payload["model"]["apiKey"]["activeConfigured"] is True
+
+    asyncio.run(run())
+
+
+def test_model_command_reports_profile_loading_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from code_compass_acp import agent as agent_mod
+
+    profiles_file = tmp_path / "model-profiles.toml"
+    profiles_file.write_text(
+        "\n".join(
+            [
+                "[profiles.deepseek]",
+                "model = ",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ACP_MODEL_PROFILES_FILE", str(profiles_file))
+
+    dummy = DummyBridge()
+    monkeypatch.setattr(agent_mod, "build_bridge", lambda llm_model=None: dummy)
+
+    async def run() -> None:
+        agent = agent_mod.CodeCompassAgent()
+        conn = DummyConn()
+        agent.on_connect(conn)  # type: ignore[arg-type]
+
+        session = await agent.new_session(cwd=".", mcpServers=[])
+        response = await agent.prompt(
+            acp.PromptRequest(
+                prompt=[acp.text_block("/model profile:deepseek")],
+                session_id=session.session_id,
+            )
+        )
+
+        assert response.stop_reason == "end_turn"
+        assert any("Falha ao carregar perfis de modelo." in text for _, text in conn.updates)
+        state = agent._sessions[session.session_id]
+        assert state.model_override is None
+        assert state.model_profile_override is None
 
     asyncio.run(run())
 
