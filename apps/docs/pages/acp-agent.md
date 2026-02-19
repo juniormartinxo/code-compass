@@ -69,6 +69,7 @@ Env vars úteis:
 
 - `MCP_COMMAND`: comando para subir o MCP server (`--transport stdio`)
 - `LLM_MODEL`: repassado ao MCP via `env`
+- `ACP_MODEL_PROFILES_FILE`: arquivo TOML de perfis para `/model` (default `model-profiles.toml`, local e não versionado)
 - `ACP_REPO`: repo padrão enviado ao `ask_code`
 - `ACP_PATH_PREFIX`, `ACP_LANGUAGE`, `ACP_TOPK`, `ACP_MIN_SCORE`: filtros do `ask_code`
 - `ACP_GROUNDED`: força resposta restrita ao contexto
@@ -79,10 +80,14 @@ Env vars úteis:
 Comandos de sessão no Toad:
 
 - `/repo` e `/repo <nome|repo-a,repo-b>`: altera escopo de repo(s)
-- `/model` e `/model <nome|reset>`: altera modelo da sessão
+- `/model` e `/model <nome|perfil|reset>`: altera modelo da sessão
 - `/grounded` e `/grounded <on|off|reset>`: controla grounded em runtime por sessão
 - `/content-type` e `/contentType <code|docs|all|reset>`: controla `contentType` em runtime por sessão
 - `/config`: imprime a configuração efetiva atual e preview do payload enviado ao MCP
+
+Se `/model <nome>` casar com um perfil no arquivo TOML, o ACP aplica
+`model/provider/api_url/api_key` no bridge da sessão e reinicia o subprocesso MCP.
+Para lookup estrito por perfil, use `/model profile:<nome>`.
 
 ## Notas de operação
 
