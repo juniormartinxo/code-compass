@@ -1,0 +1,19 @@
+# Copie para model-profiles.toml e ajuste conforme seu ambiente.
+# Dica: prefira api_key_env para não salvar segredo em arquivo versionado.
+
+[profiles.ollama_local]
+model = "gpt-oss:latest"
+provider = "ollama"
+api_url = "http://localhost:11434"
+
+[profiles.deepseek_reasoner]
+model = "deepseek-reasoner"
+provider = "deepseek"
+api_url = "https://api.deepseek.com"
+api_key_env = "DEEPSEEK_API_KEY"
+
+[profiles.openai_gpt5mini]
+model = "gpt-5-mini"
+provider = "openai-compatible"
+api_url = "https://api.openai.com/v1"
+api_key_env = "OPENAI_API_KEY"
