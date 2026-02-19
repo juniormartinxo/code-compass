@@ -7,7 +7,7 @@ Pipeline de indexação de código para o Code Compass.
 O Indexer é responsável por:
 1. **Scan** - Escanear repositórios de código
 2. **Chunk** - Dividir arquivos em chunks semânticos
-3. **Embed** - Gerar embeddings via Ollama
+3. **Embed** - Gerar embeddings via provider HTTP configurável
 4. **Upsert** - Armazenar vetores no Qdrant
 5. **Search** - Busca semântica nos chunks indexados
 6. **Ask** - Perguntas em linguagem natural via RAG
@@ -15,10 +15,10 @@ O Indexer é responsável por:
 ## Pré-requisitos
 
 - Python 3.12+
-- **Ollama** rodando localmente com os modelos `manutic/nomic-embed-code` (code) e `bge-m3` (docs)
+- Provider de embedding configurado (default: **Ollama** local com `manutic/nomic-embed-code` e `bge-m3`)
 - **Qdrant** rodando localmente
 
-### Instalar Modelo no Ollama
+### Instalar modelos no Ollama (default)
 
 ```bash
 ollama pull manutic/nomic-embed-code
@@ -47,10 +47,13 @@ pip install httpx qdrant-client
 ### 2. Configurar variáveis de ambiente
 
 ```bash
-# Ollama
-export OLLAMA_URL=http://localhost:11434
+# Embeddings
 export EMBEDDING_PROVIDER_CODE=ollama
 export EMBEDDING_PROVIDER_DOCS=ollama
+export EMBEDDING_PROVIDER_CODE_API_URL=http://localhost:11434
+export EMBEDDING_PROVIDER_DOCS_API_URL=http://localhost:11434
+export EMBEDDING_PROVIDER_CODE_API_KEY=
+export EMBEDDING_PROVIDER_DOCS_API_KEY=
 export EMBEDDING_MODEL_CODE=manutic/nomic-embed-code
 export EMBEDDING_MODEL_DOCS=bge-m3
 export EMBEDDING_BATCH_SIZE=16
@@ -107,7 +110,7 @@ python -m indexer init
 ```
 
 Este comando:
-1. Conecta ao Ollama e **descobre o vector_size** de `code` e `docs` automaticamente
+1. Conecta ao provider de embedding e **descobre o vector_size** de `code` e `docs` automaticamente
 2. Resolve/gera os nomes das collections de `code` e `docs`
 3. Cria/valida collections no Qdrant
 4. Garante índice payload `content_type` (`keyword`)
@@ -118,13 +121,13 @@ Este comando:
   "embedding": {
     "code": {
       "provider": "ollama",
-      "ollama_url": "http://localhost:11434",
+      "api_url": "http://localhost:11434",
       "model": "manutic/nomic-embed-code",
       "vector_size": 3584
     },
     "docs": {
       "provider": "ollama",
-      "ollama_url": "http://localhost:11434",
+      "api_url": "http://localhost:11434",
       "model": "bge-m3",
       "vector_size": 3584
     }
@@ -154,7 +157,10 @@ Este comando:
 ```
 
 Opções:
-- `--ollama-url` - URL do Ollama
+- `--api-url-code` - URL da API de embedding para `code`
+- `--api-url-docs` - URL da API de embedding para `docs`
+- `--api-key-code` - API key para provider de `code` (opcional no Ollama)
+- `--api-key-docs` - API key para provider de `docs` (opcional no Ollama)
 - `--provider-code` - Provider de embedding para `code`
 - `--provider-docs` - Provider de embedding para `docs`
 - `--model-code` - Modelo de embedding para `code`
@@ -172,7 +178,7 @@ python -m indexer index --repo-root /path/to/repo
 Este comando:
 1. **Scan** - Escaneia o repositório
 2. **Chunk** - Divide cada arquivo em chunks
-3. **Embed** - Gera embeddings em batches via Ollama por tipo de conteúdo
+3. **Embed** - Gera embeddings em batches via provider por tipo de conteúdo
 4. **Upsert** - Armazena vetores no Qdrant com IDs estáveis
 
 **IDs estáveis**: Reindexar o mesmo arquivo/chunk não duplica pontos. Se o texto não mudou, o ID permanece o mesmo e o upsert é um no-op/overwrite.
@@ -306,13 +312,16 @@ Importante:
 
 ## Variáveis de Ambiente
 
-### Ollama (Embeddings)
+### Embeddings
 
 | Variável | Default | Descrição |
 |----------|---------|-----------|
 | `EMBEDDING_PROVIDER_CODE` | `ollama` | Provider de embeddings para `code` |
 | `EMBEDDING_PROVIDER_DOCS` | `ollama` | Provider de embeddings para `docs` |
-| `OLLAMA_URL` | `http://localhost:11434` | URL do Ollama |
+| `EMBEDDING_PROVIDER_CODE_API_URL` | `http://localhost:11434` | URL da API para embeddings `code` |
+| `EMBEDDING_PROVIDER_DOCS_API_URL` | `http://localhost:11434` | URL da API para embeddings `docs` |
+| `EMBEDDING_PROVIDER_CODE_API_KEY` | vazio | API key do provider para `code` (opcional no `ollama`) |
+| `EMBEDDING_PROVIDER_DOCS_API_KEY` | vazio | API key do provider para `docs` (opcional no `ollama`) |
 | `EMBEDDING_MODEL_CODE` | `manutic/nomic-embed-code` | Modelo de embedding para `code` |
 | `EMBEDDING_MODEL_DOCS` | `bge-m3` | Modelo de embedding para `docs` |
 | `EMBEDDING_BATCH_SIZE` | `16` | Textos por batch de embedding |
@@ -421,8 +430,8 @@ python -m pytest tests/ -v
 
 ### "Erro no embedder: Falha ao obter vector size"
 
-- Verifique se o Ollama está rodando: `curl http://localhost:11434`
-- Verifique se o modelo está instalado: `ollama list`
+- Verifique se a API do provider está acessível (ex.: `curl http://localhost:11434/api/tags` no Ollama)
+- Verifique se o modelo está disponível no provider configurado
 
 ### "Collection X tem vector size Y, mas embedding é size Z"
 
