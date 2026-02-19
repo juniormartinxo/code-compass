@@ -1,4 +1,4 @@
-"""Ollama embeddings provider com retry/backoff."""
+"""Embeddings provider HTTP com retry/backoff."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_OLLAMA_URL = "http://localhost:11434"
+DEFAULT_EMBEDDING_API_URL = "http://localhost:11434"
 DEFAULT_EMBEDDING_PROVIDER_CODE = "ollama"
 DEFAULT_EMBEDDING_PROVIDER_DOCS = "ollama"
 DEFAULT_EMBEDDING_MODEL_CODE = "manutic/nomic-embed-code"
@@ -36,7 +36,8 @@ class EmbedderConfig:
 
     content_type: str
     provider: str
-    ollama_url: str
+    api_url: str
+    api_key: str | None
     model: str
     batch_size: int
     max_retries: int
@@ -46,7 +47,8 @@ class EmbedderConfig:
 
 def load_embedder_config(
     content_type: str = "code",
-    ollama_url: str | None = None,
+    api_url: str | None = None,
+    api_key: str | None = None,
     model: str | None = None,
     provider: str | None = None,
     batch_size: int | None = None,
@@ -75,10 +77,12 @@ def load_embedder_config(
     resolved_provider = resolved_provider_raw.strip().lower()
     if not resolved_provider:
         resolved_provider = default_provider
-    if resolved_provider != "ollama":
+    if resolved_provider in {"openai", "openai_compatible"}:
+        resolved_provider = "openai-compatible"
+    if resolved_provider not in {"ollama", "openai-compatible", "deepseek"}:
         raise ValueError(
             f"EMBEDDING_PROVIDER_{suffix}='{resolved_provider}' não suportado. "
-            "Apenas 'ollama' é aceito no indexador atualmente."
+            "Use ollama, openai-compatible ou deepseek."
         )
 
     resolved_model_raw = model or os.getenv(
@@ -89,10 +93,33 @@ def load_embedder_config(
     if not resolved_model:
         resolved_model = default_model
 
+    resolved_api_url_raw = (
+        api_url
+        or os.getenv(f"EMBEDDING_PROVIDER_{suffix}_API_URL")
+    )
+    if resolved_api_url_raw and resolved_api_url_raw.strip():
+        resolved_api_url = resolved_api_url_raw.strip()
+    elif resolved_provider == "ollama":
+        resolved_api_url = DEFAULT_EMBEDDING_API_URL
+    else:
+        raise ValueError(
+            f"EMBEDDING_PROVIDER_{suffix}_API_URL é obrigatório para provider "
+            f"'{resolved_provider}'."
+        )
+
+    resolved_api_key_raw = api_key or os.getenv(f"EMBEDDING_PROVIDER_{suffix}_API_KEY")
+    resolved_api_key = resolved_api_key_raw.strip() if resolved_api_key_raw else None
+    if resolved_provider != "ollama" and not resolved_api_key:
+        raise ValueError(
+            f"EMBEDDING_PROVIDER_{suffix}_API_KEY é obrigatório para provider "
+            f"'{resolved_provider}'."
+        )
+
     return EmbedderConfig(
         content_type=resolved_content_type,
         provider=resolved_provider,
-        ollama_url=ollama_url or os.getenv("OLLAMA_URL", DEFAULT_OLLAMA_URL),
+        api_url=resolved_api_url,
+        api_key=resolved_api_key,
         model=resolved_model,
         batch_size=batch_size
         or int(os.getenv("EMBEDDING_BATCH_SIZE", str(DEFAULT_EMBEDDING_BATCH_SIZE))),
@@ -120,7 +147,7 @@ class EmbedderValidationError(EmbedderError):
 
 
 class OllamaEmbedder:
-    """Embedder usando Ollama local via HTTP."""
+    """Embedder HTTP (ollama/openai-compatible/deepseek)."""
 
     def __init__(self, config: EmbedderConfig | None = None) -> None:
         self.config = config or load_embedder_config()
@@ -139,8 +166,11 @@ class OllamaEmbedder:
 
     @property
     def embed_url(self) -> str:
-        """URL do endpoint de embeddings."""
-        return f"{self.config.ollama_url.rstrip('/')}/api/embed"
+        """URL do endpoint de embeddings conforme provider."""
+        base_url = self.config.api_url.rstrip("/")
+        if self.config.provider == "ollama":
+            return f"{base_url}/api/embed"
+        return f"{base_url}/embeddings"
 
     @property
     def vector_size(self) -> int | None:
@@ -163,19 +193,39 @@ class OllamaEmbedder:
         return False
 
     def _request_embeddings(self, texts: list[str]) -> list[list[float]]:
-        """Faz request ao Ollama e retorna embeddings."""
+        """Faz request ao provider e retorna embeddings."""
         payload = {"model": self.config.model, "input": texts}
 
-        response = self._client.post(self.embed_url, json=payload)
-        response.raise_for_status()
+        headers: dict[str, str] | None = None
+        if self.config.provider != "ollama":
+            headers = {
+                "Authorization": f"Bearer {self.config.api_key}",
+                "Content-Type": "application/json",
+            }
 
+        response = self._client.post(self.embed_url, json=payload, headers=headers)
+        response.raise_for_status()
         data = response.json()
-        embeddings = data.get("embeddings", [])
+
+        if self.config.provider == "ollama":
+            embeddings = data.get("embeddings", [])
+        else:
+            rows = data.get("data", [])
+            if not isinstance(rows, list):
+                raise EmbedderValidationError("Resposta inválida: campo 'data' ausente")
+            embeddings = [item.get("embedding") for item in rows if isinstance(item, dict)]
 
         if len(embeddings) != len(texts):
             raise EmbedderValidationError(
                 f"Quantidade de embeddings ({len(embeddings)}) != textos ({len(texts)})"
             )
+
+        if not all(
+            isinstance(embedding, list)
+            and all(isinstance(value, (int, float)) for value in embedding)
+            for embedding in embeddings
+        ):
+            raise EmbedderValidationError("Resposta inválida: embedding ausente ou malformado")
 
         return embeddings
 
@@ -280,9 +330,11 @@ class OllamaEmbedder:
             self._vector_size = len(embeddings[0])
             logger.info(
                 f"Vetor size descoberto: {self._vector_size} "
-                f"(modelo: {self.config.model})"
+                f"(provider: {self.config.provider}, modelo: {self.config.model})"
             )
             return self._vector_size
 
         except Exception as exc:
-            raise EmbedderError(f"Falha ao obter vector size: {exc}") from exc
+            raise EmbedderError(
+                f"Falha ao obter vector size (provider: {self.config.provider}): {exc}"
+            ) from exc
