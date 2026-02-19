@@ -41,6 +41,7 @@ os aliases dependem do comportamento desse comando.
 - `TOAD_PROJECT_DIR`: diretório usado como `PATH` no `toad acp` (default: `cwd`)
 - `ACP_AGENT_CMD`: caminho do agente ACP (opcional)
 - `ACP_AGENT_ARGS`: args extras do agente ACP
+- `ACP_MODEL_PROFILES_FILE`: arquivo TOML com perfis de modelo (`model-profiles.toml` por default, local e não versionado)
 - `ACP_REPO`: repo default da sessão
 - `LLM_MODEL`: modelo default da sessão
 
@@ -60,6 +61,10 @@ os aliases dependem do comportamento desse comando.
 - `/model` → mostra o modelo atual
 - `/model <nome>` → troca o modelo da sessão
 - `/model reset` → volta ao default (`LLM_MODEL`)
+
+Se `<nome>` casar com um perfil no TOML (`[profiles.<nome>]` ou por `model` único),
+o ACP aplica `model + provider + api_url + api_key` e reinicia o bridge da sessão.
+Use `/model profile:<nome>` para exigir lookup por perfil.
 
 ### Controlar grounded
 
