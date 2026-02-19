@@ -391,7 +391,7 @@ services:
       - "${QDRANT_HTTP_PORT:-6333}:6333"   # HTTP
       - "${QDRANT_GRPC_PORT:-6334}:6334"   # gRPC
     volumes:
-      - "${QDRANT_STORAGE_PATH:-../.qdrant_storage}:/qdrant/storage"
+      - "${QDRANT_STORAGE_PATH:-./qdrant_data}:/qdrant/storage:z"
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333'"]
       interval: 10s
@@ -431,7 +431,7 @@ COMPOSE_PROJECT_NAME=code-compass
 QDRANT_IMAGE=qdrant/qdrant:latest
 QDRANT_HTTP_PORT=6333
 QDRANT_GRPC_PORT=6334
-QDRANT_STORAGE_PATH=../.qdrant_storage
+QDRANT_STORAGE_PATH=./qdrant_data
 
 # -----------------------------
 # Qdrant
