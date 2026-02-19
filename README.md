@@ -442,7 +442,7 @@ QDRANT_STORAGE_PATH=./qdrant_data
 # -----------------------------
 QDRANT_URL=http://localhost:6333
 QDRANT_API_KEY=
-QDRANT_COLLECTION_BASE=compass__manutic_nomic_embed
+QDRANT_COLLECTION_BASE=compass_manutic_nomic_embed
 QDRANT_DISTANCE=COSINE
 QDRANT_UPSERT_BATCH=64
 
@@ -514,7 +514,7 @@ PATH_TRAVERSAL_GUARD=true
 
 ### Collection
 
-* `compass__manutic_nomic_embed` (exemplo)
+* `compass_manutic_nomic_embed` (exemplo)
 
 ### Point
 
@@ -548,9 +548,11 @@ Executa o fluxo RAG completo (embedding + busca + contexto + LLM) no servidor MC
 
 ---
 
-## Como conectar no Claude/Gemini/Codex via MCP
+## Como conectar clientes MCP (Claude, Codex, Cursor, VS Code, JetBrains, Gemini)
 
 > **Importante:** clientes MCP podem suportar diferentes transportes. O Code Compass suporta **STDIO** (processo local) e **HTTP** (endpoint JSON-RPC em `/mcp`). Alguns clientes também usam **HTTP/SSE**; sempre siga a doc do cliente.
+>
+> Para exemplos prontos, veja `apps/docs/pages/mcp-client-quickstart.md` e os templates em `apps/docs/assets/`.
 
 ### A) Claude (Claude Desktop)
 
@@ -561,12 +563,12 @@ A forma mais comum é registrar um **servidor local** no Claude Desktop (o clien
 * rodar o MCP server como **STDIO server** (processo local)
 * apontar o comando para iniciar o Code Compass
 
-> Observação: o formato exato de configuração varia por versão do Claude Desktop e método (extensão/instalação local). Consulte a página oficial de setup local. ([Claude Help Center][5])
+> Observação: o formato exato de configuração varia por versão/método do cliente.
 
 **Dica prática:**
 
-* Tenha um script `apps/mcp-server/start-stdio.sh` que sobe o NestJS em modo MCP-stdio (sem logs em stdout “sujo”).
-* E configure o Claude pra chamar esse script.
+* Use `bin/dev-mcp` (launcher do projeto para STDIO sem poluir `stdout`).
+* Configure o cliente para chamar esse launcher com path absoluto.
 
 ---
 
@@ -577,21 +579,47 @@ Codex lê a config em `~/.codex/config.toml` (ou em `.codex/config.toml` por pro
 **Exemplo de configuração (STDIO) — `.codex/config.toml`:**
 
 ```toml
-[mcp_servers.code_compass]
-command = "node"
-args = ["apps/mcp-server/dist/main.js"]
-env = { "MCP_SERVER_MODE" = "stdio" }
+[mcp_servers.code_compass_local]
+command = "/ABS/PATH/code-compass/bin/dev-mcp"
+args = []
+env = { QDRANT_URL = "http://localhost:6333", QDRANT_COLLECTION_BASE = "compass_manutic_nomic_embed", CODEBASE_ROOT = "/ABS/PATH/code-compass/code-base" }
 ```
 
-> Ajuste `command/args` conforme seu build. A doc do Codex detalha como registrar MCP servers no `config.toml`.
+Template pronto: `apps/docs/assets/codex-config-example.toml`.
 
-**Workflow sugerido:**
+### C) Cursor
+
+Arquivo comum de configuração:
+
+- `.cursor/mcp.json` (projeto) ou `~/.cursor/mcp.json` (global)
+
+Template pronto: `apps/docs/assets/cursor-mcp.json`.
+
+### D) VS Code
+
+Arquivo comum de configuração por workspace:
+
+- `.vscode/mcp.json`
+
+Template pronto: `apps/docs/assets/vscode-mcp.json`.
+
+### E) JetBrains (IntelliJ, WebStorm, PyCharm, Android Studio)
+
+Fluxo comum na IDE:
+
+1. `Settings`
+2. `Tools > AI Assistant > Model Context Protocol (MCP)`
+3. Adicionar/importar config JSON
+
+Template pronto: `apps/docs/assets/jetbrains-mcp.json`.
+
+**Workflow sugerido (vale para qualquer cliente):**
 
 1. `make up`
 2. `make index`
-3. build do server (`npm run build`)
-4. configurar `config.toml`
-5. usar Codex apontando para o projeto
+3. configurar cliente MCP com `bin/dev-mcp`
+4. testar `search_code` com termo existente
+5. validar `open_file` com `../../etc/passwd` (deve bloquear)
 
 ---
 
@@ -613,9 +641,9 @@ Configurações úteis:
 Endpoint MCP: `POST http://<host>:<port>/mcp` (JSON-RPC 2.0).
 
 
-### C) Gemini (duas rotas comuns)
+### F) Gemini (duas rotas comuns)
 
-#### C1) Gemini CLI
+#### F1) Gemini CLI
 
 O Gemini CLI tem suporte a MCP servers e documenta como configurar.
 
@@ -623,7 +651,7 @@ Aqui também é comum usar **STDIO** para servidor local.
 
 > Recomendação: se sua intenção é “Gemini no terminal”, Gemini CLI é o caminho mais previsível.
 
-#### C2) Gemini no Android Studio (Agent mode)
+#### F2) Gemini no Android Studio (Agent mode)
 
 O Android Studio tem fluxo próprio para **adicionar MCP server** ao agente do Gemini.
 Útil se o time está muito preso em Android Studio/JetBrains e quer toolchain “na IDE”.
