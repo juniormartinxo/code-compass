@@ -9,7 +9,7 @@ services:
       - "${QDRANT_HTTP_PORT:-6333}:6333" # HTTP API
       - "${QDRANT_GRPC_PORT:-6334}:6334" # gRPC
     volumes:
-      - "${QDRANT_STORAGE_PATH:-../.qdrant_storage}:/qdrant/storage"
+      - "${QDRANT_STORAGE_PATH:-./qdrant_data}:/qdrant/storage:z"
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333'"]
       interval: 10s
