@@ -14,7 +14,7 @@ from qdrant_client.http.exceptions import UnexpectedResponse
 logger = logging.getLogger(__name__)
 
 DEFAULT_QDRANT_URL = "http://localhost:6333"
-DEFAULT_QDRANT_COLLECTION_BASE = "compass__manutic_nomic_embed"
+DEFAULT_QDRANT_COLLECTION_BASE = "compass_manutic_nomic_embed"
 DEFAULT_QDRANT_DISTANCE = "COSINE"
 DEFAULT_QDRANT_UPSERT_BATCH = 64
 
