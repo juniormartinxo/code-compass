@@ -12,7 +12,7 @@ python -m indexer init [opções]
 
 O comando `init` prepara o ambiente para indexação:
 
-1. **Probe do Vector Size**: Conecta ao Ollama e descobre automaticamente o tamanho do vetor para `code` e `docs`
+1. **Probe do Vector Size**: Conecta ao provider de embedding e descobre automaticamente o tamanho do vetor para `code` e `docs`
 2. **Resolução dos Nomes**: Gera os nomes das collections de `code` e `docs`
 3. **Criação/Validação**: Cria as collections no Qdrant (se não existirem) ou valida as existentes
 
@@ -27,7 +27,10 @@ Este comando pode ser executado múltiplas vezes sem efeitos colaterais:
 
 | Opção | Descrição | Default |
 |-------|-----------|---------|
-| `--ollama-url` | URL do servidor Ollama | `http://localhost:11434` (env: `OLLAMA_URL`) |
+| `--api-url-code` | URL da API de embedding para `code` | env: `EMBEDDING_PROVIDER_CODE_API_URL` |
+| `--api-url-docs` | URL da API de embedding para `docs` | env: `EMBEDDING_PROVIDER_DOCS_API_URL` |
+| `--api-key-code` | API key do provider para `code` | env: `EMBEDDING_PROVIDER_CODE_API_KEY` |
+| `--api-key-docs` | API key do provider para `docs` | env: `EMBEDDING_PROVIDER_DOCS_API_KEY` |
 | `--provider-code` | Provider de embedding para `code` | `ollama` (env: `EMBEDDING_PROVIDER_CODE`) |
 | `--provider-docs` | Provider de embedding para `docs` | `ollama` (env: `EMBEDDING_PROVIDER_DOCS`) |
 | `--model-code` | Modelo de embedding para `code` | `manutic/nomic-embed-code` (env: `EMBEDDING_MODEL_CODE`) |
@@ -38,9 +41,12 @@ Este comando pode ser executado múltiplas vezes sem efeitos colaterais:
 
 As variáveis são lidas do ambiente e carregadas automaticamente de `.env` e `.env.local` na raiz do repositório. `.env.local` sobrescreve `.env`, e variáveis já exportadas no shell têm precedência.
 
-- `OLLAMA_URL`: URL do Ollama
 - `EMBEDDING_PROVIDER_CODE`: Provider de embedding para `code`
 - `EMBEDDING_PROVIDER_DOCS`: Provider de embedding para `docs`
+- `EMBEDDING_PROVIDER_CODE_API_URL`: URL da API de embedding para `code`
+- `EMBEDDING_PROVIDER_DOCS_API_URL`: URL da API de embedding para `docs`
+- `EMBEDDING_PROVIDER_CODE_API_KEY`: API key do provider para `code` (opcional no `ollama`)
+- `EMBEDDING_PROVIDER_DOCS_API_KEY`: API key do provider para `docs` (opcional no `ollama`)
 - `EMBEDDING_MODEL_CODE`: Modelo de embedding para `code`
 - `EMBEDDING_MODEL_DOCS`: Modelo de embedding para `docs`
 - `QDRANT_URL`: URL do Qdrant
@@ -57,13 +63,13 @@ O comando retorna um JSON com informações da inicialização:
   "embedding": {
     "code": {
       "provider": "ollama",
-      "ollama_url": "http://localhost:11434",
+      "api_url": "http://localhost:11434",
       "model": "manutic/nomic-embed-code",
       "vector_size": 3584
     },
     "docs": {
       "provider": "ollama",
-      "ollama_url": "http://localhost:11434",
+      "api_url": "http://localhost:11434",
       "model": "bge-m3",
       "vector_size": 3584
     }
@@ -87,7 +93,7 @@ O comando retorna um JSON com informações da inicialização:
 
 | Campo | Descrição |
 |-------|-----------|
-| `embedding` | Configuração por tipo (`provider`, `ollama_url`, `model`, `vector_size`) |
+| `embedding` | Configuração por tipo (`provider`, `api_url`, `model`, `vector_size`) |
 | `collections` | Mapa com collections finais (`code` e `docs`) e ação (`created`/`validated`) |
 | `distance` | Métrica de distância configurada |
 | `qdrant_url` | URL do Qdrant usado |
@@ -122,7 +128,8 @@ python -m indexer init
 
 ```bash
 python -m indexer init \
-  --ollama-url http://ollama.local:11434 \
+  --api-url-code http://ollama.local:11434 \
+  --api-url-docs http://ollama.local:11434 \
   --qdrant-url http://qdrant.local:6333
 ```
 
@@ -130,12 +137,12 @@ python -m indexer init \
 
 ### "Erro no embedder: Falha ao obter vector size"
 
-O Ollama não está acessível ou o modelo não está instalado.
+A API do provider de embedding não está acessível ou o modelo não está disponível.
 
 **Solução:**
 ```bash
-# Verificar Ollama
-curl http://localhost:11434
+# Verificar API (exemplo Ollama)
+curl http://localhost:11434/api/tags
 
 # Instalar modelos
 ollama pull manutic/nomic-embed-code
