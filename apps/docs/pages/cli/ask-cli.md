@@ -42,6 +42,8 @@ code-compass chat
 
 O `chat` tenta abrir o Toad já apontando para o **ACP Agent**. Se o agente estiver
 disponível, ele injeta `toad acp <agent-cmd>` automaticamente.
+No fluxo padrão (sem `TOAD_COMMAND`), o CLI usa `python -m code_compass_cli.toad_patched`
+para habilitar aliases locais `/clear` e `/close`.
 
 ## Flags
 
@@ -59,8 +61,8 @@ disponível, ele injeta `toad acp <agent-cmd>` automaticamente.
 ## Fluxo de execução
 
 - `ask` fala direto com o **ACP Agent** (`apps/acp`), que por sua vez chama o MCP server.
-- `chat` abre a TUI do Toad usando `TOAD_COMMAND`/`TOAD_ARGS` ou `python -m toad` e
-  injeta o agente ACP quando disponível.
+- `chat` abre a TUI do Toad usando `TOAD_COMMAND`/`TOAD_ARGS` ou
+  `python -m code_compass_cli.toad_patched` e injeta o agente ACP quando disponível.
 
 ## Configuração via env
 
@@ -69,6 +71,7 @@ disponível, ele injeta `toad acp <agent-cmd>` automaticamente.
 - `TOAD_PROFILE`
 - `TOAD_COMMAND` (binário do toad, opcional)
 - `TOAD_ARGS` (args extras para o toad)
+- `TOAD_PROJECT_DIR` (path enviado ao `toad acp`; default: diretório atual)
 - `ACP_AGENT_CMD` (comando do agente ACP, opcional)
 - `ACP_AGENT_ARGS` (args extras do agente ACP)
 - `ACP_REPO`, `ACP_PATH_PREFIX`, `ACP_LANGUAGE`, `ACP_TOPK`, `ACP_MIN_SCORE` (override do filtro no agente ACP)
@@ -79,4 +82,12 @@ disponível, ele injeta `toad acp <agent-cmd>` automaticamente.
 - O comando `chat` exige `batrachian-toad` instalado em Python 3.14+ ou `TOAD_COMMAND` apontando para um binário compatível.
 - Dentro do chat, use `/repo <nome>` para trocar para um repo (ex.: `/repo golyzer`) ou `/repo <repo-a,repo-b>` para múltiplos repos.
 - Dentro do chat, use `/model <nome>` para trocar o modelo na sessão (use `/model` para ver o atual e `/model reset` para voltar ao default).
+- Dentro do chat, use `/grounded <on|off|reset>` para ativar/desativar grounded em runtime.
+- Dentro do chat, use `/content-type <code|docs|all|reset>` (ou `/contentType`) para controlar `contentType` em runtime.
 - Dentro do chat, use `/config` para visualizar a configuração efetiva da sessão (scope, modelo, filtros e flags).
+- Dentro do chat, use `/clear` (alias de `/toad:clear`) para limpar a janela de conversa.
+- Dentro do chat, use `/close` (alias de `/toad:session-close`) para fechar a sessão atual.
+
+Guia de manutenção dos slash commands:
+
+- `apps/docs/pages/cli/comandos-slash.md`
