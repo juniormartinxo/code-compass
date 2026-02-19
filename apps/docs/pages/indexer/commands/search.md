@@ -47,7 +47,7 @@ O comando utiliza as mesmas variáveis de ambiente do `init` e `index`:
 |----------|---------|-----------|
 | `QDRANT_URL` | `http://localhost:6333` | URL do servidor Qdrant |
 | `QDRANT_API_KEY` | - | API key (opcional) |
-| `QDRANT_COLLECTION_BASE` | `compass__manutic_nomic_embed` | Stem base das collections |
+| `QDRANT_COLLECTION_BASE` | `compass_manutic_nomic_embed` | Stem base das collections |
 
 > Dica operacional: para evitar mismatch entre indexação e consulta, mantenha `QDRANT_COLLECTION_BASE` igual no indexer e no MCP.
 >
