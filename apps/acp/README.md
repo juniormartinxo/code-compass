@@ -35,6 +35,7 @@ Env vars úteis:
 
 - `MCP_COMMAND`: comando do MCP server (`--transport stdio`)
 - `LLM_MODEL`: repassado ao MCP
+- `ACP_MODEL_PROFILES_FILE`: arquivo TOML de perfis para `/model` (default `model-profiles.toml` na raiz, local e não versionado)
 - `ACP_REPO`: repo padrão enviado ao `ask_code`
 - `ACP_CONTENT_TYPE`: tipo de conteúdo (`code`, `docs`, `all`)
 - `ACP_STRICT`: quando `true`, falha em vez de retorno parcial se alguma coleção estiver indisponível
@@ -46,6 +47,10 @@ Isso permite que o menu fuzzy (`/`) mostre os comandos abaixo:
 
 - `/repo <repo[,repo2,...]>`
 - `/config`
-- `/model <model|reset>`
+- `/model <model|perfil|reset>`
 - `/grounded <on|off|reset>`
 - `/content-type <code|docs|all|reset>`
+
+Quando o valor de `/model` bate com um perfil do `ACP_MODEL_PROFILES_FILE`, o agente aplica
+`model + provider + api_url + api_key` no bridge da sessão e reinicia o subprocesso MCP.
+Para forçar lookup por perfil (sem fallback para nome de modelo), use `/model profile:<nome>`.
