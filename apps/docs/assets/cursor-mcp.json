@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "code-compass-local": {
+      "type": "stdio",
+      "command": "/ABS/PATH/code-compass/bin/dev-mcp",
+      "args": [],
+      "env": {
+        "QDRANT_URL": "http://localhost:6333",
+        "QDRANT_COLLECTION_BASE": "compass_manutic_nomic_embed",
+        "CODEBASE_ROOT": "/ABS/PATH/code-compass/code-base"
+      }
+    }
+  }
+}
