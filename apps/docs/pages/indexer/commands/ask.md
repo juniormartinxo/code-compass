@@ -58,7 +58,7 @@ Precedência de configuração do modelo no `ask`: `--model` > `LLM_MODEL` > `gp
 | Variável | Default | Descrição |
 |----------|---------|-----------|
 | `QDRANT_URL` | `http://localhost:6333` | URL do servidor Qdrant |
-| `QDRANT_COLLECTION_BASE` | `compass__manutic_nomic_embed` | Stem base das collections |
+| `QDRANT_COLLECTION_BASE` | `compass_manutic_nomic_embed` | Stem base das collections |
 
 > Dica operacional: para ambiente multi-repo, mantenha `QDRANT_COLLECTION_BASE` igual no indexer e no MCP server.
 
