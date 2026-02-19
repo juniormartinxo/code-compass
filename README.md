@@ -52,6 +52,10 @@ Ele indexa repositórios (código + docs), gera embeddings e armazena tudo em um
 
 ### 1) Configure `.env.local`
 Crie `.env.local` a partir de `.env.example` (inclui `LLM_MODEL` para o comando `ask`).
+Se usar troca de perfil via `/model` no chat ACP, copie também `model-profiles.example.toml`
+para `model-profiles.toml` e ajuste os perfis.
+`model-profiles.toml` é local e pode conter dados sensíveis (ex.: endpoint/chave), portanto
+não deve ser versionado.
 
 > O `Makefile` prioriza `.env.local` quando o arquivo existe.
 
