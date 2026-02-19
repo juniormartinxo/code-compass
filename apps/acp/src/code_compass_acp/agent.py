@@ -14,6 +14,9 @@ import acp
 from .bridge import McpBridge, build_bridge
 from .chunker import chunk_by_paragraph
 
+TRUTHY_VALUES = {"1", "true", "yes", "on"}
+VALID_CONTENT_TYPES = {"code", "docs", "all"}
+
 
 @dataclass
 class SessionState:
@@ -87,6 +90,10 @@ class CodeCompassAgent(acp.Agent):
 
         async with state.prompt_lock:
             try:
+                command_response = await _handle_config_command(self._conn, session_id, state, question)
+                if command_response is not None:
+                    return command_response
+
                 command_response = await _handle_repo_command(self._conn, session_id, state, question)
                 if command_response is not None:
                     return command_response
@@ -95,47 +102,7 @@ class CodeCompassAgent(acp.Agent):
                 if command_response is not None:
                     return command_response
 
-                raw_repo = (state.repo_override or os.getenv("ACP_REPO", "code-compass")).strip()
-                payload: dict[str, Any] = {
-                    "query": question,
-                    "scope": {"type": "repo", "repo": raw_repo},
-                }
-                path_prefix = os.getenv("ACP_PATH_PREFIX", "").strip()
-                language = os.getenv("ACP_LANGUAGE", "").strip()
-                top_k = os.getenv("ACP_TOPK", "").strip()
-                min_score = os.getenv("ACP_MIN_SCORE", "").strip()
-                llm_model = (state.model_override or os.getenv("LLM_MODEL", "")).strip()
-                grounded = os.getenv("ACP_GROUNDED", "").strip().lower()
-                content_type = os.getenv("ACP_CONTENT_TYPE", "").strip().lower()
-                strict = os.getenv("ACP_STRICT", "").strip().lower()
-
-                if "," in raw_repo:
-                    repos = [r.strip() for r in raw_repo.split(",") if r.strip()]
-                    if repos:
-                        payload["scope"] = {"type": "repos", "repos": repos}
-
-                if path_prefix:
-                    payload["pathPrefix"] = path_prefix
-                if language:
-                    payload["language"] = language
-                if top_k:
-                    try:
-                        payload["topK"] = int(top_k)
-                    except ValueError:
-                        pass
-                if min_score:
-                    try:
-                        payload["minScore"] = float(min_score)
-                    except ValueError:
-                        pass
-                if llm_model:
-                    payload["llmModel"] = llm_model
-                if grounded in {"1", "true", "yes", "on"}:
-                    payload["grounded"] = True
-                if content_type in {"code", "docs", "all"}:
-                    payload["contentType"] = content_type
-                if strict in {"1", "true", "yes", "on"}:
-                    payload["strict"] = True
+                payload = _build_ask_payload(question, state)
                 result = await state.mcp_bridge.ask_code(payload, state.cancel_event)
             except asyncio.CancelledError:
                 return acp.PromptResponse(stop_reason="cancelled")
@@ -151,8 +118,8 @@ class CodeCompassAgent(acp.Agent):
                 return acp.PromptResponse(stop_reason="end_turn")
 
             answer = str(result.get("answer", ""))
-            show_meta = os.getenv("ACP_SHOW_META", "").strip().lower() in {"1", "true", "yes", "on"}
-            show_context = os.getenv("ACP_SHOW_CONTEXT", "").strip().lower() in {"1", "true", "yes", "on"}
+            show_meta = _is_truthy(os.getenv("ACP_SHOW_META", ""))
+            show_context = _is_truthy(os.getenv("ACP_SHOW_CONTEXT", ""))
             if (show_meta or show_context) and self._conn:
                 meta_payload: dict[str, Any] = {}
                 if show_meta and isinstance(result.get("meta"), dict):
@@ -219,6 +186,24 @@ def _blocks_to_text(
     return "\n".join(parts).strip()
 
 
+async def _handle_config_command(
+    conn: acp.Client | None,
+    session_id: str,
+    state: SessionState,
+    question: str,
+) -> acp.PromptResponse | None:
+    text = question.strip()
+    if not text.startswith("/config"):
+        return None
+
+    config = _build_runtime_config(state)
+    reply = f"Config atual:\n{json.dumps(config, ensure_ascii=False, indent=2)}"
+
+    if conn:
+        await conn.session_update(session_id, acp.update_agent_message_text(reply))
+    return acp.PromptResponse(stop_reason="end_turn")
+
+
 async def _handle_repo_command(
     conn: acp.Client | None,
     session_id: str,
@@ -232,14 +217,32 @@ async def _handle_repo_command(
     if len(parts) == 1:
         reply = f"Repo atual: {state.repo_override or os.getenv('ACP_REPO', 'code-compass')}"
     else:
-        repo = parts[1].strip()
-        if not repo:
-            reply = "Nome do repo vazio. Use /repo <nome>."
-        elif not await _repo_exists(repo):
-            reply = f"Repo '{repo}' não existe. Use /repo <nome>."
+        repos = _parse_repos_csv(parts[1])
+        if not repos:
+            reply = "Nome do repo vazio. Use /repo <nome> ou /repo repo-a,repo-b."
         else:
-            state.repo_override = repo
-            reply = f"Repo atualizado para: {state.repo_override}"
+            missing_repos: list[str] = []
+            for repo in repos:
+                if not await _repo_exists(repo):
+                    missing_repos.append(repo)
+
+            if missing_repos:
+                if len(missing_repos) == 1:
+                    reply = (
+                        f"Repo '{missing_repos[0]}' não existe. "
+                        "Use /repo <nome> ou /repo repo-a,repo-b."
+                    )
+                else:
+                    reply = (
+                        f"Repos inexistentes: {','.join(missing_repos)}. "
+                        "Use /repo <nome> ou /repo repo-a,repo-b."
+                    )
+            else:
+                state.repo_override = ",".join(repos)
+                if len(repos) == 1:
+                    reply = f"Repo atualizado para: {state.repo_override}"
+                else:
+                    reply = f"Repos atualizados para: {state.repo_override}"
 
     if conn:
         await conn.session_update(session_id, acp.update_agent_message_text(reply))
@@ -257,6 +260,123 @@ async def _repo_exists(repo: str) -> bool:
         return repo_path.exists() and repo_path.is_dir()
     except Exception:
         return False
+
+
+def _build_runtime_config(state: SessionState) -> dict[str, Any]:
+    payload_preview = _build_ask_payload("<query>", state)
+    payload_preview.pop("query", None)
+
+    active_repo = (state.repo_override or os.getenv("ACP_REPO", "code-compass")).strip()
+    active_model = (state.model_override or os.getenv("LLM_MODEL", "")).strip()
+
+    return {
+        "scope": payload_preview.get("scope"),
+        "repo": {
+            "active": active_repo,
+            "override": state.repo_override,
+            "env": os.getenv("ACP_REPO", "code-compass").strip(),
+        },
+        "model": {
+            "active": active_model or None,
+            "override": state.model_override,
+            "env": os.getenv("LLM_MODEL", "").strip() or None,
+        },
+        "filters": {
+            "pathPrefix": payload_preview.get("pathPrefix"),
+            "language": payload_preview.get("language"),
+            "topK": payload_preview.get("topK"),
+            "minScore": payload_preview.get("minScore"),
+            "contentType": payload_preview.get("contentType"),
+            "grounded": payload_preview.get("grounded", False),
+            "strict": payload_preview.get("strict", False),
+        },
+        "passthrough": {
+            "showMeta": _is_truthy(os.getenv("ACP_SHOW_META", "")),
+            "showContext": _is_truthy(os.getenv("ACP_SHOW_CONTEXT", "")),
+        },
+        "codebaseRoot": os.getenv("CODEBASE_ROOT", "").strip() or None,
+        "askCodePayloadPreview": payload_preview,
+    }
+
+
+def _build_ask_payload(question: str, state: SessionState) -> dict[str, Any]:
+    raw_repo = (state.repo_override or os.getenv("ACP_REPO", "code-compass")).strip()
+    payload: dict[str, Any] = {
+        "query": question,
+        "scope": _resolve_scope(raw_repo),
+    }
+
+    path_prefix = os.getenv("ACP_PATH_PREFIX", "").strip()
+    language = os.getenv("ACP_LANGUAGE", "").strip()
+    top_k = _parse_int(os.getenv("ACP_TOPK", ""))
+    min_score = _parse_float(os.getenv("ACP_MIN_SCORE", ""))
+    llm_model = (state.model_override or os.getenv("LLM_MODEL", "")).strip()
+    grounded = _is_truthy(os.getenv("ACP_GROUNDED", ""))
+    content_type = os.getenv("ACP_CONTENT_TYPE", "").strip().lower()
+    strict = _is_truthy(os.getenv("ACP_STRICT", ""))
+
+    if path_prefix:
+        payload["pathPrefix"] = path_prefix
+    if language:
+        payload["language"] = language
+    if top_k is not None:
+        payload["topK"] = top_k
+    if min_score is not None:
+        payload["minScore"] = min_score
+    if llm_model:
+        payload["llmModel"] = llm_model
+    if grounded:
+        payload["grounded"] = True
+    if content_type in VALID_CONTENT_TYPES:
+        payload["contentType"] = content_type
+    if strict:
+        payload["strict"] = True
+
+    return payload
+
+
+def _resolve_scope(raw_repo: str) -> dict[str, Any]:
+    parsed_repos = _parse_repos_csv(raw_repo)
+    if len(parsed_repos) == 1:
+        return {"type": "repo", "repo": parsed_repos[0]}
+    if len(parsed_repos) > 1:
+        return {"type": "repos", "repos": parsed_repos}
+    return {"type": "repo", "repo": raw_repo}
+
+
+def _parse_repos_csv(value: str) -> list[str]:
+    repos: list[str] = []
+    for raw_repo in value.split(","):
+        repo = raw_repo.strip()
+        if not repo:
+            continue
+        if repo not in repos:
+            repos.append(repo)
+    return repos
+
+
+def _parse_int(value: str) -> int | None:
+    value = value.strip()
+    if not value:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+def _parse_float(value: str) -> float | None:
+    value = value.strip()
+    if not value:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def _is_truthy(value: str) -> bool:
+    return value.strip().lower() in TRUTHY_VALUES
 
 
 async def _handle_model_command(
