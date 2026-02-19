@@ -38,14 +38,29 @@ class DummyBridge:
 class DummyConn:
     def __init__(self) -> None:
         self.updates: list[tuple[str, str]] = []
+        self.raw_updates: list[tuple[str, object]] = []
 
     async def session_update(self, session_id: str, update: object) -> None:
+        self.raw_updates.append((session_id, update))
         content = getattr(update, "content", None)
         text = getattr(content, "text", None) if content is not None else None
         if not isinstance(text, str):
             fallback = getattr(update, "text", "")
             text = fallback if isinstance(fallback, str) else ""
         self.updates.append((session_id, text))
+
+
+def _extract_config_payload(text: str) -> dict[str, object]:
+    marker = "Config atual:\n"
+    assert text.startswith(marker)
+    payload_text = text[len(marker) :].strip()
+
+    if payload_text.startswith("```"):
+        lines = payload_text.splitlines()
+        if len(lines) >= 3 and lines[-1].strip() == "```":
+            payload_text = "\n".join(lines[1:-1])
+
+    return json.loads(payload_text)
 
 
 def test_prompt_receives_updates(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -69,6 +84,52 @@ def test_prompt_receives_updates(monkeypatch: pytest.MonkeyPatch) -> None:
 
         assert response.stop_reason == "end_turn"
         assert conn.updates
+
+    asyncio.run(run())
+
+
+def test_new_session_announces_available_slash_commands(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from code_compass_acp import agent as agent_mod
+
+    dummy = DummyBridge()
+    monkeypatch.setattr(agent_mod, "build_bridge", lambda llm_model=None: dummy)
+
+    async def run() -> None:
+        agent = agent_mod.CodeCompassAgent()
+        conn = DummyConn()
+        agent.on_connect(conn)  # type: ignore[arg-type]
+
+        session = await agent.new_session(cwd=".", mcpServers=[])
+
+        command_update = None
+        for update_session_id, update in conn.raw_updates:
+            if update_session_id != session.session_id:
+                continue
+            if getattr(update, "session_update", "") == "available_commands_update":
+                command_update = update
+                break
+
+        assert command_update is not None
+
+        available_commands = getattr(command_update, "available_commands", [])
+        names = {command.name for command in available_commands}
+        assert names == {"repo", "config", "model", "grounded", "content-type"}
+
+        hints_by_name = {
+            command.name: (
+                command.input.root.hint
+                if command.input is not None
+                else None
+            )
+            for command in available_commands
+        }
+        assert hints_by_name["repo"] == "<repo[,repo2,...]>"
+        assert hints_by_name["config"] is None
+        assert hints_by_name["model"] == "<model|reset>"
+        assert hints_by_name["grounded"] == "<on|off|reset>"
+        assert hints_by_name["content-type"] == "<code|docs|all|reset>"
 
     asyncio.run(run())
 
@@ -264,10 +325,15 @@ def test_config_command_reports_effective_payload(monkeypatch: pytest.MonkeyPatc
         assert response.stop_reason == "end_turn"
         assert conn.updates
         _, text = conn.updates[-1]
-        assert text.startswith("Config atual:\n")
-        payload = json.loads(text.split("Config atual:\n", maxsplit=1)[1])
+        payload = _extract_config_payload(text)
         assert payload["scope"] == {"type": "repos", "repos": ["golyzer", "cfi"]}
         assert payload["model"]["active"] == "gpt-5-mini"
+        assert payload["grounded"]["active"] is True
+        assert payload["grounded"]["override"] is None
+        assert payload["grounded"]["env"] is True
+        assert payload["contentType"]["active"] == "docs"
+        assert payload["contentType"]["override"] is None
+        assert payload["contentType"]["env"] == "docs"
         assert payload["filters"]["pathPrefix"] == "apps/"
         assert payload["filters"]["language"] == "ts"
         assert payload["filters"]["topK"] == 15
@@ -325,12 +391,195 @@ def test_config_command_reflects_runtime_overrides(monkeypatch: pytest.MonkeyPat
 
         assert response.stop_reason == "end_turn"
         _, text = conn.updates[-1]
-        payload = json.loads(text.split("Config atual:\n", maxsplit=1)[1])
+        payload = _extract_config_payload(text)
         assert payload["repo"]["active"] == "base"
         assert payload["repo"]["override"] == "base"
         assert payload["model"]["active"] == "gpt-5"
         assert payload["model"]["override"] == "gpt-5"
+        assert payload["grounded"]["active"] is False
+        assert payload["grounded"]["override"] is None
+        assert payload["contentType"]["active"] is None
+        assert payload["contentType"]["override"] is None
+        assert payload["contentType"]["env"] is None
         assert payload["askCodePayloadPreview"]["scope"] == {"type": "repo", "repo": "base"}
         assert payload["askCodePayloadPreview"]["llmModel"] == "gpt-5"
+
+    asyncio.run(run())
+
+
+def test_grounded_command_on_off_and_reset(monkeypatch: pytest.MonkeyPatch) -> None:
+    from code_compass_acp import agent as agent_mod
+
+    dummy = DummyBridge()
+    monkeypatch.setattr(agent_mod, "build_bridge", lambda llm_model=None: dummy)
+    monkeypatch.setenv("ACP_GROUNDED", "false")
+
+    async def run() -> None:
+        agent = agent_mod.CodeCompassAgent()
+        conn = DummyConn()
+        agent.on_connect(conn)  # type: ignore[arg-type]
+
+        session = await agent.new_session(cwd=".", mcpServers=[])
+
+        show_response = await agent.prompt(
+            acp.PromptRequest(
+                prompt=[acp.text_block("/grounded")],
+                session_id=session.session_id,
+            )
+        )
+        assert show_response.stop_reason == "end_turn"
+        assert any("Grounded atual: off (fonte: env)." in text for _, text in conn.updates)
+
+        on_response = await agent.prompt(
+            acp.PromptRequest(
+                prompt=[acp.text_block("/grounded on")],
+                session_id=session.session_id,
+            )
+        )
+        assert on_response.stop_reason == "end_turn"
+        assert agent._sessions[session.session_id].grounded_override is True
+        assert any("Grounded ativado para esta sessão." in text for _, text in conn.updates)
+
+        config_on_response = await agent.prompt(
+            acp.PromptRequest(
+                prompt=[acp.text_block("/config")],
+                session_id=session.session_id,
+            )
+        )
+        assert config_on_response.stop_reason == "end_turn"
+        _, config_on_text = conn.updates[-1]
+        config_on_payload = _extract_config_payload(config_on_text)
+        assert config_on_payload["grounded"]["active"] is True
+        assert config_on_payload["grounded"]["override"] is True
+        assert config_on_payload["filters"]["grounded"] is True
+        assert config_on_payload["askCodePayloadPreview"]["grounded"] is True
+
+        off_response = await agent.prompt(
+            acp.PromptRequest(
+                prompt=[acp.text_block("/grounded off")],
+                session_id=session.session_id,
+            )
+        )
+        assert off_response.stop_reason == "end_turn"
+        assert agent._sessions[session.session_id].grounded_override is False
+        assert any("Grounded desativado para esta sessão." in text for _, text in conn.updates)
+
+        config_off_response = await agent.prompt(
+            acp.PromptRequest(
+                prompt=[acp.text_block("/config")],
+                session_id=session.session_id,
+            )
+        )
+        assert config_off_response.stop_reason == "end_turn"
+        _, config_off_text = conn.updates[-1]
+        config_off_payload = _extract_config_payload(config_off_text)
+        assert config_off_payload["grounded"]["active"] is False
+        assert config_off_payload["grounded"]["override"] is False
+        assert config_off_payload["filters"]["grounded"] is False
+        assert "grounded" not in config_off_payload["askCodePayloadPreview"]
+
+        reset_response = await agent.prompt(
+            acp.PromptRequest(
+                prompt=[acp.text_block("/grounded reset")],
+                session_id=session.session_id,
+            )
+        )
+        assert reset_response.stop_reason == "end_turn"
+        assert agent._sessions[session.session_id].grounded_override is None
+        assert any(
+            "Grounded resetado para o valor do ambiente." in text
+            for _, text in conn.updates
+        )
+
+    asyncio.run(run())
+
+
+def test_content_type_command_set_show_and_reset(monkeypatch: pytest.MonkeyPatch) -> None:
+    from code_compass_acp import agent as agent_mod
+
+    dummy = DummyBridge()
+    monkeypatch.setattr(agent_mod, "build_bridge", lambda llm_model=None: dummy)
+    monkeypatch.setenv("ACP_CONTENT_TYPE", "docs")
+
+    async def run() -> None:
+        agent = agent_mod.CodeCompassAgent()
+        conn = DummyConn()
+        agent.on_connect(conn)  # type: ignore[arg-type]
+
+        session = await agent.new_session(cwd=".", mcpServers=[])
+
+        show_response = await agent.prompt(
+            acp.PromptRequest(
+                prompt=[acp.text_block("/contentType")],
+                session_id=session.session_id,
+            )
+        )
+        assert show_response.stop_reason == "end_turn"
+        assert any("contentType atual: docs (fonte: env)." in text for _, text in conn.updates)
+
+        set_response = await agent.prompt(
+            acp.PromptRequest(
+                prompt=[acp.text_block("/content-type code")],
+                session_id=session.session_id,
+            )
+        )
+        assert set_response.stop_reason == "end_turn"
+        assert agent._sessions[session.session_id].content_type_override == "code"
+        assert any("contentType atualizado para: code" in text for _, text in conn.updates)
+
+        config_set_response = await agent.prompt(
+            acp.PromptRequest(
+                prompt=[acp.text_block("/config")],
+                session_id=session.session_id,
+            )
+        )
+        assert config_set_response.stop_reason == "end_turn"
+        _, config_set_text = conn.updates[-1]
+        config_set_payload = _extract_config_payload(config_set_text)
+        assert config_set_payload["contentType"]["active"] == "code"
+        assert config_set_payload["contentType"]["override"] == "code"
+        assert config_set_payload["contentType"]["env"] == "docs"
+        assert config_set_payload["filters"]["contentType"] == "code"
+        assert config_set_payload["askCodePayloadPreview"]["contentType"] == "code"
+
+        reset_response = await agent.prompt(
+            acp.PromptRequest(
+                prompt=[acp.text_block("/content-type reset")],
+                session_id=session.session_id,
+            )
+        )
+        assert reset_response.stop_reason == "end_turn"
+        assert agent._sessions[session.session_id].content_type_override is None
+        assert any(
+            "contentType resetado para o valor do ambiente." in text
+            for _, text in conn.updates
+        )
+
+        config_reset_response = await agent.prompt(
+            acp.PromptRequest(
+                prompt=[acp.text_block("/config")],
+                session_id=session.session_id,
+            )
+        )
+        assert config_reset_response.stop_reason == "end_turn"
+        _, config_reset_text = conn.updates[-1]
+        config_reset_payload = _extract_config_payload(config_reset_text)
+        assert config_reset_payload["contentType"]["active"] == "docs"
+        assert config_reset_payload["contentType"]["override"] is None
+        assert config_reset_payload["contentType"]["env"] == "docs"
+        assert config_reset_payload["filters"]["contentType"] == "docs"
+        assert config_reset_payload["askCodePayloadPreview"]["contentType"] == "docs"
+
+        invalid_response = await agent.prompt(
+            acp.PromptRequest(
+                prompt=[acp.text_block("/content-type invalid")],
+                session_id=session.session_id,
+            )
+        )
+        assert invalid_response.stop_reason == "end_turn"
+        assert any(
+            "Valor inválido. Use /content-type code|docs|all|reset." in text
+            for _, text in conn.updates
+        )
 
     asyncio.run(run())
