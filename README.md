@@ -463,18 +463,24 @@ QDRANT_URL_DOCKER=http://qdrant:6333
 REPO_ROOT_DOCKER=/workspace
 
 # -----------------------------
-# Embeddings (Ollama)
+# Embeddings (ask_code)
 # -----------------------------
 EMBEDDING_PROVIDER_CODE=ollama
 EMBEDDING_PROVIDER_DOCS=ollama
-OLLAMA_URL=http://localhost:11434
+EMBEDDING_PROVIDER_CODE_API_URL=http://localhost:11434
+EMBEDDING_PROVIDER_DOCS_API_URL=http://localhost:11434
+EMBEDDING_PROVIDER_CODE_API_KEY=
+EMBEDDING_PROVIDER_DOCS_API_KEY=
 EMBEDDING_MODEL_CODE=manutic/nomic-embed-code
 EMBEDDING_MODEL_DOCS=bge-m3
 EMBEDDING_BATCH_SIZE=16
 EMBEDDING_MAX_RETRIES=5
 EMBEDDING_BACKOFF_BASE_MS=500
 EMBEDDING_TIMEOUT_SECONDS=120
+LLM_MODEL_PROVIDER=ollama
 LLM_MODEL=gpt-oss:latest
+LLM_MODEL_API_URL=http://localhost:11434
+LLM_MODEL_API_KEY=
 
 # -----------------------------
 # Chunking
