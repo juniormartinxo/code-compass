@@ -60,7 +60,7 @@ export EMBEDDING_BATCH_SIZE=16
 
 # Qdrant
 export QDRANT_URL=http://localhost:6333
-export QDRANT_COLLECTION_BASE=compass__manutic_nomic_embed
+export QDRANT_COLLECTION_BASE=compass_manutic_nomic_embed
 export QDRANT_DISTANCE=COSINE
 export QDRANT_UPSERT_BATCH=64
 
@@ -134,11 +134,11 @@ Este comando:
   },
   "collections": {
     "code": {
-      "name": "compass__manutic_nomic_embed__code",
+      "name": "compass_manutic_nomic_embed__code",
       "action": "created"
     },
     "docs": {
-      "name": "compass__manutic_nomic_embed__docs",
+      "name": "compass_manutic_nomic_embed__docs",
       "action": "created"
     }
   },
@@ -189,8 +189,8 @@ Este comando:
   "status": "success",
   "repo_root": "/path/to/repo",
   "collections": {
-    "code": "compass__manutic_nomic_embed__code",
-    "docs": "compass__manutic_nomic_embed__docs"
+    "code": "compass_manutic_nomic_embed__code",
+    "docs": "compass_manutic_nomic_embed__docs"
   },
   "files_scanned": 42,
   "files_indexed": 42,
@@ -335,7 +335,7 @@ Importante:
 |----------|---------|-----------|
 | `QDRANT_URL` | `http://localhost:6333` | URL do Qdrant |
 | `QDRANT_API_KEY` | - | API key (opcional) |
-| `QDRANT_COLLECTION_BASE` | `compass__manutic_nomic_embed` | Stem para nome das collections |
+| `QDRANT_COLLECTION_BASE` | `compass_manutic_nomic_embed` | Stem para nome das collections |
 | `QDRANT_DISTANCE` | `COSINE` | Métrica de distância (COSINE, EUCLID, DOT) |
 | `QDRANT_UPSERT_BATCH` | `64` | Pontos por batch de upsert |
 | `INDEX_MIN_FILE_COVERAGE` | `0.95` | Cobertura mínima de arquivos no `index` |
@@ -405,7 +405,7 @@ O stem base da collection é o valor de `QDRANT_COLLECTION_BASE`.
 
 Exemplo:
 ```
-compass__manutic_nomic_embed
+compass_manutic_nomic_embed
 ```
 
 Os nomes finais usados no Qdrant são:
