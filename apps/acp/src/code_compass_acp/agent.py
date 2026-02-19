@@ -6,7 +6,9 @@ import json
 import os
 import signal
 import sys
+import tomllib
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import acp
@@ -19,6 +21,9 @@ TRUTHY_VALUES = {"1", "true", "yes", "on"}
 VALID_CONTENT_TYPES = {"code", "docs", "all"}
 GROUNDED_ON_VALUES = {"on", "true", "1", "yes"}
 GROUNDED_OFF_VALUES = {"off", "false", "0", "no"}
+MODEL_RESET_VALUES = {"default", "reset"}
+MODEL_PROFILES_ENV_KEY = "ACP_MODEL_PROFILES_FILE"
+DEFAULT_MODEL_PROFILES_FILE = "model-profiles.toml"
 AVAILABLE_SLASH_COMMANDS: tuple[dict[str, Any], ...] = (
     {
         "name": "repo",
@@ -31,8 +36,8 @@ AVAILABLE_SLASH_COMMANDS: tuple[dict[str, Any], ...] = (
     },
     {
         "name": "model",
-        "description": "Define override de modelo para esta sessão.",
-        "input": {"hint": "<model|reset>"},
+        "description": "Define modelo/perfil para esta sessão.",
+        "input": {"hint": "<model|perfil|reset>"},
     },
     {
         "name": "grounded",
@@ -47,6 +52,15 @@ AVAILABLE_SLASH_COMMANDS: tuple[dict[str, Any], ...] = (
 )
 
 
+@dataclass(frozen=True)
+class ModelProfile:
+    name: str
+    model: str
+    provider: str | None = None
+    api_url: str | None = None
+    api_key: str | None = None
+
+
 @dataclass
 class SessionState:
     cancel_event: asyncio.Event
@@ -54,6 +68,10 @@ class SessionState:
     mcp_bridge: McpBridge
     repo_override: str | None = None
     model_override: str | None = None
+    model_profile_override: str | None = None
+    llm_provider_override: str | None = None
+    llm_api_url_override: str | None = None
+    llm_api_key_override: str | None = None
     grounded_override: bool | None = None
     content_type_override: str | None = None
 
@@ -87,8 +105,8 @@ class CodeCompassAgent(acp.Agent):
         mcp_servers: list[Any] | None = None,
         **_kwargs: Any,
     ) -> acp.NewSessionResponse:
-        llm_model = os.getenv("LLM_MODEL", "").strip() or None
-        bridge = build_bridge(llm_model=llm_model)
+        llm_runtime = _resolve_llm_runtime(None)
+        bridge = _build_bridge_for_runtime(llm_runtime)
         await bridge.start()
 
         state = SessionState(
@@ -97,6 +115,10 @@ class CodeCompassAgent(acp.Agent):
             mcp_bridge=bridge,
             repo_override=None,
             model_override=None,
+            model_profile_override=None,
+            llm_provider_override=None,
+            llm_api_url_override=None,
+            llm_api_key_override=None,
             grounded_override=None,
             content_type_override=None,
         )
@@ -308,12 +330,211 @@ async def _repo_exists(repo: str) -> bool:
     if not codebase_root:
         return True
     try:
-        from pathlib import Path
-
         repo_path = Path(codebase_root) / repo
         return repo_path.exists() and repo_path.is_dir()
     except Exception:
         return False
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def _coerce_optional_string(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        normalized = value.strip()
+        return normalized or None
+    return None
+
+
+def _resolve_llm_api_key_from_env() -> str | None:
+    return (
+        _coerce_optional_string(os.getenv("LLM_MODEL_API_KEY", ""))
+        or _coerce_optional_string(os.getenv("LLM_API_KEY", ""))
+        or _coerce_optional_string(os.getenv("OPENAI_API_KEY", ""))
+    )
+
+
+def _resolve_llm_runtime(state: SessionState | None) -> dict[str, str | None]:
+    env_model = _coerce_optional_string(os.getenv("LLM_MODEL", ""))
+    env_provider = (
+        _coerce_optional_string(os.getenv("LLM_MODEL_PROVIDER", ""))
+        or _coerce_optional_string(os.getenv("LLM_PROVIDER", ""))
+    )
+    env_api_url = (
+        _coerce_optional_string(os.getenv("LLM_MODEL_API_URL", ""))
+        or _coerce_optional_string(os.getenv("LLM_API_BASE_URL", ""))
+    )
+    env_api_key = _resolve_llm_api_key_from_env()
+
+    model_override = state.model_override if state else None
+    provider_override = state.llm_provider_override if state else None
+    api_url_override = state.llm_api_url_override if state else None
+    api_key_override = state.llm_api_key_override if state else None
+    profile_override = state.model_profile_override if state else None
+
+    return {
+        "model": model_override or env_model,
+        "provider": provider_override or env_provider,
+        "api_url": api_url_override or env_api_url,
+        "api_key": api_key_override or env_api_key,
+        "profile": profile_override,
+        "env_model": env_model,
+        "env_provider": env_provider,
+        "env_api_url": env_api_url,
+        "env_api_key": env_api_key,
+    }
+
+
+def _build_bridge_for_runtime(llm_runtime: dict[str, str | None]) -> McpBridge:
+    kwargs: dict[str, str | None] = {
+        "llm_model": llm_runtime.get("model"),
+    }
+
+    provider = llm_runtime.get("provider")
+    env_provider = llm_runtime.get("env_provider")
+    api_url = llm_runtime.get("api_url")
+    env_api_url = llm_runtime.get("env_api_url")
+    api_key = llm_runtime.get("api_key")
+    env_api_key = llm_runtime.get("env_api_key")
+    if provider and provider != env_provider:
+        kwargs["llm_provider"] = provider
+    if api_url and api_url != env_api_url:
+        kwargs["llm_api_url"] = api_url
+    if api_key and api_key != env_api_key:
+        kwargs["llm_api_key"] = api_key
+
+    return build_bridge(**kwargs)
+
+
+def _build_bridge_for_state(state: SessionState) -> McpBridge:
+    llm_runtime = _resolve_llm_runtime(state)
+    return _build_bridge_for_runtime(llm_runtime)
+
+
+async def _refresh_bridge_for_model_settings(state: SessionState) -> None:
+    new_bridge = _build_bridge_for_state(state)
+    try:
+        await new_bridge.start()
+    except Exception:
+        await new_bridge.close()
+        raise
+
+    previous_bridge = state.mcp_bridge
+    state.mcp_bridge = new_bridge
+    await previous_bridge.close()
+
+
+def _snapshot_model_overrides(
+    state: SessionState,
+) -> tuple[str | None, str | None, str | None, str | None, str | None]:
+    return (
+        state.model_override,
+        state.model_profile_override,
+        state.llm_provider_override,
+        state.llm_api_url_override,
+        state.llm_api_key_override,
+    )
+
+
+def _restore_model_overrides(
+    state: SessionState,
+    snapshot: tuple[str | None, str | None, str | None, str | None, str | None],
+) -> None:
+    (
+        state.model_override,
+        state.model_profile_override,
+        state.llm_provider_override,
+        state.llm_api_url_override,
+        state.llm_api_key_override,
+    ) = snapshot
+
+
+def _resolve_model_profiles_path() -> Path:
+    configured = _coerce_optional_string(os.getenv(MODEL_PROFILES_ENV_KEY, ""))
+    if configured:
+        configured_path = Path(configured).expanduser()
+        if configured_path.is_absolute():
+            return configured_path
+        return _repo_root() / configured_path
+    return _repo_root() / DEFAULT_MODEL_PROFILES_FILE
+
+
+def _load_model_profiles() -> tuple[dict[str, ModelProfile], str | None]:
+    profiles_path = _resolve_model_profiles_path()
+    if not profiles_path.exists():
+        return {}, None
+
+    try:
+        with profiles_path.open("rb") as file_obj:
+            raw = tomllib.load(file_obj)
+    except Exception as exc:
+        return {}, f"Falha ao ler {profiles_path}: {exc}"
+
+    if not isinstance(raw, dict):
+        return {}, f"Formato inválido em {profiles_path}: esperado objeto TOML."
+
+    profiles_raw = raw.get("profiles")
+    if not isinstance(profiles_raw, dict):
+        return {}, f"{profiles_path} deve conter a seção [profiles.<nome>]."
+
+    profiles: dict[str, ModelProfile] = {}
+    for raw_name, raw_profile in profiles_raw.items():
+        if not isinstance(raw_name, str) or not raw_name.strip():
+            return {}, f"Perfil inválido em {profiles_path}: nome vazio."
+        if not isinstance(raw_profile, dict):
+            return {}, f"Perfil '{raw_name}' inválido em {profiles_path}: esperado tabela."
+
+        profile_name = raw_name.strip()
+        model = _coerce_optional_string(raw_profile.get("model"))
+        if not model:
+            return {}, f"Perfil '{profile_name}' sem campo obrigatório 'model'."
+
+        provider = _coerce_optional_string(raw_profile.get("provider"))
+        api_url = _coerce_optional_string(raw_profile.get("api_url"))
+        api_key = _coerce_optional_string(raw_profile.get("api_key"))
+        api_key_env = _coerce_optional_string(raw_profile.get("api_key_env"))
+        if api_key_env:
+            api_key = _coerce_optional_string(os.getenv(api_key_env, "")) or api_key
+
+        profile = ModelProfile(
+            name=profile_name,
+            model=model,
+            provider=provider,
+            api_url=api_url,
+            api_key=api_key,
+        )
+        profiles[profile_name.lower()] = profile
+
+    return profiles, None
+
+
+def _resolve_model_profile_by_selector(selector: str) -> tuple[ModelProfile | None, str | None]:
+    normalized = selector.strip().lower()
+    if normalized.startswith("profile:"):
+        normalized = normalized.partition(":")[2].strip()
+    if not normalized:
+        return None, None
+
+    profiles, error = _load_model_profiles()
+    if error:
+        return None, error
+    if not profiles:
+        return None, None
+
+    exact = profiles.get(normalized)
+    if exact is not None:
+        return exact, None
+
+    model_matches = [profile for profile in profiles.values() if profile.model.lower() == normalized]
+    if len(model_matches) == 1:
+        return model_matches[0], None
+    if len(model_matches) > 1:
+        names = ", ".join(sorted(profile.name for profile in model_matches))
+        return None, f"Modelo '{selector}' é ambíguo. Perfis possíveis: {names}."
+    return None, None
 
 
 def _build_runtime_config(state: SessionState) -> dict[str, Any]:
@@ -321,7 +542,7 @@ def _build_runtime_config(state: SessionState) -> dict[str, Any]:
     payload_preview.pop("query", None)
 
     active_repo = (state.repo_override or os.getenv("ACP_REPO", "code-compass")).strip()
-    active_model = (state.model_override or os.getenv("LLM_MODEL", "")).strip()
+    llm_runtime = _resolve_llm_runtime(state)
     content_type_env = _resolve_content_type_from_env()
     content_type_active = _resolve_content_type(state)
     grounded_env = _is_truthy(os.getenv("ACP_GROUNDED", ""))
@@ -335,9 +556,25 @@ def _build_runtime_config(state: SessionState) -> dict[str, Any]:
             "env": os.getenv("ACP_REPO", "code-compass").strip(),
         },
         "model": {
-            "active": active_model or None,
+            "active": llm_runtime.get("model"),
             "override": state.model_override,
-            "env": os.getenv("LLM_MODEL", "").strip() or None,
+            "env": llm_runtime.get("env_model"),
+            "profile": llm_runtime.get("profile"),
+            "provider": {
+                "active": llm_runtime.get("provider"),
+                "override": state.llm_provider_override,
+                "env": llm_runtime.get("env_provider"),
+            },
+            "apiUrl": {
+                "active": llm_runtime.get("api_url"),
+                "override": state.llm_api_url_override,
+                "env": llm_runtime.get("env_api_url"),
+            },
+            "apiKey": {
+                "activeConfigured": bool(llm_runtime.get("api_key")),
+                "overrideConfigured": bool(state.llm_api_key_override),
+                "envConfigured": bool(llm_runtime.get("env_api_key")),
+            },
         },
         "grounded": {
             "active": grounded_active,
@@ -378,7 +615,7 @@ def _build_ask_payload(question: str, state: SessionState) -> dict[str, Any]:
     language = os.getenv("ACP_LANGUAGE", "").strip()
     top_k = _parse_int(os.getenv("ACP_TOPK", ""))
     min_score = _parse_float(os.getenv("ACP_MIN_SCORE", ""))
-    llm_model = (state.model_override or os.getenv("LLM_MODEL", "")).strip()
+    llm_model = _resolve_llm_runtime(state).get("model")
     grounded = _resolve_grounded(state)
     content_type = _resolve_content_type(state)
     strict = _is_truthy(os.getenv("ACP_STRICT", ""))
@@ -391,7 +628,7 @@ def _build_ask_payload(question: str, state: SessionState) -> dict[str, Any]:
         payload["topK"] = top_k
     if min_score is not None:
         payload["minScore"] = min_score
-    if llm_model:
+    if isinstance(llm_model, str) and llm_model:
         payload["llmModel"] = llm_model
     if grounded:
         payload["grounded"] = True
@@ -475,19 +712,85 @@ async def _handle_model_command(
     text = question.strip()
     if not text.startswith("/model"):
         return None
+
     parts = text.split(maxsplit=1)
     if len(parts) == 1:
-        reply = f"Modelo atual: {state.model_override or os.getenv('LLM_MODEL', '') or 'default'}"
-    else:
-        model = parts[1].strip()
-        if not model:
-            reply = "Nome do modelo vazio. Use /model <nome>."
-        elif model.lower() in {"default", "reset"}:
-            state.model_override = None
-            reply = "Modelo resetado para o default."
+        llm_runtime = _resolve_llm_runtime(state)
+        active_model = llm_runtime.get("model") or "default"
+        active_profile = llm_runtime.get("profile")
+        if active_profile:
+            reply = f"Modelo atual: {active_model} (perfil: {active_profile})"
         else:
-            state.model_override = model
-            reply = f"Modelo atualizado para: {state.model_override}"
+            reply = f"Modelo atual: {active_model}"
+    else:
+        selector = parts[1].strip()
+        if not selector:
+            reply = "Nome do modelo vazio. Use /model <nome>."
+        else:
+            previous_snapshot = _snapshot_model_overrides(state)
+            state_changed = False
+            try:
+                if selector.lower() in MODEL_RESET_VALUES:
+                    state.model_override = None
+                    state.model_profile_override = None
+                    state.llm_provider_override = None
+                    state.llm_api_url_override = None
+                    state.llm_api_key_override = None
+                    state_changed = True
+                    await _refresh_bridge_for_model_settings(state)
+                    reply = "Modelo resetado para o default."
+                else:
+                    profile, profile_error = _resolve_model_profile_by_selector(selector)
+                    if profile_error:
+                        if selector.lower().startswith("profile:"):
+                            reply = (
+                                "Falha ao carregar perfis de modelo. "
+                                f"Detalhe técnico: {profile_error}"
+                            )
+                        else:
+                            state.model_override = selector
+                            state.model_profile_override = None
+                            state.llm_provider_override = None
+                            state.llm_api_url_override = None
+                            state.llm_api_key_override = None
+                            state_changed = True
+                            await _refresh_bridge_for_model_settings(state)
+                            reply = (
+                                f"Modelo atualizado para: {state.model_override}. "
+                                "Perfis indisponíveis no momento."
+                            )
+                    elif profile is not None:
+                        state.model_override = profile.model
+                        state.model_profile_override = profile.name
+                        state.llm_provider_override = profile.provider
+                        state.llm_api_url_override = profile.api_url
+                        state.llm_api_key_override = profile.api_key
+                        state_changed = True
+                        await _refresh_bridge_for_model_settings(state)
+
+                        provider = profile.provider or "env"
+                        api_url = profile.api_url or "env"
+                        key_status = "configurada" if profile.api_key else "env/default"
+                        reply = (
+                            f"Perfil '{profile.name}' ativado: "
+                            f"model={profile.model}, provider={provider}, api_url={api_url}, api_key={key_status}."
+                        )
+                    else:
+                        state.model_override = selector
+                        state.model_profile_override = None
+                        state.llm_provider_override = None
+                        state.llm_api_url_override = None
+                        state.llm_api_key_override = None
+                        state_changed = True
+                        await _refresh_bridge_for_model_settings(state)
+                        reply = f"Modelo atualizado para: {state.model_override}"
+            except Exception as exc:
+                if state_changed:
+                    _restore_model_overrides(state, previous_snapshot)
+                reply = (
+                    "Falha ao aplicar configuração de modelo. "
+                    f"Detalhe técnico: {exc}"
+                )
 
     if conn:
         await conn.session_update(session_id, acp.update_agent_message_text(reply))
