@@ -80,6 +80,8 @@ Comandos de sessão no Toad:
 
 - `/repo` e `/repo <nome|repo-a,repo-b>`: altera escopo de repo(s)
 - `/model` e `/model <nome|reset>`: altera modelo da sessão
+- `/grounded` e `/grounded <on|off|reset>`: controla grounded em runtime por sessão
+- `/content-type` e `/contentType <code|docs|all|reset>`: controla `contentType` em runtime por sessão
 - `/config`: imprime a configuração efetiva atual e preview do payload enviado ao MCP
 
 ## Notas de operação
@@ -90,3 +92,8 @@ Comandos de sessão no Toad:
 ---
 
 Referência: `apps/acp/src/code_compass_acp/agent.py`.
+
+Para histórico das alterações recentes de slash commands e tutorial de como adicionar
+novos comandos, veja:
+
+- `apps/docs/pages/cli/comandos-slash.md`
