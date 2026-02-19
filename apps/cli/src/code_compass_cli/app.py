@@ -96,7 +96,7 @@ def chat() -> None:
     args = os.getenv("TOAD_ARGS", "").split()
     if not command:
         command = os.getenv("PYTHON_COMMAND", "python")
-        args = ["-m", "toad", *args]
+        args = ["-m", "code_compass_cli.toad_patched", *args]
 
         check = subprocess.run(
             [command, "-c", "import toad"],
@@ -115,10 +115,11 @@ def chat() -> None:
 
     agent_cmd = _resolve_acp_agent_command()
     if agent_cmd:
-        if len(args) >= 2 and args[0] == "-m" and args[1] == "toad":
-            args = ["-m", "toad", "acp", *agent_cmd, *args[2:]]
+        project_dir = _resolve_toad_project_dir()
+        if len(args) >= 2 and args[0] == "-m":
+            args = [*args[:2], "acp", *agent_cmd, project_dir, *args[2:]]
         else:
-            args = ["acp", *agent_cmd, *args]
+            args = ["acp", *agent_cmd, project_dir, *args]
 
     try:
         subprocess.run([command, *args], check=True)
@@ -141,3 +142,10 @@ def _resolve_acp_agent_command() -> list[str] | None:
     if not command:
         return None
     return [command, *args]
+
+
+def _resolve_toad_project_dir() -> str:
+    configured = os.getenv("TOAD_PROJECT_DIR", "").strip()
+    if configured:
+        return configured
+    return os.getcwd()
