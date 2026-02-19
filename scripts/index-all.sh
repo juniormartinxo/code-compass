@@ -11,7 +11,7 @@
 #
 # Requisitos:
 #   - Qdrant rodando (QDRANT_URL)
-#   - Ollama rodando (OLLAMA_URL)
+#   - Provider de embeddings acessível (EMBEDDING_PROVIDER_CODE_API_URL / EMBEDDING_PROVIDER_DOCS_API_URL)
 #   - venv do indexer criado (apps/indexer/.venv)
 # ============================================================
 set -euo pipefail
