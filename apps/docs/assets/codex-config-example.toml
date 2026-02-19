@@ -3,4 +3,4 @@
 [mcp_servers.code_compass]
 command = "/ABS/PATH/code-compass/bin/dev-mcp"
 args = []
-env = { QDRANT_URL = "http://localhost:6333", QDRANT_COLLECTION_BASE = "compass__manutic_nomic_embed", CODEBASE_ROOT = "/ABS/PATH/code-compass/code-base" }
+env = { QDRANT_URL = "http://localhost:6333", QDRANT_COLLECTION_BASE = "compass_manutic_nomic_embed", CODEBASE_ROOT = "/ABS/PATH/code-compass/code-base" }
