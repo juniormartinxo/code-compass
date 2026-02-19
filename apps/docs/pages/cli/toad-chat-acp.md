@@ -41,7 +41,8 @@ python -m toad acp /caminho/para/code-compass-acp
 ### Trocar repo
 
 - `/repo` → mostra o repo atual
-- `/repo <nome>` → troca o repo da sessão
+- `/repo <nome>` → troca para um único repo na sessão
+- `/repo <repo-a,repo-b>` → troca para múltiplos repos (CSV, sem aspas)
 
 **Fallback**: se `CODEBASE_ROOT` estiver definido e o repo não existir em
 `<CODEBASE_ROOT>/<repo>`, o comando rejeita e mantém o repo atual.
@@ -52,9 +53,17 @@ python -m toad acp /caminho/para/code-compass-acp
 - `/model <nome>` → troca o modelo da sessão
 - `/model reset` → volta ao default (`LLM_MODEL`)
 
+### Ver configuração atual
+
+- `/config` → mostra a configuração efetiva da sessão, incluindo:
+  - `scope` (repo único ou múltiplos repos)
+  - `llmModel`
+  - filtros (`pathPrefix`, `language`, `topK`, `minScore`, `contentType`)
+  - flags (`grounded`, `strict`, `showMeta`, `showContext`)
+  - preview do payload enviado ao `ask_code`
+
 ## Troubleshooting rápido
 
-- Se o `/repo` ou `/model` não responder, verifique se o Toad foi aberto via
+- Se o `/repo`, `/model` ou `/config` não responder, verifique se o Toad foi aberto via
   `code-compass chat` (o agente precisa ser ACP, não um outro agent do Toad).
 - Se houver erro de execução, confira `ACP_AGENT_CMD` e permissões do binário.
-
