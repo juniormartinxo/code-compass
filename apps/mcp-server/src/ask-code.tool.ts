@@ -21,16 +21,34 @@ const MAX_QUERY_CHARS = 500;
 const MAX_PATH_PREFIX_CHARS = 200;
 const MAX_LANGUAGE_CHARS = 32;
 const DEFAULT_MIN_SCORE = 0.6;
-const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
 const DEFAULT_EMBEDDING_PROVIDER_CODE = 'ollama';
 const DEFAULT_EMBEDDING_PROVIDER_DOCS = 'ollama';
 const DEFAULT_EMBEDDING_MODEL_CODE = 'manutic/nomic-embed-code';
 const DEFAULT_EMBEDDING_MODEL_DOCS = 'bge-m3';
 const DEFAULT_LLM_MODEL = 'gpt-oss:latest';
+const DEFAULT_LLM_MODEL_PROVIDER = 'ollama';
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_CONTEXTS_PER_REPO_WIDE_SCOPE = 2;
 
 type EmbeddingContentType = Exclude<ContentType, 'all'>;
+type ChatProvider = 'ollama' | 'deepseek' | 'openai-compatible';
+
+interface OpenAiCompatibleChatResponse {
+  choices?: Array<{
+    message?: {
+      content?: string | Array<{
+        type?: string;
+        text?: string;
+      }>;
+    };
+  }>;
+}
+
+interface OpenAiCompatibleEmbeddingResponse {
+  data?: Array<{
+    embedding?: number[];
+  }>;
+}
 
 const LANGUAGE_EXTENSIONS: Record<string, string[]> = {
   ts: ['.ts', '.tsx'],
@@ -548,6 +566,18 @@ export class AskCodeTool {
     return normalized || fallback;
   }
 
+  private embeddingApiUrlEnvKey(contentType: EmbeddingContentType): string {
+    return contentType === 'code'
+      ? 'EMBEDDING_PROVIDER_CODE_API_URL'
+      : 'EMBEDDING_PROVIDER_DOCS_API_URL';
+  }
+
+  private embeddingApiKeyEnvKey(contentType: EmbeddingContentType): string {
+    return contentType === 'code'
+      ? 'EMBEDDING_PROVIDER_CODE_API_KEY'
+      : 'EMBEDDING_PROVIDER_DOCS_API_KEY';
+  }
+
   private resolveEmbeddingModel(contentType: EmbeddingContentType): string {
     const envKey = this.embeddingModelEnvKey(contentType);
     const fallback = contentType === 'code'
@@ -558,25 +588,98 @@ export class AskCodeTool {
     return normalized || fallback;
   }
 
-  private async embedQuestion(query: string, contentType: EmbeddingContentType): Promise<number[]> {
-    const ollamaUrl = process.env.OLLAMA_URL || DEFAULT_OLLAMA_URL;
-    const embeddingProvider = this.resolveEmbeddingProvider(contentType);
-    const embeddingProviderEnv = this.embeddingProviderEnvKey(contentType);
-    const embeddingModelEnv = this.embeddingModelEnvKey(contentType);
-    const embeddingModel = this.resolveEmbeddingModel(contentType);
+  private normalizeProvider(raw: string): ChatProvider | null {
+    const normalized = raw.trim().toLowerCase();
+    if (normalized === 'ollama') {
+      return 'ollama';
+    }
+    if (normalized === 'deepseek') {
+      return 'deepseek';
+    }
+    if (normalized === 'openai' || normalized === 'openai-compatible' || normalized === 'openai_compatible') {
+      return 'openai-compatible';
+    }
+    return null;
+  }
 
-    if (embeddingProvider !== 'ollama') {
+  private resolveEmbeddingApiConfig(
+    contentType: EmbeddingContentType,
+    provider: Exclude<ChatProvider, 'ollama'>,
+  ): {
+    baseUrl: string;
+    apiKey: string;
+    apiUrlEnv: string;
+    apiKeyEnv: string;
+  } {
+    const apiUrlEnv = this.embeddingApiUrlEnvKey(contentType);
+    const apiKeyEnv = this.embeddingApiKeyEnvKey(contentType);
+
+    const baseUrlRaw = process.env[apiUrlEnv]
+      || process.env.LLM_MODEL_API_URL
+      || process.env.LLM_API_BASE_URL;
+    const baseUrl = baseUrlRaw?.trim();
+    if (!baseUrl) {
       throw new ToolExecutionError(
         'EMBEDDING_FAILED',
-        `Provider de embedding não suportado para ${contentType}: ${embeddingProvider}. `
-          + `Use ${embeddingProviderEnv}=ollama.`,
+        `URL de embedding ausente para ${contentType}. Configure ${apiUrlEnv}.`,
       );
     }
 
+    const apiKeyRaw = process.env[apiKeyEnv]
+      || process.env.LLM_MODEL_API_KEY
+      || process.env.LLM_API_KEY
+      || process.env.OPENAI_API_KEY;
+    const apiKey = apiKeyRaw?.trim();
+    if (!apiKey) {
+      throw new ToolExecutionError(
+        'EMBEDDING_FAILED',
+        `API key de embedding ausente para ${contentType}. Configure ${apiKeyEnv}.`,
+      );
+    }
+
+    return {
+      baseUrl: baseUrl.replace(/\/$/, ''),
+      apiKey,
+      apiUrlEnv,
+      apiKeyEnv,
+    };
+  }
+
+  private resolveEmbeddingOllamaConfig(
+    contentType: EmbeddingContentType,
+  ): {
+    baseUrl: string;
+    apiUrlEnv: string;
+  } {
+    const apiUrlEnv = this.embeddingApiUrlEnvKey(contentType);
+    const baseUrlRaw = process.env[apiUrlEnv]
+      || process.env.LLM_MODEL_API_URL
+      || process.env.LLM_API_BASE_URL;
+    const baseUrl = baseUrlRaw?.trim();
+    if (!baseUrl) {
+      throw new ToolExecutionError(
+        'EMBEDDING_FAILED',
+        `URL de embedding ausente para ${contentType}. Configure ${apiUrlEnv}.`,
+      );
+    }
+
+    return {
+      baseUrl: baseUrl.replace(/\/$/, ''),
+      apiUrlEnv,
+    };
+  }
+
+  private async embedWithOllama(
+    query: string,
+    embeddingModel: string,
+    embeddingModelEnv: string,
+    ollamaBaseUrl: string,
+    apiUrlEnv: string,
+  ): Promise<number[]> {
     let response: AxiosResponse<{ embeddings?: number[][] }>;
     try {
       response = await axios.post<{ embeddings?: number[][] }>(
-        `${ollamaUrl.replace(/\/$/, '')}/api/embed`,
+        `${ollamaBaseUrl}/api/embed`,
         {
           model: embeddingModel,
           input: [query],
@@ -593,7 +696,7 @@ export class AskCodeTool {
           : 'erro desconhecido';
       throw new ToolExecutionError(
         'EMBEDDING_FAILED',
-        `Falha ao gerar embedding via Ollama (${ollamaUrl} / ${embeddingModel}): ${details}`,
+        `Falha ao gerar embedding via Ollama (${ollamaBaseUrl} / ${embeddingModel}): ${details}`,
       );
     }
 
@@ -601,19 +704,227 @@ export class AskCodeTool {
     if (!Array.isArray(embeddings) || embeddings.length === 0 || !Array.isArray(embeddings[0])) {
       throw new ToolExecutionError(
         'EMBEDDING_INVALID',
-        `Resposta de embedding inválida do Ollama. Verifique OLLAMA_URL e ${embeddingModelEnv}.`,
+        `Resposta de embedding inválida do Ollama. Verifique ${apiUrlEnv} e ${embeddingModelEnv}.`,
       );
     }
 
     return embeddings[0] as number[];
   }
 
+  private async embedWithOpenAiCompatible(
+    query: string,
+    contentType: EmbeddingContentType,
+    embeddingModel: string,
+    provider: Exclude<ChatProvider, 'ollama'>,
+  ): Promise<number[]> {
+    const config = this.resolveEmbeddingApiConfig(contentType, provider);
+
+    let response: AxiosResponse<OpenAiCompatibleEmbeddingResponse>;
+    try {
+      response = await axios.post<OpenAiCompatibleEmbeddingResponse>(
+        `${config.baseUrl}/embeddings`,
+        {
+          model: embeddingModel,
+          input: query,
+        },
+        {
+          timeout: DEFAULT_TIMEOUT_MS,
+          headers: {
+            Authorization: `Bearer ${config.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+    } catch (error) {
+      const details = axios.isAxiosError(error)
+        ? error.message
+        : error instanceof Error
+          ? error.message
+          : 'erro desconhecido';
+      throw new ToolExecutionError(
+        'EMBEDDING_FAILED',
+        `Falha ao gerar embedding via ${provider} (${config.baseUrl} / ${embeddingModel}): ${details}`,
+      );
+    }
+
+    const embedding = response.data?.data?.[0]?.embedding;
+    if (
+      !Array.isArray(embedding)
+      || embedding.length === 0
+      || !embedding.every((value) => typeof value === 'number' && Number.isFinite(value))
+    ) {
+      throw new ToolExecutionError(
+        'EMBEDDING_INVALID',
+        `Resposta de embedding inválida para ${contentType}. Verifique ${config.apiUrlEnv}, ${config.apiKeyEnv} e o modelo ${embeddingModel}.`,
+      );
+    }
+
+    return embedding;
+  }
+
+  private async embedQuestion(query: string, contentType: EmbeddingContentType): Promise<number[]> {
+    const embeddingProvider = this.resolveEmbeddingProvider(contentType);
+    const embeddingProviderEnv = this.embeddingProviderEnvKey(contentType);
+    const embeddingModelEnv = this.embeddingModelEnvKey(contentType);
+    const embeddingModel = this.resolveEmbeddingModel(contentType);
+    const normalizedProvider = this.normalizeProvider(embeddingProvider);
+
+    if (!normalizedProvider) {
+      throw new ToolExecutionError(
+        'EMBEDDING_FAILED',
+        `Provider de embedding não suportado para ${contentType}: ${embeddingProvider}. `
+          + `Use ${embeddingProviderEnv}=ollama|openai-compatible|deepseek.`,
+      );
+    }
+
+    if (normalizedProvider === 'ollama') {
+      const config = this.resolveEmbeddingOllamaConfig(contentType);
+      return this.embedWithOllama(
+        query,
+        embeddingModel,
+        embeddingModelEnv,
+        config.baseUrl,
+        config.apiUrlEnv,
+      );
+    }
+
+    return this.embedWithOpenAiCompatible(query, contentType, embeddingModel, normalizedProvider);
+  }
+
   private async chat(systemPrompt: string, userMessage: string, llmModel: string): Promise<string> {
-    const ollamaUrl = process.env.OLLAMA_URL || DEFAULT_OLLAMA_URL;
+    const provider = this.resolveLlmProvider();
+    if (provider === 'ollama') {
+      return this.chatWithOllama(systemPrompt, userMessage, llmModel);
+    }
+
+    return this.chatWithOpenAiCompatible(systemPrompt, userMessage, llmModel, provider);
+  }
+
+  private resolveLlmProvider(): ChatProvider {
+    const raw = process.env.LLM_MODEL_PROVIDER
+      || process.env.LLM_PROVIDER
+      || DEFAULT_LLM_MODEL_PROVIDER;
+    const normalized = this.normalizeProvider(raw);
+    if (normalized) {
+      return normalized;
+    }
+
+    throw new ToolExecutionError(
+      'CHAT_FAILED',
+      `Provider de LLM não suportado: ${raw}. Use LLM_MODEL_PROVIDER=ollama|deepseek|openai-compatible.`,
+    );
+  }
+
+  private resolveOpenAiCompatibleConfig(provider: Exclude<ChatProvider, 'ollama'>): {
+    baseUrl: string;
+    apiKey: string;
+  } {
+    const baseUrlRaw = process.env.LLM_MODEL_API_URL
+      || process.env.LLM_API_BASE_URL;
+    const baseUrl = baseUrlRaw?.trim();
+    if (!baseUrl) {
+      throw new ToolExecutionError(
+        'CHAT_FAILED',
+        `LLM_MODEL_API_URL é obrigatório quando LLM_MODEL_PROVIDER=${provider}.`,
+      );
+    }
+
+    const apiKeyRaw = process.env.LLM_MODEL_API_KEY
+      || process.env.LLM_API_KEY
+      || process.env.OPENAI_API_KEY;
+    const apiKey = apiKeyRaw?.trim();
+    if (!apiKey) {
+      throw new ToolExecutionError(
+        'CHAT_FAILED',
+        `API key ausente para LLM_MODEL_PROVIDER=${provider}. Configure LLM_MODEL_API_KEY.`,
+      );
+    }
+
+    return {
+      baseUrl: baseUrl.replace(/\/$/, ''),
+      apiKey,
+    };
+  }
+
+  private extractOpenAiCompatibleContent(response: OpenAiCompatibleChatResponse): string {
+    const content = response.choices?.[0]?.message?.content;
+    if (typeof content === 'string') {
+      return content;
+    }
+
+    if (!Array.isArray(content)) {
+      return '';
+    }
+
+    const textBlocks = content
+      .map((part) => (typeof part?.text === 'string' ? part.text : ''))
+      .filter((value) => value.length > 0);
+
+    return textBlocks.join('\n').trim();
+  }
+
+  private async chatWithOpenAiCompatible(
+    systemPrompt: string,
+    userMessage: string,
+    llmModel: string,
+    provider: Exclude<ChatProvider, 'ollama'>,
+  ): Promise<string> {
+    const { baseUrl, apiKey } = this.resolveOpenAiCompatibleConfig(provider);
+    let response: AxiosResponse<OpenAiCompatibleChatResponse>;
+    try {
+      response = await axios.post<OpenAiCompatibleChatResponse>(
+        `${baseUrl}/chat/completions`,
+        {
+          model: llmModel,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userMessage },
+          ],
+          stream: false,
+        },
+        {
+          timeout: DEFAULT_TIMEOUT_MS,
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+    } catch (error) {
+      const details = axios.isAxiosError(error)
+        ? error.message
+        : error instanceof Error
+          ? error.message
+          : 'erro desconhecido';
+      throw new ToolExecutionError(
+        'CHAT_FAILED',
+        `Falha ao gerar resposta via ${provider} (${baseUrl} / ${llmModel}): ${details}`,
+      );
+    }
+
+    return this.extractOpenAiCompatibleContent(response.data);
+  }
+
+  private async chatWithOllama(
+    systemPrompt: string,
+    userMessage: string,
+    llmModel: string,
+  ): Promise<string> {
+    const baseUrlRaw = process.env.LLM_MODEL_API_URL
+      || process.env.LLM_API_BASE_URL;
+    const ollamaUrl = baseUrlRaw?.trim();
+    if (!ollamaUrl) {
+      throw new ToolExecutionError(
+        'CHAT_FAILED',
+        'LLM_MODEL_API_URL é obrigatório quando LLM_MODEL_PROVIDER=ollama.',
+      );
+    }
+
+    const normalizedBaseUrl = ollamaUrl.replace(/\/$/, '');
     let response: AxiosResponse<{ message?: { content?: string } }>;
     try {
       response = await axios.post<{ message?: { content?: string } }>(
-        `${ollamaUrl.replace(/\/$/, '')}/api/chat`,
+        `${normalizedBaseUrl}/api/chat`,
         {
           model: llmModel,
           messages: [
@@ -634,7 +945,7 @@ export class AskCodeTool {
           : 'erro desconhecido';
       throw new ToolExecutionError(
         'CHAT_FAILED',
-        `Falha ao gerar resposta via Ollama (${ollamaUrl} / ${llmModel}): ${details}`,
+        `Falha ao gerar resposta via Ollama (${normalizedBaseUrl} / ${llmModel}): ${details}`,
       );
     }
 
