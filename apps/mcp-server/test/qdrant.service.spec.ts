@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { QdrantService } from '../src/qdrant.service';
 
-const STEM = 'compass__manutic_nomic_embed';
+const STEM = 'compass_manutic_nomic_embed';
 const CODE_COLLECTION = `${STEM}__code`;
 const DOCS_COLLECTION = `${STEM}__docs`;
 
