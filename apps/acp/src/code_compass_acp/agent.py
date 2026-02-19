@@ -10,12 +10,41 @@ from dataclasses import dataclass
 from typing import Any
 
 import acp
+from acp.helpers import update_available_commands
 
 from .bridge import McpBridge, build_bridge
 from .chunker import chunk_by_paragraph
 
 TRUTHY_VALUES = {"1", "true", "yes", "on"}
 VALID_CONTENT_TYPES = {"code", "docs", "all"}
+GROUNDED_ON_VALUES = {"on", "true", "1", "yes"}
+GROUNDED_OFF_VALUES = {"off", "false", "0", "no"}
+AVAILABLE_SLASH_COMMANDS: tuple[dict[str, Any], ...] = (
+    {
+        "name": "repo",
+        "description": "Alterna o contexto de repositório.",
+        "input": {"hint": "<repo[,repo2,...]>"},
+    },
+    {
+        "name": "config",
+        "description": "Mostra a configuração atual da sessão ACP.",
+    },
+    {
+        "name": "model",
+        "description": "Define override de modelo para esta sessão.",
+        "input": {"hint": "<model|reset>"},
+    },
+    {
+        "name": "grounded",
+        "description": "Ativa ou desativa o modo grounded nesta sessão.",
+        "input": {"hint": "<on|off|reset>"},
+    },
+    {
+        "name": "content-type",
+        "description": "Define o contentType da sessão.",
+        "input": {"hint": "<code|docs|all|reset>"},
+    },
+)
 
 
 @dataclass
@@ -25,6 +54,8 @@ class SessionState:
     mcp_bridge: McpBridge
     repo_override: str | None = None
     model_override: str | None = None
+    grounded_override: bool | None = None
+    content_type_override: str | None = None
 
 
 class CodeCompassAgent(acp.Agent):
@@ -66,9 +97,12 @@ class CodeCompassAgent(acp.Agent):
             mcp_bridge=bridge,
             repo_override=None,
             model_override=None,
+            grounded_override=None,
+            content_type_override=None,
         )
         session_id = _random_session_id()
         self._sessions[session_id] = state
+        await self._announce_available_commands(session_id)
         return acp.NewSessionResponse(session_id=session_id)
 
     async def prompt(self, params: acp.PromptRequest) -> acp.PromptResponse:
@@ -99,6 +133,14 @@ class CodeCompassAgent(acp.Agent):
                     return command_response
 
                 command_response = await _handle_model_command(self._conn, session_id, state, question)
+                if command_response is not None:
+                    return command_response
+
+                command_response = await _handle_grounded_command(self._conn, session_id, state, question)
+                if command_response is not None:
+                    return command_response
+
+                command_response = await _handle_content_type_command(self._conn, session_id, state, question)
                 if command_response is not None:
                     return command_response
 
@@ -161,6 +203,17 @@ class CodeCompassAgent(acp.Agent):
             acp.update_agent_message_text(chunk),
         )
 
+    async def _announce_available_commands(self, session_id: str) -> None:
+        if not self._conn:
+            return
+        try:
+            await self._conn.session_update(
+                session_id,
+                update_available_commands(AVAILABLE_SLASH_COMMANDS),
+            )
+        except Exception as exc:
+            print(f"Erro ao anunciar comandos ACP: {exc}", file=sys.stderr)
+
     def _cleanup_all_sessions(self) -> None:
         for state in self._sessions.values():
             try:
@@ -197,7 +250,8 @@ async def _handle_config_command(
         return None
 
     config = _build_runtime_config(state)
-    reply = f"Config atual:\n{json.dumps(config, ensure_ascii=False, indent=2)}"
+    formatted_config = json.dumps(config, ensure_ascii=False, indent=2)
+    reply = f"Config atual:\n```json\n{formatted_config}\n```"
 
     if conn:
         await conn.session_update(session_id, acp.update_agent_message_text(reply))
@@ -268,6 +322,10 @@ def _build_runtime_config(state: SessionState) -> dict[str, Any]:
 
     active_repo = (state.repo_override or os.getenv("ACP_REPO", "code-compass")).strip()
     active_model = (state.model_override or os.getenv("LLM_MODEL", "")).strip()
+    content_type_env = _resolve_content_type_from_env()
+    content_type_active = _resolve_content_type(state)
+    grounded_env = _is_truthy(os.getenv("ACP_GROUNDED", ""))
+    grounded_active = _resolve_grounded(state)
 
     return {
         "scope": payload_preview.get("scope"),
@@ -280,6 +338,16 @@ def _build_runtime_config(state: SessionState) -> dict[str, Any]:
             "active": active_model or None,
             "override": state.model_override,
             "env": os.getenv("LLM_MODEL", "").strip() or None,
+        },
+        "grounded": {
+            "active": grounded_active,
+            "override": state.grounded_override,
+            "env": grounded_env,
+        },
+        "contentType": {
+            "active": content_type_active,
+            "override": state.content_type_override,
+            "env": content_type_env,
         },
         "filters": {
             "pathPrefix": payload_preview.get("pathPrefix"),
@@ -311,8 +379,8 @@ def _build_ask_payload(question: str, state: SessionState) -> dict[str, Any]:
     top_k = _parse_int(os.getenv("ACP_TOPK", ""))
     min_score = _parse_float(os.getenv("ACP_MIN_SCORE", ""))
     llm_model = (state.model_override or os.getenv("LLM_MODEL", "")).strip()
-    grounded = _is_truthy(os.getenv("ACP_GROUNDED", ""))
-    content_type = os.getenv("ACP_CONTENT_TYPE", "").strip().lower()
+    grounded = _resolve_grounded(state)
+    content_type = _resolve_content_type(state)
     strict = _is_truthy(os.getenv("ACP_STRICT", ""))
 
     if path_prefix:
@@ -327,12 +395,31 @@ def _build_ask_payload(question: str, state: SessionState) -> dict[str, Any]:
         payload["llmModel"] = llm_model
     if grounded:
         payload["grounded"] = True
-    if content_type in VALID_CONTENT_TYPES:
+    if content_type:
         payload["contentType"] = content_type
     if strict:
         payload["strict"] = True
 
     return payload
+
+
+def _resolve_grounded(state: SessionState) -> bool:
+    if state.grounded_override is not None:
+        return state.grounded_override
+    return _is_truthy(os.getenv("ACP_GROUNDED", ""))
+
+
+def _resolve_content_type_from_env() -> str | None:
+    content_type = os.getenv("ACP_CONTENT_TYPE", "").strip().lower()
+    if content_type in VALID_CONTENT_TYPES:
+        return content_type
+    return None
+
+
+def _resolve_content_type(state: SessionState) -> str | None:
+    if state.content_type_override in VALID_CONTENT_TYPES:
+        return state.content_type_override
+    return _resolve_content_type_from_env()
 
 
 def _resolve_scope(raw_repo: str) -> dict[str, Any]:
@@ -401,6 +488,76 @@ async def _handle_model_command(
         else:
             state.model_override = model
             reply = f"Modelo atualizado para: {state.model_override}"
+
+    if conn:
+        await conn.session_update(session_id, acp.update_agent_message_text(reply))
+    return acp.PromptResponse(stop_reason="end_turn")
+
+
+async def _handle_grounded_command(
+    conn: acp.Client | None,
+    session_id: str,
+    state: SessionState,
+    question: str,
+) -> acp.PromptResponse | None:
+    text = question.strip()
+    if not text.startswith("/grounded"):
+        return None
+
+    parts = text.split(maxsplit=1)
+    if len(parts) == 1:
+        status = "on" if _resolve_grounded(state) else "off"
+        source = "sessão" if state.grounded_override is not None else "env"
+        reply = f"Grounded atual: {status} (fonte: {source})."
+    else:
+        value = parts[1].strip().lower()
+        if value in GROUNDED_ON_VALUES:
+            state.grounded_override = True
+            reply = "Grounded ativado para esta sessão."
+        elif value in GROUNDED_OFF_VALUES:
+            state.grounded_override = False
+            reply = "Grounded desativado para esta sessão."
+        elif value in {"reset", "default"}:
+            state.grounded_override = None
+            reply = "Grounded resetado para o valor do ambiente."
+        else:
+            reply = "Valor inválido. Use /grounded on|off|reset."
+
+    if conn:
+        await conn.session_update(session_id, acp.update_agent_message_text(reply))
+    return acp.PromptResponse(stop_reason="end_turn")
+
+
+async def _handle_content_type_command(
+    conn: acp.Client | None,
+    session_id: str,
+    state: SessionState,
+    question: str,
+) -> acp.PromptResponse | None:
+    text = question.strip()
+    if not text.startswith("/"):
+        return None
+
+    command, _, raw_args = text.partition(" ")
+    normalized = command.lower().replace("-", "")
+    if normalized != "/contenttype":
+        return None
+
+    value = raw_args.strip().lower()
+    if not value:
+        active = _resolve_content_type(state)
+        source = "sessão" if state.content_type_override is not None else "env"
+        if active is None:
+            source = "default"
+        reply = f"contentType atual: {active or 'default'} (fonte: {source})."
+    elif value in VALID_CONTENT_TYPES:
+        state.content_type_override = value
+        reply = f"contentType atualizado para: {value}"
+    elif value in {"reset", "default"}:
+        state.content_type_override = None
+        reply = "contentType resetado para o valor do ambiente."
+    else:
+        reply = "Valor inválido. Use /content-type code|docs|all|reset."
 
     if conn:
         await conn.session_update(session_id, acp.update_agent_message_text(reply))
