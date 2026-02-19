@@ -72,6 +72,15 @@ Env vars úteis:
 - `ACP_REPO`: repo padrão enviado ao `ask_code`
 - `ACP_PATH_PREFIX`, `ACP_LANGUAGE`, `ACP_TOPK`, `ACP_MIN_SCORE`: filtros do `ask_code`
 - `ACP_GROUNDED`: força resposta restrita ao contexto
+- `ACP_CONTENT_TYPE`: tipo de conteúdo (`code`, `docs`, `all`)
+- `ACP_STRICT`: ativa modo estrito no `ask_code`
+- `ACP_SHOW_META`, `ACP_SHOW_CONTEXT`: habilitam passthrough de meta/evidences no chat
+
+Comandos de sessão no Toad:
+
+- `/repo` e `/repo <nome|repo-a,repo-b>`: altera escopo de repo(s)
+- `/model` e `/model <nome|reset>`: altera modelo da sessão
+- `/config`: imprime a configuração efetiva atual e preview do payload enviado ao MCP
 
 ## Notas de operação
 
