@@ -76,11 +76,11 @@ O comando retorna um JSON com informações da inicialização:
   },
   "collections": {
     "code": {
-      "name": "compass__manutic_nomic_embed__code",
+      "name": "compass_manutic_nomic_embed__code",
       "action": "created"
     },
     "docs": {
-      "name": "compass__manutic_nomic_embed__docs",
+      "name": "compass_manutic_nomic_embed__docs",
       "action": "created"
     }
   },
@@ -108,7 +108,7 @@ O stem base é o valor de `QDRANT_COLLECTION_BASE`:
 
 Exemplo para o modelo padrão:
 ```
-compass__manutic_nomic_embed
+compass_manutic_nomic_embed
 ```
 
 Os nomes finais usados no Qdrant são:
