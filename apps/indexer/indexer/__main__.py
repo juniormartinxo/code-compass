@@ -353,7 +353,28 @@ def _build_parser() -> argparse.ArgumentParser:
         "init", help="Inicializa collection no Qdrant (idempotente)"
     )
     init_parser.add_argument(
-        "--ollama-url", dest="ollama_url", default=None, help="URL do Ollama"
+        "--api-url-code",
+        dest="api_url_code",
+        default=None,
+        help="URL da API de embedding para code (env: EMBEDDING_PROVIDER_CODE_API_URL)",
+    )
+    init_parser.add_argument(
+        "--api-url-docs",
+        dest="api_url_docs",
+        default=None,
+        help="URL da API de embedding para docs (env: EMBEDDING_PROVIDER_DOCS_API_URL)",
+    )
+    init_parser.add_argument(
+        "--api-key-code",
+        dest="api_key_code",
+        default=None,
+        help="API key de embedding para code (env: EMBEDDING_PROVIDER_CODE_API_KEY)",
+    )
+    init_parser.add_argument(
+        "--api-key-docs",
+        dest="api_key_docs",
+        default=None,
+        help="API key de embedding para docs (env: EMBEDDING_PROVIDER_DOCS_API_KEY)",
     )
     init_parser.add_argument(
         "--provider-code",
@@ -608,7 +629,7 @@ def _init_command(args: argparse.Namespace) -> int:
     """
     Inicializa collections no Qdrant para code/docs.
 
-    1. Probe vector_size via Ollama
+    1. Probe vector_size via provider de embedding
     2. Resolve/gera collection_names
     3. Cria/valida collections no Qdrant
     4. Cria índice payload KEYWORD para content_type (idempotente)
@@ -621,7 +642,8 @@ def _init_command(args: argparse.Namespace) -> int:
         for content_type in runtime_config.content_types:
             embedder_configs[content_type] = load_embedder_config(
                 content_type=content_type,
-                ollama_url=args.ollama_url,
+                api_url=getattr(args, f"api_url_{content_type}", None),
+                api_key=getattr(args, f"api_key_{content_type}", None),
                 provider=getattr(args, f"provider_{content_type}", None),
                 model=getattr(args, f"model_{content_type}", None),
             )
@@ -634,11 +656,11 @@ def _init_command(args: argparse.Namespace) -> int:
         for content_type in runtime_config.content_types:
             config = embedder_configs[content_type]
             logger.info(
-                "Embedding config [%s]: provider=%s model=%s ollama=%s",
+                "Embedding config [%s]: provider=%s model=%s api_url=%s",
                 content_type,
                 config.provider,
                 config.model,
-                config.ollama_url,
+                config.api_url,
             )
             with OllamaEmbedder(config) as embedder:
                 vector_size = embedder.probe_vector_size()
@@ -682,7 +704,7 @@ def _init_command(args: argparse.Namespace) -> int:
             "embedding": {
                 content_type: {
                     "provider": embedder_configs[content_type].provider,
-                    "ollama_url": embedder_configs[content_type].ollama_url,
+                    "api_url": embedder_configs[content_type].api_url,
                     "model": embedder_configs[content_type].model,
                     "vector_size": vector_sizes[content_type],
                 }
@@ -773,11 +795,11 @@ def _index_command(args: argparse.Namespace) -> int:
         for content_type in runtime_config.content_types:
             config = embedder_configs[content_type]
             logger.info(
-                "Embedding config [%s]: provider=%s model=%s ollama=%s",
+                "Embedding config [%s]: provider=%s model=%s api_url=%s",
                 content_type,
                 config.provider,
                 config.model,
-                config.ollama_url,
+                config.api_url,
             )
             with OllamaEmbedder(config) as embedder:
                 vector_sizes[content_type] = embedder.probe_vector_size()
