@@ -1,16 +1,16 @@
 
 # Code Compass Indexer - Ask Command
 
-O comando `ask` implementa **RAG (Retrieval Augmented Generation)** — permite fazer perguntas em linguagem natural sobre o código indexado e receber respostas geradas por um LLM local.
+O comando `ask` implementa **RAG (Retrieval Augmented Generation)** — permite fazer perguntas em linguagem natural sobre o código indexado e receber respostas geradas pelo LLM configurado no MCP server.
 
 ## Visão Geral
 
 O comando executa as seguintes etapas:
-1. Gera embedding da pergunta usando Ollama
+1. Gera embedding da pergunta usando o provider configurado
 2. Busca chunks relevantes no Qdrant (como o `search`)
 3. Lê o conteúdo dos arquivos encontrados
 4. Monta um prompt com o contexto
-5. Envia para um LLM local (Ollama) gerar a resposta
+5. Envia para o MCP server, que consulta o LLM configurado
 
 ## Uso Básico
 
@@ -42,12 +42,15 @@ python -m indexer ask "sua pergunta aqui" --scope-repo code-compass
 
 Precedência de configuração do modelo no `ask`: `--model` > `LLM_MODEL` > `gpt-oss:latest`.
 
-**Embeddings (Ollama):**
+**Embeddings:**
 | Variável | Default | Descrição |
 |----------|---------|-----------|
-| `OLLAMA_URL` | `http://localhost:11434` | URL do servidor Ollama |
 | `EMBEDDING_PROVIDER_CODE` | `ollama` | Provider de embedding para `code` |
 | `EMBEDDING_PROVIDER_DOCS` | `ollama` | Provider de embedding para `docs` |
+| `EMBEDDING_PROVIDER_CODE_API_URL` | `http://localhost:11434` | URL da API para `code` |
+| `EMBEDDING_PROVIDER_DOCS_API_URL` | `http://localhost:11434` | URL da API para `docs` |
+| `EMBEDDING_PROVIDER_CODE_API_KEY` | vazio | API key para `code` (opcional no `ollama`) |
+| `EMBEDDING_PROVIDER_DOCS_API_KEY` | vazio | API key para `docs` (opcional no `ollama`) |
 | `EMBEDDING_MODEL_CODE` | `manutic/nomic-embed-code` | Modelo de embedding para `code` |
 | `EMBEDDING_MODEL_DOCS` | `bge-m3` | Modelo de embedding para `docs` |
 
@@ -167,13 +170,13 @@ python -m indexer ask "qual o propósito do indexer?" --scope-repo code-compass 
 ```
 ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
 │   Pergunta  │────>│  Embedding  │────>│   Qdrant    │
-│  (usuário)  │     │  (Ollama)   │     │   (busca)   │
+│  (usuário)  │     │   (API)     │     │   (busca)   │
 └─────────────┘     └─────────────┘     └─────────────┘
                                               │
                                               v
 ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
 │   Resposta  │<────│     LLM     │<────│   Contexto  │
-│   (texto)   │     │  (Ollama)   │     │  (chunks)   │
+│   (texto)   │     │    (MCP)    │     │  (chunks)   │
 └─────────────┘     └─────────────┘     └─────────────┘
 ```
 
@@ -196,12 +199,9 @@ Os chunks encontrados são lidos diretamente do sistema de arquivos usando:
 
 ### Modelos LLM Suportados
 
-Qualquer modelo instalado no Ollama pode ser usado:
+Depende do provider configurado no MCP server (`LLM_MODEL_PROVIDER` + `LLM_MODEL_API_URL`).
 
 ```bash
-# Listar modelos disponíveis
-ollama list
-
 # Exemplos de uso
 python -m indexer ask "pergunta" --model gpt-oss:latest
 python -m indexer ask "pergunta" --model deepseek-r1:32b
@@ -229,7 +229,7 @@ python -m indexer ask "pergunta" --model qwen3-coder:30b
 
 | Cenário | Comportamento |
 |---------|---------------|
-| Ollama indisponível | Exit code `1`, mensagem de erro |
+| API de embedding indisponível | Exit code `1`, mensagem de erro |
 | Modelo LLM não encontrado | Exit code `1`, mensagem de erro |
 | Qdrant indisponível | Exit code `1`, mensagem de erro |
 | Nenhum contexto encontrado | Mensagem informativa, exit code `0` |
@@ -238,14 +238,14 @@ python -m indexer ask "pergunta" --model qwen3-coder:30b
 ## Troubleshooting
 
 ### "Erro no embedder/LLM: Erro HTTP 404"
-O modelo LLM especificado não está instalado.
+O modelo LLM não existe no provider configurado ou a URL está incorreta.
 
 ```bash
-# Verificar modelos instalados
-ollama list
+# Verificar URL configurada no MCP
+echo "$LLM_MODEL_API_URL"
 
-# Instalar modelo
-ollama pull gpt-oss:latest
+# Teste simples da API de embeddings (exemplo Ollama)
+curl http://localhost:11434/api/tags
 ```
 
 ### Resposta muito genérica ou "não encontrei"
