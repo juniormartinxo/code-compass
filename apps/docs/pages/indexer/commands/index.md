@@ -15,7 +15,7 @@ O comando `index` executa as seguintes etapas:
 1. **Inicialização**: Probe do vector_size e validação/criação da collection
 2. **Scan**: Escaneia o repositório para encontrar arquivos elegíveis
 3. **Chunk**: Divide cada arquivo em chunks semânticos
-4. **Embed**: Gera embeddings via Ollama em batches
+4. **Embed**: Gera embeddings via provider HTTP configurado em batches
 5. **Upsert**: Armazena vetores no Qdrant com IDs estáveis
 
 ### IDs Estáveis (Idempotência)
@@ -54,10 +54,13 @@ As variáveis são lidas do ambiente e carregadas automaticamente de `.env` e `.
 - `CHUNK_LINES`: Linhas por chunk
 - `CHUNK_OVERLAP_LINES`: Overlap entre chunks
 
-### Embeddings (Ollama)
-- `OLLAMA_URL`: URL do Ollama
+### Embeddings
 - `EMBEDDING_PROVIDER_CODE`: Provider de embedding para `code`
 - `EMBEDDING_PROVIDER_DOCS`: Provider de embedding para `docs`
+- `EMBEDDING_PROVIDER_CODE_API_URL`: URL da API para `code`
+- `EMBEDDING_PROVIDER_DOCS_API_URL`: URL da API para `docs`
+- `EMBEDDING_PROVIDER_CODE_API_KEY`: API key para `code` (opcional no `ollama`)
+- `EMBEDDING_PROVIDER_DOCS_API_KEY`: API key para `docs` (opcional no `ollama`)
 - `EMBEDDING_MODEL_CODE`: Modelo de embedding para `code`
 - `EMBEDDING_MODEL_DOCS`: Modelo de embedding para `docs`
 - `EMBEDDING_BATCH_SIZE`: Textos por batch
@@ -207,8 +210,8 @@ O comando emite logs informativos durante a execução:
 
 ```
 2026-02-09 02:15:37,120 [INFO] Repo root: /path/to/repo
-2026-02-09 02:15:37,120 [INFO] Embedding config [code]: provider=ollama model=manutic/nomic-embed-code ollama=http://localhost:11434
-2026-02-09 02:15:37,121 [INFO] Embedding config [docs]: provider=ollama model=bge-m3 ollama=http://localhost:11434
+2026-02-09 02:15:37,120 [INFO] Embedding config [code]: provider=ollama model=manutic/nomic-embed-code api_url=http://localhost:11434
+2026-02-09 02:15:37,121 [INFO] Embedding config [docs]: provider=ollama model=bge-m3 api_url=http://localhost:11434
 2026-02-09 02:15:37,122 [INFO] Collections: code=compass__manutic_nomic_embed__code docs=compass__manutic_nomic_embed__docs
 2026-02-09 02:15:37,120 [INFO] Iniciando scan...
 2026-02-09 02:15:37,375 [INFO] Arquivos encontrados: 42
