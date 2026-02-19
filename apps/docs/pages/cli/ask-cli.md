@@ -81,7 +81,7 @@ para habilitar aliases locais `/clear` e `/close`.
 
 - O comando `chat` exige `batrachian-toad` instalado em Python 3.14+ ou `TOAD_COMMAND` apontando para um binário compatível.
 - Dentro do chat, use `/repo <nome>` para trocar para um repo (ex.: `/repo golyzer`) ou `/repo <repo-a,repo-b>` para múltiplos repos.
-- Dentro do chat, use `/model <nome>` para trocar o modelo na sessão (use `/model` para ver o atual e `/model reset` para voltar ao default).
+- Dentro do chat, use `/model <nome>` para trocar o modelo na sessão (se `<nome>` existir em `ACP_MODEL_PROFILES_FILE`, o perfil completo é aplicado).
 - Dentro do chat, use `/grounded <on|off|reset>` para ativar/desativar grounded em runtime.
 - Dentro do chat, use `/content-type <code|docs|all|reset>` (ou `/contentType`) para controlar `contentType` em runtime.
 - Dentro do chat, use `/config` para visualizar a configuração efetiva da sessão (scope, modelo, filtros e flags).
