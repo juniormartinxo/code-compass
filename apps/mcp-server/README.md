@@ -198,9 +198,14 @@ Executa o fluxo RAG completo no MCP: embedding da pergunta, busca no Qdrant, enr
 
 ### Regras importantes
 
-- Usa `OLLAMA_URL` + `EMBEDDING_MODEL_CODE`/`EMBEDDING_MODEL_DOCS` para gerar embedding da pergunta conforme `contentType`.
-- Usa `OLLAMA_URL` + `llmModel` para gerar resposta final.
+- Embeddings (`ask_code`) suportam:
+  - `EMBEDDING_PROVIDER_CODE|DOCS=ollama` (default): usa `EMBEDDING_PROVIDER_CODE_API_URL`/`EMBEDDING_PROVIDER_DOCS_API_URL`.
+  - `EMBEDDING_PROVIDER_CODE|DOCS=openai-compatible|openai|deepseek`: usa `EMBEDDING_PROVIDER_CODE_API_URL`/`EMBEDDING_PROVIDER_DOCS_API_URL` e `EMBEDDING_PROVIDER_CODE_API_KEY`/`EMBEDDING_PROVIDER_DOCS_API_KEY`.
+- Resposta final (`ask_code`) suporta:
+  - `LLM_MODEL_PROVIDER=ollama` (default): usa `LLM_MODEL_API_URL` + `llmModel`.
+  - `LLM_MODEL_PROVIDER=deepseek|openai-compatible|openai`: usa `LLM_MODEL_API_URL` + `LLM_MODEL_API_KEY`.
 - A política de prompt e seleção de contexto fica centralizada no MCP.
+- Compatibilidade: variáveis legadas (`LLM_PROVIDER`, `LLM_API_BASE_URL`, `LLM_API_KEY`) ainda são aceitas.
 
 ## Qdrant (env vars)
 
