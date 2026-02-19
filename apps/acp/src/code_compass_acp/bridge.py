@@ -6,6 +6,7 @@ import os
 import shlex
 import signal
 import sys
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,8 @@ class McpBridge:
         self._config = config
         self._process: asyncio.subprocess.Process | None = None
         self._reader_task: asyncio.Task[None] | None = None
+        self._stderr_task: asyncio.Task[None] | None = None
+        self._stderr_tail: deque[str] = deque(maxlen=30)
         self._pending: dict[str | int, asyncio.Future[dict[str, Any]]] = {}
 
     async def start(self) -> None:
@@ -33,6 +36,7 @@ class McpBridge:
         if self._config.llm_model:
             env["LLM_MODEL"] = self._config.llm_model
 
+        self._stderr_tail.clear()
         self._process = await asyncio.create_subprocess_exec(
             *self._config.command,
             stdin=asyncio.subprocess.PIPE,
@@ -42,7 +46,12 @@ class McpBridge:
         )
 
         self._reader_task = asyncio.create_task(self._read_loop())
-        await self._handshake()
+        self._stderr_task = asyncio.create_task(self._read_stderr_loop())
+        try:
+            await self._handshake()
+        except Exception:
+            await self.abort()
+            raise
 
     async def ask_code(
         self,
@@ -107,6 +116,9 @@ class McpBridge:
         if self._reader_task:
             self._reader_task.cancel()
             self._reader_task = None
+        if self._stderr_task:
+            self._stderr_task.cancel()
+            self._stderr_task = None
         self._process = None
 
     async def _handshake(self) -> None:
@@ -172,8 +184,38 @@ class McpBridge:
         except Exception as exc:
             self._fail_pending(exc)
         finally:
-            self._fail_pending(RuntimeError("MCP encerrou stdout"))
+            self._fail_pending(self._build_process_exit_error("MCP encerrou stdout"))
             self._process = None
+
+    async def _read_stderr_loop(self) -> None:
+        if not self._process or not self._process.stderr:
+            return
+
+        try:
+            while True:
+                chunk = await self._process.stderr.readline()
+                if not chunk:
+                    break
+                line = chunk.decode("utf-8", errors="replace").strip()
+                if line:
+                    self._stderr_tail.append(line)
+        except asyncio.CancelledError:
+            return
+        except Exception as exc:
+            self._stderr_tail.append(f"[stderr-loop] {exc}")
+
+    def _build_process_exit_error(self, message: str) -> RuntimeError:
+        details: list[str] = []
+        if self._process and self._process.returncode is not None:
+            details.append(f"exit={self._process.returncode}")
+        if self._stderr_tail:
+            stderr_excerpt = " | ".join(self._stderr_tail)
+            if len(stderr_excerpt) > 1200:
+                stderr_excerpt = f"...{stderr_excerpt[-1200:]}"
+            details.append(f"stderr={stderr_excerpt}")
+        if details:
+            return RuntimeError(f"{message} ({'; '.join(details)})")
+        return RuntimeError(message)
 
     def _fail_pending(self, exc: Exception) -> None:
         for future in self._pending.values():
