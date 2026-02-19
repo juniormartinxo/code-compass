@@ -99,3 +99,5 @@ code_compass.code-workspace
 
 code-base/**
 !code-base/.gitkeep
+
+qdrant_data/
