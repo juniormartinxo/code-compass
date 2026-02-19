@@ -38,3 +38,14 @@ Env vars úteis:
 - `ACP_REPO`: repo padrão enviado ao `ask_code`
 - `ACP_CONTENT_TYPE`: tipo de conteúdo (`code`, `docs`, `all`)
 - `ACP_STRICT`: quando `true`, falha em vez de retorno parcial se alguma coleção estiver indisponível
+
+## Slash Commands no Toad
+
+Ao abrir sessão ACP no Toad, o agente anuncia comandos via `available_commands_update`.
+Isso permite que o menu fuzzy (`/`) mostre os comandos abaixo:
+
+- `/repo <repo[,repo2,...]>`
+- `/config`
+- `/model <model|reset>`
+- `/grounded <on|off|reset>`
+- `/content-type <code|docs|all|reset>`
