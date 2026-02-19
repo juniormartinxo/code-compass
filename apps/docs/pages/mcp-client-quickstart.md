@@ -23,16 +23,101 @@ O script `bin/dev-mcp` define defaults seguros:
 
 - `CODEBASE_ROOT=<raiz>/code-base` (modo multi-repo)
 - `QDRANT_URL=http://localhost:6333` (se ausente)
-- `QDRANT_COLLECTION_BASE=compass__manutic_nomic_embed` (se ausente)
+- `QDRANT_COLLECTION_BASE=compass_manutic_nomic_embed` (se ausente)
 
 Se você usa múltiplos repos em `code-base/`, defina:
 
 - `CODEBASE_ROOT=/path/para/code-base`
 - Opcional: `ALLOW_GLOBAL_SCOPE=true` para habilitar `scope: { type: "all" }`
 
-## Configuração do cliente (Codex)
+## Configuração de cliente (STDIO local)
+
+### A) Codex (golden path do projeto)
 
 Use o template em `apps/docs/assets/codex-config-example.toml` e ajuste o path absoluto para o seu clone local.
+
+Exemplo mínimo (`.codex/config.toml`):
+
+```toml
+[mcp_servers.code_compass_local]
+command = "/ABS/PATH/code-compass/bin/dev-mcp"
+args = []
+```
+
+### B) Cursor
+
+Use o template `apps/docs/assets/cursor-mcp.json`.
+
+Locais comuns de config no Cursor:
+
+- por projeto: `.cursor/mcp.json`
+- global: `~/.cursor/mcp.json`
+
+Exemplo mínimo:
+
+```json
+{
+  "mcpServers": {
+    "code-compass-local": {
+      "type": "stdio",
+      "command": "/ABS/PATH/code-compass/bin/dev-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+### C) VS Code
+
+Use o template `apps/docs/assets/vscode-mcp.json`.
+
+Local comum de config por workspace:
+
+- `.vscode/mcp.json`
+
+Exemplo mínimo:
+
+```json
+{
+  "servers": {
+    "code-compass-local": {
+      "type": "stdio",
+      "command": "/ABS/PATH/code-compass/bin/dev-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+### D) JetBrains (IntelliJ, WebStorm, PyCharm, Android Studio)
+
+Use o template `apps/docs/assets/jetbrains-mcp.json` como base do JSON a ser colado/importado nas configurações de MCP da IDE.
+
+Exemplo mínimo:
+
+```json
+{
+  "mcpServers": {
+    "code-compass-local": {
+      "command": "/ABS/PATH/code-compass/bin/dev-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+Fluxo comum:
+
+1. Abrir **Settings**.
+2. Ir para **Tools > AI Assistant > Model Context Protocol (MCP)**.
+3. Adicionar server via JSON (ou import).
+
+### Observações importantes para todos os clientes
+
+- Use `command` absoluto para `bin/dev-mcp` (evita erro de `cwd`).
+- Se o cliente suportar config por projeto e global, prefira por projeto para evitar conflito.
+- O launcher `bin/dev-mcp` já aplica defaults de `CODEBASE_ROOT`, `QDRANT_URL` e `QDRANT_COLLECTION_BASE` quando não informados.
+- Menus e nomes de campos podem variar por versão do cliente; valide sempre na UI/documentação oficial da IDE.
 
 Importante sobre escopo em `ask_code`:
 
