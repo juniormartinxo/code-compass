@@ -71,17 +71,17 @@ Resposta de sucesso (`stdout`, uma linha):
       "pathPrefix": "apps/indexer/",
       "contentType": "all",
       "strict": false,
-      "collection": "compass__manutic_nomic_embed__code",
+      "collection": "compass_manutic_nomic_embed__code",
       "collections": [
         {
-          "name": "compass__manutic_nomic_embed__code",
+          "name": "compass_manutic_nomic_embed__code",
           "contentType": "code",
           "hits": 10,
           "latencyMs": 8,
           "status": "ok"
         },
         {
-          "name": "compass__manutic_nomic_embed__docs",
+          "name": "compass_manutic_nomic_embed__docs",
           "contentType": "docs",
           "hits": 3,
           "latencyMs": 7,
@@ -210,7 +210,7 @@ Executa o fluxo RAG completo no MCP: embedding da pergunta, busca no Qdrant, enr
 ## Qdrant (env vars)
 
 - `QDRANT_URL` (default: `http://localhost:6333`)
-- `QDRANT_COLLECTION_BASE` (default: `compass__manutic_nomic_embed`)
+- `QDRANT_COLLECTION_BASE` (default: `compass_manutic_nomic_embed`)
 - `QDRANT_API_KEY` (opcional)
 
 ## CODEBASE_ROOT (env var)
