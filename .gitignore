@@ -18,6 +18,7 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+model-profiles.toml
 
 *.pem
 *.key
