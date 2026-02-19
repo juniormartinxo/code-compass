@@ -67,14 +67,41 @@ if [[ -n "$ENV_FILE" ]]; then
   set +a
 fi
 
+check_mcp_runtime_deps() {
+  local mcp_dir="$ROOT/apps/mcp-server"
+  local missing=()
+  local deps=(
+    "reflect-metadata"
+    "@nestjs/common"
+    "@nestjs/core"
+    "@nestjs/platform-express"
+    "rxjs"
+    "axios"
+  )
+
+  for dep in "${deps[@]}"; do
+    if ! node -e "require.resolve(process.argv[1], { paths: [process.argv[2]] })" "$dep" "$mcp_dir" >/dev/null 2>&1; then
+      missing+=("$dep")
+    fi
+  done
+
+  if (( ${#missing[@]} > 0 )); then
+    log "Error: dependencias Node do MCP ausentes: ${missing[*]}"
+    log "Run: pnpm install --filter @code-compass/mcp-server"
+    exit 1
+  fi
+}
+
 # Configura MCP_COMMAND se não estiver definido
 if [[ -z "${MCP_COMMAND:-}" ]]; then
   MCP_SERVER_DIST="$ROOT/apps/mcp-server/dist/main.js"
   if [[ -f "$MCP_SERVER_DIST" ]]; then
-    export MCP_COMMAND="node $MCP_SERVER_DIST"
+    check_mcp_runtime_deps
+    export MCP_COMMAND="node $MCP_SERVER_DIST --transport stdio"
     log "MCP_COMMAND set to: $MCP_COMMAND"
   else
-    log "Warning: MCP server not built. Run 'pnpm mcp:build' first."
+    log "Error: MCP server not built. Run 'pnpm mcp:build' first."
+    exit 1
   fi
 fi
 
