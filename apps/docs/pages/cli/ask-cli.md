@@ -66,7 +66,7 @@ para habilitar aliases locais `/clear` e `/close`.
 
 ## Configuração via env
 
-- `LLM_MODEL` (se definido, sobrescreve o modelo do MCP)
+- `LLM_MODEL`: (modelo LLM padrão da sessão, sobrescreve o MCP. Sessões iterativas devem preferir `model-profiles.toml` definido via `ACP_MODEL_PROFILES_FILE` para configuração completa do provedor)
 - `MCP_COMMAND`
 - `TOAD_PROFILE`
 - `TOAD_COMMAND` (binário do toad, opcional)

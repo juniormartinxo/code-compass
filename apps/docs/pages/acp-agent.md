@@ -68,8 +68,8 @@ Env vars úteis:
 ## Variáveis de ambiente
 
 - `MCP_COMMAND`: comando para subir o MCP server (`--transport stdio`)
-- `LLM_MODEL`: repassado ao MCP via `env`
-- `ACP_MODEL_PROFILES_FILE`: arquivo TOML de perfis para `/model` (default `model-profiles.toml`, local e não versionado)
+- `LLM_MODEL`: repassado ao MCP via `env` (usado apenas como default base, prefira o `model-profiles.toml` para perfis isolados)
+- `ACP_MODEL_PROFILES_FILE`: arquivo TOML contendo perfis (ex: model, provider, url, keys) para `/model` (default `model-profiles.toml`, local e não versionado). **Recomendado para chats.**
 - `ACP_REPO`: repo padrão enviado ao `ask_code`
 - `ACP_PATH_PREFIX`, `ACP_LANGUAGE`, `ACP_TOPK`, `ACP_MIN_SCORE`: filtros do `ask_code`
 - `ACP_GROUNDED`: força resposta restrita ao contexto

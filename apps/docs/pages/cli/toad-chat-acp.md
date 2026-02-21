@@ -41,9 +41,9 @@ os aliases dependem do comportamento desse comando.
 - `TOAD_PROJECT_DIR`: diretório usado como `PATH` no `toad acp` (default: `cwd`)
 - `ACP_AGENT_CMD`: caminho do agente ACP (opcional)
 - `ACP_AGENT_ARGS`: args extras do agente ACP
-- `ACP_MODEL_PROFILES_FILE`: arquivo TOML com perfis de modelo (`model-profiles.toml` por default, local e não versionado)
+- `ACP_MODEL_PROFILES_FILE`: arquivo TOML com perfis de modelo (`model-profiles.toml` por default, local e não versionado). **Uso recomendado para chats.**
 - `ACP_REPO`: repo default da sessão
-- `LLM_MODEL`: modelo default da sessão
+- `LLM_MODEL`: modelo default da sessão (usado apenas como fallback)
 
 ## Comandos na sessão (chat)
 
