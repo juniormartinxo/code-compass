@@ -22,6 +22,7 @@ export interface ResolvedScope {
 }
 
 export type ContentType = 'code' | 'docs' | 'all';
+export type KnowledgeMode = 'strict' | 'all';
 
 export type CollectionContentType = Exclude<ContentType, 'all'>;
 
@@ -48,12 +49,14 @@ export interface SearchCodeInput {
 export interface AskCodeInput {
   scope: Scope;
   query: string;
+  conversationContext?: string;
   topK?: number;
   pathPrefix?: string;
   language?: string;
   minScore?: number;
   llmModel?: string;
   grounded?: boolean;
+  knowledgeMode?: KnowledgeMode;
   contentType?: ContentType;
   strict?: boolean;
 }
@@ -111,6 +114,7 @@ export interface AskCodeOutput {
     topK: number;
     minScore: number;
     llmModel: string;
+    knowledgeMode: KnowledgeMode;
     contentType: ContentType;
     strict: boolean;
     collections: CollectionMeta[];
