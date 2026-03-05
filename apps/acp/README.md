@@ -51,6 +51,8 @@ Isso permite que o menu fuzzy (`/`) mostre os comandos abaixo:
 - `/grounded <on|off|reset>`
 - `/content-type <code|docs|all|reset>`
 
+Sem `grounded` (`/grounded off`), o agente prioriza evidencias do indice, mas pode responder com conhecimento geral quando o RAG nao retornar contexto suficiente.
+
 Quando o valor de `/model` bate com um perfil do `ACP_MODEL_PROFILES_FILE`, o agente aplica
 `model + provider + api_url + api_key` no bridge da sessão e reinicia o subprocesso MCP.
 Para forçar lookup por perfil (sem fallback para nome de modelo), use `/model profile:<nome>`.
