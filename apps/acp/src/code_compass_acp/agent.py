@@ -7,7 +7,7 @@ import os
 import signal
 import sys
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +25,10 @@ GROUNDED_OFF_VALUES = {"off", "false", "0", "no"}
 MODEL_RESET_VALUES = {"default", "reset"}
 MODEL_PROFILES_ENV_KEY = "ACP_MODEL_PROFILES_FILE"
 DEFAULT_MODEL_PROFILES_FILE = "model-profiles.toml"
+DEFAULT_MEMORY_MAX_TURNS = 8
+DEFAULT_MEMORY_MAX_CHARS = 4000
+MAX_MEMORY_MAX_TURNS = 64
+MAX_MEMORY_MAX_CHARS = 16000
 AVAILABLE_SLASH_COMMANDS: tuple[dict[str, Any], ...] = (
     {
         "name": "repo",
@@ -81,6 +85,7 @@ class SessionState:
     grounded_override: bool | None = None
     knowledge_mode_override: str | None = None
     content_type_override: str | None = None
+    conversation_history: list[tuple[str, str]] = field(default_factory=list)
 
 
 class CodeCompassAgent(acp.Agent):
@@ -178,7 +183,12 @@ class CodeCompassAgent(acp.Agent):
                 if command_response is not None:
                     return command_response
 
-                payload = _build_ask_payload(question, state)
+                conversation_context = _build_conversation_context(state)
+                payload = _build_ask_payload(
+                    question,
+                    state,
+                    conversation_context=conversation_context,
+                )
                 result = await state.mcp_bridge.ask_code(payload, state.cancel_event)
             except asyncio.CancelledError:
                 return acp.PromptResponse(stop_reason="cancelled")
@@ -218,6 +228,8 @@ class CodeCompassAgent(acp.Agent):
                         await asyncio.sleep(float(delay))
                     except ValueError:
                         pass
+
+            _remember_turn(state, question, answer)
 
         return acp.PromptResponse(stop_reason="end_turn")
 
@@ -552,6 +564,7 @@ def _resolve_model_profile_by_selector(selector: str) -> tuple[ModelProfile | No
 def _build_runtime_config(state: SessionState) -> dict[str, Any]:
     payload_preview = _build_ask_payload("<query>", state)
     payload_preview.pop("query", None)
+    payload_preview.pop("conversationContext", None)
 
     active_repo = (state.repo_override or os.getenv("ACP_REPO", "code-compass")).strip()
     llm_runtime = _resolve_llm_runtime(state)
@@ -615,6 +628,12 @@ def _build_runtime_config(state: SessionState) -> dict[str, Any]:
             "knowledgeMode": payload_preview.get("knowledgeMode", "strict"),
             "strict": payload_preview.get("strict", False),
         },
+        "memory": {
+            "turnsStored": len(state.conversation_history),
+            "maxTurns": _resolve_memory_max_turns(),
+            "maxChars": _resolve_memory_max_chars(),
+            "contextChars": len(_build_conversation_context(state)),
+        },
         "passthrough": {
             "showMeta": _is_truthy(os.getenv("ACP_SHOW_META", "")),
             "showContext": _is_truthy(os.getenv("ACP_SHOW_CONTEXT", "")),
@@ -624,7 +643,12 @@ def _build_runtime_config(state: SessionState) -> dict[str, Any]:
     }
 
 
-def _build_ask_payload(question: str, state: SessionState) -> dict[str, Any]:
+def _build_ask_payload(
+    question: str,
+    state: SessionState,
+    *,
+    conversation_context: str = "",
+) -> dict[str, Any]:
     raw_repo = (state.repo_override or os.getenv("ACP_REPO", "code-compass")).strip()
     payload: dict[str, Any] = {
         "query": question,
@@ -652,6 +676,8 @@ def _build_ask_payload(question: str, state: SessionState) -> dict[str, Any]:
     if isinstance(llm_model, str) and llm_model:
         payload["llmModel"] = llm_model
     payload["knowledgeMode"] = knowledge_mode
+    if conversation_context:
+        payload["conversationContext"] = conversation_context
     if grounded:
         payload["grounded"] = True
     if content_type:
@@ -736,6 +762,70 @@ def _parse_float(value: str) -> float | None:
 
 def _is_truthy(value: str) -> bool:
     return value.strip().lower() in TRUTHY_VALUES
+
+
+def _resolve_memory_max_turns() -> int:
+    parsed = _parse_int(os.getenv("ACP_MEMORY_MAX_TURNS", ""))
+    if parsed is None:
+        return DEFAULT_MEMORY_MAX_TURNS
+    return max(1, min(MAX_MEMORY_MAX_TURNS, parsed))
+
+
+def _resolve_memory_max_chars() -> int:
+    parsed = _parse_int(os.getenv("ACP_MEMORY_MAX_CHARS", ""))
+    if parsed is None:
+        return DEFAULT_MEMORY_MAX_CHARS
+    return max(256, min(MAX_MEMORY_MAX_CHARS, parsed))
+
+
+def _format_conversation_turn(user_text: str, assistant_text: str, index: int) -> str:
+    return (
+        f"[Turno {index}]\n"
+        f"Usuario: {user_text}\n"
+        f"Assistente: {assistant_text}"
+    )
+
+
+def _build_conversation_context(state: SessionState) -> str:
+    if not state.conversation_history:
+        return ""
+
+    max_turns = _resolve_memory_max_turns()
+    max_chars = _resolve_memory_max_chars()
+    recent_turns = state.conversation_history[-max_turns:]
+    selected_blocks: list[str] = []
+    total_chars = 0
+
+    for reverse_index, (user_text, assistant_text) in enumerate(reversed(recent_turns), start=1):
+        turn_index = len(recent_turns) - reverse_index + 1
+        block = _format_conversation_turn(user_text, assistant_text, turn_index)
+        separator = 2 if selected_blocks else 0
+        projected_size = total_chars + len(block) + separator
+        if projected_size > max_chars:
+            break
+        selected_blocks.append(block)
+        total_chars = projected_size
+
+    if not selected_blocks:
+        last_user, last_assistant = recent_turns[-1]
+        fallback_block = _format_conversation_turn(last_user, last_assistant, len(recent_turns))
+        return fallback_block[-max_chars:]
+
+    return "\n\n".join(reversed(selected_blocks))
+
+
+def _remember_turn(state: SessionState, question: str, answer: str) -> None:
+    user_text = question.strip()
+    assistant_text = answer.strip()
+    if not user_text or not assistant_text:
+        return
+
+    state.conversation_history.append((user_text, assistant_text))
+    # Guarda um buffer acima do limite efetivo para evitar churn excessivo.
+    max_stored_turns = max(32, _resolve_memory_max_turns() * 3)
+    overflow = len(state.conversation_history) - max_stored_turns
+    if overflow > 0:
+        del state.conversation_history[:overflow]
 
 
 async def _handle_model_command(
