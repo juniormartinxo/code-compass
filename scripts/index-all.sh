@@ -31,11 +31,17 @@ if [[ -f "$PROJECT_ROOT/.env.local" ]]; then
   set +a
 fi
 
-# ── Ativar venv do indexer (se existir) ─────────────────────
-if [[ -f "$INDEXER_DIR/.venv/bin/activate" ]]; then
-  echo "🐍 Ativando venv do indexer..."
-  # shellcheck disable=SC1091
-  source "$INDEXER_DIR/.venv/bin/activate"
+# INDEXER_DIR pode vir do .env.local (relativo ou absoluto); sempre normalizar
+if [[ "${INDEXER_DIR:-}" != /* ]]; then
+  INDEXER_DIR="$PROJECT_ROOT/${INDEXER_DIR:-apps/indexer}"
+fi
+INDEXER_PYTHON="$INDEXER_DIR/.venv/bin/python"
+
+# ── Validar Python do indexer ───────────────────────────────
+if [[ ! -x "$INDEXER_PYTHON" ]]; then
+  echo "❌ Python da venv do indexer não encontrado em: $INDEXER_PYTHON"
+  echo "   Rode: make setup-indexer"
+  exit 1
 fi
 
 # ── Validações ──────────────────────────────────────────────
@@ -112,7 +118,7 @@ for repo_name in "${REPOS[@]}"; do
 
   export REPO_ROOT="$REPO_PATH"
 
-  if (cd "$INDEXER_DIR" && PYTHONPATH=. python -m indexer index --repo-root "$REPO_PATH" "${EXTRA_ARGS[@]}"); then
+  if (cd "$INDEXER_DIR" && PYTHONPATH=. "$INDEXER_PYTHON" -m indexer index --repo-root "$REPO_PATH" "${EXTRA_ARGS[@]}"); then
     SUCCESS=$((SUCCESS + 1))
     echo "  ✅ $repo_name indexado com sucesso"
   else
