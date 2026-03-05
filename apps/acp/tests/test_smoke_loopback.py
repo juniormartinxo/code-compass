@@ -14,6 +14,7 @@ class DummyBridge:
         self.delay = delay
         self.fail_with = fail_with
         self.aborted = False
+        self.calls: list[dict[str, object]] = []
 
     async def start(self) -> None:  # pragma: no cover - interface parity
         return
@@ -21,6 +22,7 @@ class DummyBridge:
     async def ask_code(
         self, arguments: dict[str, object], cancel_event: asyncio.Event
     ) -> dict[str, object]:
+        self.calls.append(dict(arguments))
         if self.fail_with is not None:
             raise self.fail_with
         if self.delay:
@@ -85,6 +87,48 @@ def test_prompt_receives_updates(monkeypatch: pytest.MonkeyPatch) -> None:
 
         assert response.stop_reason == "end_turn"
         assert conn.updates
+
+    asyncio.run(run())
+
+
+def test_prompt_preserves_conversation_context_between_turns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from code_compass_acp import agent as agent_mod
+
+    dummy = DummyBridge()
+    monkeypatch.setattr(agent_mod, "build_bridge", lambda llm_model=None: dummy)
+
+    async def run() -> None:
+        agent = agent_mod.CodeCompassAgent()
+        conn = DummyConn()
+        agent.on_connect(conn)  # type: ignore[arg-type]
+
+        session = await agent.new_session(cwd=".", mcpServers=[])
+
+        first = await agent.prompt(
+            acp.PromptRequest(
+                prompt=[acp.text_block("Meu nome é Junior.")],
+                session_id=session.session_id,
+            )
+        )
+        assert first.stop_reason == "end_turn"
+
+        second = await agent.prompt(
+            acp.PromptRequest(
+                prompt=[acp.text_block("Qual é o meu nome?")],
+                session_id=session.session_id,
+            )
+        )
+        assert second.stop_reason == "end_turn"
+
+        assert len(dummy.calls) >= 2
+        second_call = dummy.calls[1]
+        assert second_call.get("query") == "Qual é o meu nome?"
+        conversation_context = second_call.get("conversationContext")
+        assert isinstance(conversation_context, str)
+        assert "Meu nome é Junior." in conversation_context
+        assert "Resposta para Meu nome é Junior." in conversation_context
 
     asyncio.run(run())
 
