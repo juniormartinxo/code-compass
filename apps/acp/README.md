@@ -38,6 +38,7 @@ Env vars úteis:
 - `ACP_MODEL_PROFILES_FILE`: arquivo TOML de perfis para `/model` (default `model-profiles.toml` na raiz, local e não versionado)
 - `ACP_REPO`: repo padrão enviado ao `ask_code`
 - `ACP_CONTENT_TYPE`: tipo de conteúdo (`code`, `docs`, `all`)
+- `ACP_KNOWLEDGE_MODE`: modo de conhecimento (`strict`, `all`, default `strict`)
 - `ACP_STRICT`: quando `true`, falha em vez de retorno parcial se alguma coleção estiver indisponível
 
 ## Slash Commands no Toad
@@ -49,9 +50,12 @@ Isso permite que o menu fuzzy (`/`) mostre os comandos abaixo:
 - `/config`
 - `/model <model|perfil|reset>`
 - `/grounded <on|off|reset>`
+- `/knowledge <strict|all|reset>`
 - `/content-type <code|docs|all|reset>`
 
-Sem `grounded` (`/grounded off`), o agente prioriza evidencias do indice, mas pode responder com conhecimento geral quando o RAG nao retornar contexto suficiente.
+`/grounded on`: mantém resposta estritamente ancorada no contexto recuperado.
+`/grounded off` + `/knowledge strict` (default): responde apenas com RAG/código; sem evidência retorna mensagem de ausência de contexto.
+`/grounded off` + `/knowledge all`: permite complementar com conhecimento geral do modelo.
 
 Quando o valor de `/model` bate com um perfil do `ACP_MODEL_PROFILES_FILE`, o agente aplica
 `model + provider + api_url + api_key` no bridge da sessão e reinicia o subprocesso MCP.
