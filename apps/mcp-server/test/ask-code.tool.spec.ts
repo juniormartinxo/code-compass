@@ -93,6 +93,30 @@ describe('AskCodeTool', () => {
     ).rejects.toThrowError();
   });
 
+  it('deve falhar quando knowledgeMode for invalido', async () => {
+    const tool = createTool();
+
+    await expect(
+      tool.execute({
+        scope: { type: 'repo', repo: 'acme-repo' },
+        query: 'o que faz este arquivo?',
+        knowledgeMode: 'foo',
+      }),
+    ).rejects.toThrowError();
+  });
+
+  it('deve falhar quando conversationContext nao for string', async () => {
+    const tool = createTool();
+
+    await expect(
+      tool.execute({
+        scope: { type: 'repo', repo: 'acme-repo' },
+        query: 'o que faz este arquivo?',
+        conversationContext: { foo: 'bar' },
+      }),
+    ).rejects.toThrowError();
+  });
+
   it('deve bloquear scope all sem feature flag', async () => {
     const tool = createTool();
 
@@ -238,5 +262,204 @@ describe('AskCodeTool', () => {
         }),
       }),
     );
+  });
+
+  it('deve usar knowledgeMode strict por padrao quando grounded=false', async () => {
+    const tool = createTool();
+
+    vi.spyOn(
+      tool as unknown as { embedQuestion: (query: string, contentType: 'code' | 'docs') => Promise<number[]> },
+      'embedQuestion',
+    ).mockResolvedValue([0.1, 0.2]);
+
+    const chatSpy = vi
+      .spyOn(
+        tool as unknown as {
+          chat: (systemPrompt: string, userMessage: string, llmModel: string) => Promise<string>;
+        },
+        'chat',
+      )
+      .mockResolvedValue('resposta geral');
+
+    const output = await tool.execute({
+      scope: { type: 'repo', repo: 'acme-repo' },
+      query: 'o que e React?',
+      topK: 1,
+      contentType: 'code',
+      grounded: false,
+      minScore: 0.1,
+    });
+
+    expect(output.answer).toBe('resposta geral');
+    expect(output.meta.knowledgeMode).toBe('strict');
+    expect(chatSpy).toHaveBeenCalled();
+    const systemPrompt = chatSpy.mock.calls[0]?.[0] as string;
+    expect(systemPrompt).toContain('APENAS no contexto fornecido.');
+    expect(systemPrompt).toContain('Nao use conhecimento externo');
+    expect(systemPrompt).not.toContain('conhecimento geral');
+  });
+
+  it('deve incluir conversationContext no prompt do chat', async () => {
+    const tool = createTool();
+
+    vi.spyOn(
+      tool as unknown as { embedQuestion: (query: string, contentType: 'code' | 'docs') => Promise<number[]> },
+      'embedQuestion',
+    ).mockResolvedValue([0.1, 0.2]);
+
+    const chatSpy = vi
+      .spyOn(
+        tool as unknown as {
+          chat: (systemPrompt: string, userMessage: string, llmModel: string) => Promise<string>;
+        },
+        'chat',
+      )
+      .mockResolvedValue('resposta com memoria');
+
+    await tool.execute({
+      scope: { type: 'repo', repo: 'acme-repo' },
+      query: 'E sobre aquilo que te falei?',
+      conversationContext: 'Usuario: Vamos falar de React.\nAssistente: OK.',
+      topK: 1,
+      contentType: 'code',
+      grounded: false,
+      minScore: 0.1,
+    });
+
+    const userPrompt = chatSpy.mock.calls[0]?.[1] as string;
+    expect(userPrompt).toContain('## Contexto da conversa atual:');
+    expect(userPrompt).toContain('Usuario: Vamos falar de React.');
+  });
+
+  it('deve permitir conhecimento geral quando grounded=false e knowledgeMode=all', async () => {
+    const tool = createTool();
+
+    vi.spyOn(
+      tool as unknown as { embedQuestion: (query: string, contentType: 'code' | 'docs') => Promise<number[]> },
+      'embedQuestion',
+    ).mockResolvedValue([0.1, 0.2]);
+
+    const chatSpy = vi
+      .spyOn(
+        tool as unknown as {
+          chat: (systemPrompt: string, userMessage: string, llmModel: string) => Promise<string>;
+        },
+        'chat',
+      )
+      .mockResolvedValue('React e uma biblioteca para interfaces de usuario.');
+
+    const output = await tool.execute({
+      scope: { type: 'repo', repo: 'acme-repo' },
+      query: 'o que e React?',
+      topK: 1,
+      contentType: 'code',
+      grounded: false,
+      knowledgeMode: 'all',
+      minScore: 0.1,
+    });
+
+    expect(chatSpy).toHaveBeenCalled();
+    expect(output.meta.knowledgeMode).toBe('all');
+    const systemPrompt = chatSpy.mock.calls[0]?.[0] as string;
+    expect(systemPrompt).toContain('conhecimento geral');
+    expect(systemPrompt).not.toContain('Nao use conhecimento externo');
+  });
+
+  it('deve manter fallback sem evidencia quando grounded=false e knowledgeMode=strict', async () => {
+    const tool = createTool();
+
+    vi.spyOn(
+      tool as unknown as { embedQuestion: (query: string, contentType: 'code' | 'docs') => Promise<number[]> },
+      'embedQuestion',
+    ).mockResolvedValue([0.1, 0.2]);
+
+    const chatSpy = vi
+      .spyOn(
+        tool as unknown as {
+          chat: (systemPrompt: string, userMessage: string, llmModel: string) => Promise<string>;
+        },
+        'chat',
+      )
+      .mockResolvedValue('nao deveria ser chamado');
+
+    const output = await tool.execute({
+      scope: { type: 'repo', repo: 'acme-repo' },
+      query: 'o que e React?',
+      topK: 1,
+      contentType: 'code',
+      grounded: false,
+      minScore: 0.99,
+    });
+
+    expect(chatSpy).not.toHaveBeenCalled();
+    expect(output.meta.knowledgeMode).toBe('strict');
+    expect(output.answer).toContain('Sem evidencia suficiente');
+    expect(output.evidences).toHaveLength(0);
+    expect(output.meta.contextsUsed).toBe(0);
+  });
+
+  it('deve responder com conhecimento geral quando grounded=false, knowledgeMode=all e nao houver evidencias', async () => {
+    const tool = createTool();
+
+    vi.spyOn(
+      tool as unknown as { embedQuestion: (query: string, contentType: 'code' | 'docs') => Promise<number[]> },
+      'embedQuestion',
+    ).mockResolvedValue([0.1, 0.2]);
+
+    const chatSpy = vi
+      .spyOn(
+        tool as unknown as {
+          chat: (systemPrompt: string, userMessage: string, llmModel: string) => Promise<string>;
+        },
+        'chat',
+      )
+      .mockResolvedValue('React e uma biblioteca para interfaces de usuario.');
+
+    const output = await tool.execute({
+      scope: { type: 'repo', repo: 'acme-repo' },
+      query: 'o que e React?',
+      topK: 1,
+      contentType: 'code',
+      grounded: false,
+      knowledgeMode: 'all',
+      minScore: 0.99,
+    });
+
+    expect(chatSpy).toHaveBeenCalled();
+    expect(output.meta.knowledgeMode).toBe('all');
+    expect(output.answer).toContain('React');
+    expect(output.evidences).toHaveLength(0);
+    expect(output.meta.contextsUsed).toBe(0);
+  });
+
+  it('deve manter fallback sem evidencia quando grounded=true e nao houver evidencias', async () => {
+    const tool = createTool();
+
+    vi.spyOn(
+      tool as unknown as { embedQuestion: (query: string, contentType: 'code' | 'docs') => Promise<number[]> },
+      'embedQuestion',
+    ).mockResolvedValue([0.1, 0.2]);
+
+    const chatSpy = vi
+      .spyOn(
+        tool as unknown as {
+          chat: (systemPrompt: string, userMessage: string, llmModel: string) => Promise<string>;
+        },
+        'chat',
+      )
+      .mockResolvedValue('nao deveria ser chamado');
+
+    const output = await tool.execute({
+      scope: { type: 'repo', repo: 'acme-repo' },
+      query: 'o que e React?',
+      topK: 1,
+      contentType: 'code',
+      grounded: true,
+      minScore: 0.99,
+    });
+
+    expect(chatSpy).not.toHaveBeenCalled();
+    expect(output.answer).toContain('Sem evidencia suficiente');
+    expect(output.evidences).toHaveLength(0);
   });
 });
