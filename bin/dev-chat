@@ -67,6 +67,26 @@ if [[ -n "$ENV_FILE" ]]; then
   set +a
 fi
 
+normalize_codebase_paths() {
+  local default_codebase_root="$ROOT/code-base"
+
+  if [[ -z "${CODEBASE_ROOT:-}" || ! -d "${CODEBASE_ROOT:-}" ]]; then
+    if [[ -n "${CODEBASE_ROOT:-}" ]]; then
+      log "Warning: CODEBASE_ROOT inválido (${CODEBASE_ROOT}). Usando $default_codebase_root"
+    fi
+    export CODEBASE_ROOT="$default_codebase_root"
+  fi
+
+  if [[ -z "${REPO_ROOT:-}" || ! -d "${REPO_ROOT:-}" ]]; then
+    if [[ -n "${REPO_ROOT:-}" ]]; then
+      log "Warning: REPO_ROOT inválido (${REPO_ROOT}). Usando $CODEBASE_ROOT"
+    fi
+    export REPO_ROOT="$CODEBASE_ROOT"
+  fi
+}
+
+normalize_codebase_paths
+
 check_mcp_runtime_deps() {
   local mcp_dir="$ROOT/apps/mcp-server"
   local missing=()
@@ -108,12 +128,31 @@ fi
 # Configura PYTHON_COMMAND para o .venv do CLI
 export PYTHON_COMMAND="$ROOT/apps/cli/.venv/bin/python"
 
+if [[ ! -x "$PYTHON_COMMAND" ]]; then
+  log "Error: CLI venv não encontrada em $PYTHON_COMMAND"
+  log "Run: make cli-setup"
+  exit 1
+fi
+
+if ! "$PYTHON_COMMAND" -c "import code_compass_cli" >/dev/null 2>&1; then
+  log "Error: pacote code_compass_cli indisponível na venv da CLI."
+  log "Run: make cli-setup"
+  exit 1
+fi
+
 # Configura ACP_AGENT_CMD se não estiver definido e o ACP existir
 if [[ -z "${ACP_AGENT_CMD:-}" ]]; then
   ACP_BIN="$ROOT/apps/acp/.venv/bin/code-compass-acp"
-  if [[ -x "$ACP_BIN" ]]; then
-    export ACP_AGENT_CMD="$ACP_BIN"
+  ACP_PYTHON="$ROOT/apps/acp/.venv/bin/python"
+  if [[ -x "$ACP_PYTHON" && -f "$ACP_BIN" ]]; then
+    export ACP_AGENT_CMD="$ACP_PYTHON"
+    if [[ -n "${ACP_AGENT_ARGS:-}" ]]; then
+      export ACP_AGENT_ARGS="$ACP_BIN $ACP_AGENT_ARGS"
+    else
+      export ACP_AGENT_ARGS="$ACP_BIN"
+    fi
     log "ACP_AGENT_CMD set to: $ACP_AGENT_CMD"
+    log "ACP_AGENT_ARGS set to: $ACP_AGENT_ARGS"
   else
     log "Note: ACP agent not found at $ACP_BIN. Chat will run without ACP integration."
   fi
@@ -122,5 +161,5 @@ fi
 cd "$ROOT"
 log "Starting code-compass chat..."
 
-# Executa o chat com o Python do .venv do CLI
-exec "$ROOT/apps/cli/.venv/bin/code-compass" chat
+# Executa o chat via módulo para evitar depender de shebang stale do wrapper.
+exec "$PYTHON_COMMAND" -m code_compass_cli chat
