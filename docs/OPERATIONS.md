@@ -49,6 +49,7 @@ O portal organiza toda a documentação técnica do projeto:
 Para usar o chat no terminal (TUI) e o modo one-shot, confira `apps/docs/pages/cli/ask-cli.md`.
 
 Exemplo rápido:
+
 ```bash
 pnpm ask --repo code-compass
 pnpm ask "onde fica o handler do search_code?" --repo code-compass
@@ -71,11 +72,14 @@ make index-incremental         # fallback para full (ainda não implementado CLI
 make index-docker              # full via container
 make index-all                 # indexa todos os repos de code-base/
 make dev                       # sobe apps/mcp-server em dev
+make chat-setup                # sobe o necessário para o chat (qdrant + cli/acp + build mcp)
+make chat                      # executa chat com bootstrap automático
 make logs                      # logs do qdrant
 make down                      # derruba serviços
 ```
 
 **Observações:**
+
 - Se módulos não existirem (`apps/indexer` ou `apps/mcp-server`), os comandos falham explícito.
 - `make docker` instala dependências no container a cada execução.
 
@@ -84,10 +88,12 @@ make down                      # derruba serviços
 ## Flags e env vars essenciais (Indexer)
 
 ### Flags de CLI
+
 - `python -m indexer ask --scope-repo <repo>`: escopo de 1 repo.
 - `python -m indexer ask --scope-all`: global (requer `ALLOW_GLOBAL_SCOPE=true`).
 
 ### Env Vars
+
 - `QDRANT_COLLECTION_BASE`: base para code e docs.
 - `CODEBASE_ROOT`: habilitar multi-repo (`<CODEBASE_ROOT>/<repo>`).
 - `INDEXER_RUN_MODULE`: módulo rodado pelo docker.
@@ -105,6 +111,7 @@ O Chunking (`python -m indexer chunk`) fatia arquivos limitados por `CHUNK_LINES
 ## Indexação Multi-Repo (`code-base/`)
 
 O diretório local `code-base/` concentra os clones de repositórios.
+
 ```bash
 # Indexar todos
 ./scripts/index-all.sh
