@@ -39,6 +39,8 @@ Env vars úteis:
 - `ACP_REPO`: repo padrão enviado ao `ask_code`
 - `ACP_CONTENT_TYPE`: tipo de conteúdo (`code`, `docs`, `all`)
 - `ACP_KNOWLEDGE_MODE`: modo de conhecimento (`strict`, `all`, default `strict`)
+- `ACP_MEMORY_MAX_TURNS`: quantidade máxima de turnos da sessão enviados como contexto (default `8`)
+- `ACP_MEMORY_MAX_CHARS`: limite de caracteres do contexto de sessão enviado ao MCP (default `4000`)
 - `ACP_STRICT`: quando `true`, falha em vez de retorno parcial se alguma coleção estiver indisponível
 
 ## Slash Commands no Toad
@@ -56,6 +58,9 @@ Isso permite que o menu fuzzy (`/`) mostre os comandos abaixo:
 `/grounded on`: mantém resposta estritamente ancorada no contexto recuperado.
 `/grounded off` + `/knowledge strict` (default): responde apenas com RAG/código; sem evidência retorna mensagem de ausência de contexto.
 `/grounded off` + `/knowledge all`: permite complementar com conhecimento geral do modelo.
+
+O ACP mantém memória por sessão: perguntas/respostas anteriores entram no campo `conversationContext` do `ask_code`,
+respeitando `ACP_MEMORY_MAX_TURNS` e `ACP_MEMORY_MAX_CHARS`.
 
 Quando o valor de `/model` bate com um perfil do `ACP_MODEL_PROFILES_FILE`, o agente aplica
 `model + provider + api_url + api_key` no bridge da sessão e reinicia o subprocesso MCP.
