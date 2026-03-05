@@ -18,11 +18,12 @@ INDEXER_DIR ?= apps/indexer
 INDEXER_VENV ?= $(INDEXER_DIR)/.venv
 INDEXER_PYTHON ?= python3
 INDEXER_RUN_MODULE ?= indexer
+CLI_PYTHON ?= python3.14
 
 MCP_SERVER_DIR ?= apps/mcp-server
 INDEXER_DOCKER_PROFILE ?= indexer
 
-.PHONY: help up down restart logs ps health wait-qdrant index index-full index-incremental index-docker index-docker-full index-docker-incremental setup-indexer ensure-indexer dev ensure-mcp-server index-all py-test py-lint py-typecheck py-setup acp-setup cli-setup
+.PHONY: help up down restart logs ps health wait-qdrant index index-full index-incremental index-docker index-docker-full index-docker-incremental setup-indexer ensure-indexer dev ensure-mcp-server index-all py-test py-lint py-typecheck py-setup acp-setup cli-setup chat-setup chat
 
 help:
 	@echo "Targets disponíveis:"
@@ -39,6 +40,8 @@ help:
 	@echo "  make index-docker-incremental -> fallback para indexação full via container"
 	@echo "  make index-all         -> indexa todos os repos de code-base/"
 	@echo "  make dev               -> sobe MCP server em modo dev"
+	@echo "  make chat-setup        -> prepara infra + CLI/ACP + build MCP para chat"
+	@echo "  make chat              -> prepara ambiente e abre o chat no terminal"
 	@echo "  make py-setup          -> instala deps Python (indexer/cli/acp)"
 	@echo "  make py-test           -> roda pytest em apps Python"
 	@echo "  make py-lint           -> roda lint Python (ruff)"
@@ -79,11 +82,11 @@ index: index-full
 index-docker: index-docker-full
 
 index-full: ensure-indexer setup-indexer wait-qdrant
-	cd $(INDEXER_DIR) && source .venv/bin/activate && PYTHONPATH=. python -m $(INDEXER_RUN_MODULE) index
+	cd $(INDEXER_DIR) && PYTHONPATH=. .venv/bin/python -m $(INDEXER_RUN_MODULE) index
 
 index-incremental: ensure-indexer setup-indexer wait-qdrant
 	@echo "Aviso: CLI atual não possui modo incremental dedicado; executando index completo."
-	cd $(INDEXER_DIR) && source .venv/bin/activate && PYTHONPATH=. python -m $(INDEXER_RUN_MODULE) index
+	cd $(INDEXER_DIR) && PYTHONPATH=. .venv/bin/python -m $(INDEXER_RUN_MODULE) index
 
 index-docker-full: wait-qdrant
 	INDEXER_MODE=full $(COMPOSE) --profile $(INDEXER_DOCKER_PROFILE) run --rm indexer
@@ -93,15 +96,19 @@ index-docker-incremental: wait-qdrant
 	INDEXER_MODE=incremental $(COMPOSE) --profile $(INDEXER_DOCKER_PROFILE) run --rm indexer
 
 setup-indexer: ensure-indexer
-	@if [ ! -d "$(INDEXER_VENV)" ]; then \
+	@EXPECTED_VENV="$(abspath $(INDEXER_VENV))"; \
+	if [ ! -d "$(INDEXER_VENV)" ]; then \
 		echo "Criando virtualenv do indexer em $(INDEXER_VENV)..."; \
-		$(INDEXER_PYTHON) -m venv $(INDEXER_VENV); \
+		$(INDEXER_PYTHON) -m venv "$(INDEXER_VENV)"; \
+	elif ! grep -Fq "$$EXPECTED_VENV" "$(INDEXER_VENV)/bin/activate" 2>/dev/null; then \
+		echo "Recriando virtualenv do indexer em $(INDEXER_VENV) (path antigo detectado)..."; \
+		$(INDEXER_PYTHON) -m venv --clear "$(INDEXER_VENV)"; \
 	fi
-	cd $(INDEXER_DIR) && source .venv/bin/activate && pip install --upgrade pip
+	cd $(INDEXER_DIR) && .venv/bin/python -m pip install --upgrade pip
 	@if [ -f "$(INDEXER_DIR)/requirements.txt" ]; then \
-		cd $(INDEXER_DIR) && source .venv/bin/activate && pip install -r requirements.txt; \
+		cd $(INDEXER_DIR) && .venv/bin/python -m pip install -r requirements.txt; \
 	elif [ -f "$(INDEXER_DIR)/pyproject.toml" ]; then \
-		cd $(INDEXER_DIR) && source .venv/bin/activate && pip install -e .; \
+		cd $(INDEXER_DIR) && .venv/bin/python -m pip install -e .; \
 	else \
 		echo "Aviso: nenhum requirements.txt/pyproject.toml em $(INDEXER_DIR)."; \
 	fi
@@ -119,6 +126,17 @@ index-all: ensure-indexer setup-indexer wait-qdrant
 dev: ensure-mcp-server
 	cd $(MCP_SERVER_DIR) && npm install && npm run dev
 
+chat-setup: up cli-setup acp-setup ensure-mcp-server
+	@if [ ! -d "$(MCP_SERVER_DIR)/node_modules" ]; then \
+		echo "Instalando dependências do MCP server..."; \
+		pnpm -C $(MCP_SERVER_DIR) install; \
+	fi
+	@echo "Buildando MCP server..."
+	pnpm -C $(MCP_SERVER_DIR) run build
+
+chat: chat-setup
+	pnpm chat
+
 ensure-mcp-server:
 	@if [ ! -d "$(MCP_SERVER_DIR)" ]; then \
 		echo "Erro: diretório $(MCP_SERVER_DIR) não encontrado."; \
@@ -130,15 +148,19 @@ py-setup: setup-indexer cli-setup acp-setup
 
 acp-setup:
 	@if [ -d "apps/acp" ]; then \
+		EXPECTED_VENV="$(abspath apps/acp/.venv)"; \
 		if [ ! -d "apps/acp/.venv" ]; then \
 			echo "Criando virtualenv do ACP em apps/acp/.venv..."; \
 			python3 -m venv apps/acp/.venv; \
+		elif ! grep -Fq "$$EXPECTED_VENV" "apps/acp/.venv/bin/activate" 2>/dev/null; then \
+			echo "Recriando virtualenv do ACP em apps/acp/.venv (path antigo detectado)..."; \
+			python3 -m venv --clear apps/acp/.venv; \
 		fi; \
-		cd apps/acp && source .venv/bin/activate && pip install --upgrade pip; \
-		if [ -f "apps/acp/requirements.txt" ]; then \
-			cd apps/acp && source .venv/bin/activate && pip install -r requirements.txt; \
+		cd apps/acp && .venv/bin/python -m pip install --upgrade pip; \
+		if [ -f "requirements.txt" ]; then \
+			.venv/bin/python -m pip install -r requirements.txt; \
 		else \
-			cd apps/acp && source .venv/bin/activate && pip install -e .; \
+			.venv/bin/python -m pip install -e .; \
 		fi; \
 	else \
 		echo "Aviso: apps/acp não encontrado; pulando."; \
@@ -146,15 +168,39 @@ acp-setup:
 
 cli-setup:
 	@if [ -d "apps/cli" ]; then \
-		if [ ! -d "apps/cli/.venv" ]; then \
-			echo "Criando virtualenv do CLI em apps/cli/.venv..."; \
-			python3 -m venv apps/cli/.venv; \
+		CLI_BOOTSTRAP_PY="$(CLI_PYTHON)"; \
+		if ! command -v "$$CLI_BOOTSTRAP_PY" >/dev/null 2>&1; then \
+			echo "Aviso: $$CLI_BOOTSTRAP_PY não encontrado; usando python3 para a CLI."; \
+			CLI_BOOTSTRAP_PY="python3"; \
 		fi; \
-		cd apps/cli && source .venv/bin/activate && pip install --upgrade pip; \
-		if [ -f "apps/cli/requirements.txt" ]; then \
-			cd apps/cli && source .venv/bin/activate && pip install -r requirements.txt; \
+		TARGET_PY_MM=$$($$CLI_BOOTSTRAP_PY -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")'); \
+		TOAD_COMPAT=$$($$CLI_BOOTSTRAP_PY -c 'import sys; print(int(sys.version_info >= (3, 14)))'); \
+		CURRENT_PY_MM=""; \
+		if [ -x "apps/cli/.venv/bin/python" ]; then \
+			CURRENT_PY_MM=$$(apps/cli/.venv/bin/python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || true); \
+		fi; \
+		EXPECTED_VENV="$(abspath apps/cli/.venv)"; \
+		if [ ! -d "apps/cli/.venv" ]; then \
+			echo "Criando virtualenv do CLI em apps/cli/.venv com $$CLI_BOOTSTRAP_PY..."; \
+			$$CLI_BOOTSTRAP_PY -m venv apps/cli/.venv; \
+		elif ! grep -Fq "$$EXPECTED_VENV" "apps/cli/.venv/bin/activate" 2>/dev/null; then \
+			echo "Recriando virtualenv do CLI em apps/cli/.venv com $$CLI_BOOTSTRAP_PY (path antigo detectado)..."; \
+			$$CLI_BOOTSTRAP_PY -m venv --clear apps/cli/.venv; \
+		elif [ -z "$$CURRENT_PY_MM" ]; then \
+			echo "Recriando virtualenv do CLI em apps/cli/.venv (venv inválida detectada)..."; \
+			$$CLI_BOOTSTRAP_PY -m venv --clear apps/cli/.venv; \
+		elif [ "$$CURRENT_PY_MM" != "$$TARGET_PY_MM" ]; then \
+			echo "Recriando virtualenv do CLI em apps/cli/.venv (Python $$CURRENT_PY_MM -> $$TARGET_PY_MM)..."; \
+			$$CLI_BOOTSTRAP_PY -m venv --clear apps/cli/.venv; \
+		fi; \
+		if [ "$$TOAD_COMPAT" != "1" ]; then \
+			echo "Aviso: $$CLI_BOOTSTRAP_PY resolve para Python $$TARGET_PY_MM (< 3.14). O comando 'chat' exige toad em Python >= 3.14."; \
+		fi; \
+		cd apps/cli && .venv/bin/python -m pip install --upgrade pip; \
+		if [ -f "requirements.txt" ]; then \
+			.venv/bin/python -m pip install -r requirements.txt; \
 		else \
-			cd apps/cli && source .venv/bin/activate && pip install -e .; \
+			.venv/bin/python -m pip install -e .; \
 		fi; \
 	else \
 		echo "Aviso: apps/cli não encontrado; pulando."; \
