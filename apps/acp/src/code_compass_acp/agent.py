@@ -19,6 +19,7 @@ from .chunker import chunk_by_paragraph
 
 TRUTHY_VALUES = {"1", "true", "yes", "on"}
 VALID_CONTENT_TYPES = {"code", "docs", "all"}
+VALID_KNOWLEDGE_MODES = {"strict", "all"}
 GROUNDED_ON_VALUES = {"on", "true", "1", "yes"}
 GROUNDED_OFF_VALUES = {"off", "false", "0", "no"}
 MODEL_RESET_VALUES = {"default", "reset"}
@@ -43,6 +44,11 @@ AVAILABLE_SLASH_COMMANDS: tuple[dict[str, Any], ...] = (
         "name": "grounded",
         "description": "Ativa ou desativa o modo grounded nesta sessão.",
         "input": {"hint": "<on|off|reset>"},
+    },
+    {
+        "name": "knowledge",
+        "description": "Define o modo de conhecimento da sessão.",
+        "input": {"hint": "<strict|all|reset>"},
     },
     {
         "name": "content-type",
@@ -73,6 +79,7 @@ class SessionState:
     llm_api_url_override: str | None = None
     llm_api_key_override: str | None = None
     grounded_override: bool | None = None
+    knowledge_mode_override: str | None = None
     content_type_override: str | None = None
 
 
@@ -120,6 +127,7 @@ class CodeCompassAgent(acp.Agent):
             llm_api_url_override=None,
             llm_api_key_override=None,
             grounded_override=None,
+            knowledge_mode_override=None,
             content_type_override=None,
         )
         session_id = _random_session_id()
@@ -159,6 +167,10 @@ class CodeCompassAgent(acp.Agent):
                     return command_response
 
                 command_response = await _handle_grounded_command(self._conn, session_id, state, question)
+                if command_response is not None:
+                    return command_response
+
+                command_response = await _handle_knowledge_command(self._conn, session_id, state, question)
                 if command_response is not None:
                     return command_response
 
@@ -547,6 +559,8 @@ def _build_runtime_config(state: SessionState) -> dict[str, Any]:
     content_type_active = _resolve_content_type(state)
     grounded_env = _is_truthy(os.getenv("ACP_GROUNDED", ""))
     grounded_active = _resolve_grounded(state)
+    knowledge_mode_env = _resolve_knowledge_mode_from_env()
+    knowledge_mode_active = _resolve_knowledge_mode(state)
 
     return {
         "scope": payload_preview.get("scope"),
@@ -581,6 +595,11 @@ def _build_runtime_config(state: SessionState) -> dict[str, Any]:
             "override": state.grounded_override,
             "env": grounded_env,
         },
+        "knowledge": {
+            "active": knowledge_mode_active,
+            "override": state.knowledge_mode_override,
+            "env": knowledge_mode_env,
+        },
         "contentType": {
             "active": content_type_active,
             "override": state.content_type_override,
@@ -593,6 +612,7 @@ def _build_runtime_config(state: SessionState) -> dict[str, Any]:
             "minScore": payload_preview.get("minScore"),
             "contentType": payload_preview.get("contentType"),
             "grounded": payload_preview.get("grounded", False),
+            "knowledgeMode": payload_preview.get("knowledgeMode", "strict"),
             "strict": payload_preview.get("strict", False),
         },
         "passthrough": {
@@ -617,6 +637,7 @@ def _build_ask_payload(question: str, state: SessionState) -> dict[str, Any]:
     min_score = _parse_float(os.getenv("ACP_MIN_SCORE", ""))
     llm_model = _resolve_llm_runtime(state).get("model")
     grounded = _resolve_grounded(state)
+    knowledge_mode = _resolve_knowledge_mode(state)
     content_type = _resolve_content_type(state)
     strict = _is_truthy(os.getenv("ACP_STRICT", ""))
 
@@ -630,6 +651,7 @@ def _build_ask_payload(question: str, state: SessionState) -> dict[str, Any]:
         payload["minScore"] = min_score
     if isinstance(llm_model, str) and llm_model:
         payload["llmModel"] = llm_model
+    payload["knowledgeMode"] = knowledge_mode
     if grounded:
         payload["grounded"] = True
     if content_type:
@@ -657,6 +679,19 @@ def _resolve_content_type(state: SessionState) -> str | None:
     if state.content_type_override in VALID_CONTENT_TYPES:
         return state.content_type_override
     return _resolve_content_type_from_env()
+
+
+def _resolve_knowledge_mode_from_env() -> str | None:
+    knowledge_mode = os.getenv("ACP_KNOWLEDGE_MODE", "").strip().lower()
+    if knowledge_mode in VALID_KNOWLEDGE_MODES:
+        return knowledge_mode
+    return None
+
+
+def _resolve_knowledge_mode(state: SessionState) -> str:
+    if state.knowledge_mode_override in VALID_KNOWLEDGE_MODES:
+        return state.knowledge_mode_override
+    return _resolve_knowledge_mode_from_env() or "strict"
 
 
 def _resolve_scope(raw_repo: str) -> dict[str, Any]:
@@ -825,6 +860,42 @@ async def _handle_grounded_command(
             reply = "Grounded resetado para o valor do ambiente."
         else:
             reply = "Valor inválido. Use /grounded on|off|reset."
+
+    if conn:
+        await conn.session_update(session_id, acp.update_agent_message_text(reply))
+    return acp.PromptResponse(stop_reason="end_turn")
+
+
+async def _handle_knowledge_command(
+    conn: acp.Client | None,
+    session_id: str,
+    state: SessionState,
+    question: str,
+) -> acp.PromptResponse | None:
+    text = question.strip()
+    if not text.startswith("/knowledge"):
+        return None
+
+    parts = text.split(maxsplit=1)
+    if len(parts) == 1:
+        active = _resolve_knowledge_mode(state)
+        if state.knowledge_mode_override in VALID_KNOWLEDGE_MODES:
+            source = "sessão"
+        elif _resolve_knowledge_mode_from_env() is not None:
+            source = "env"
+        else:
+            source = "default"
+        reply = f"knowledge atual: {active} (fonte: {source})."
+    else:
+        value = parts[1].strip().lower()
+        if value in VALID_KNOWLEDGE_MODES:
+            state.knowledge_mode_override = value
+            reply = f"knowledgeMode atualizado para: {value}"
+        elif value in {"reset", "default"}:
+            state.knowledge_mode_override = None
+            reply = "knowledgeMode resetado para o valor do ambiente."
+        else:
+            reply = "Valor inválido. Use /knowledge strict|all|reset."
 
     if conn:
         await conn.session_update(session_id, acp.update_agent_message_text(reply))
