@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -116,10 +117,11 @@ def chat() -> None:
     agent_cmd = _resolve_acp_agent_command()
     if agent_cmd:
         project_dir = _resolve_toad_project_dir()
+        agent_command = shlex.join(agent_cmd)
         if len(args) >= 2 and args[0] == "-m":
-            args = [*args[:2], "acp", *agent_cmd, project_dir, *args[2:]]
+            args = [*args[:2], "acp", agent_command, project_dir, *args[2:]]
         else:
-            args = ["acp", *agent_cmd, project_dir, *args]
+            args = ["acp", agent_command, project_dir, *args]
 
     try:
         subprocess.run([command, *args], check=True)
