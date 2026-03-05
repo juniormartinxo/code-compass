@@ -9,6 +9,7 @@ import {
   AskCodeInput,
   AskCodeOutput,
   ContentType,
+  KnowledgeMode,
   ResolvedScope,
   SearchCodeOutput,
   SearchCodeResult,
@@ -18,6 +19,7 @@ const DEFAULT_TOP_K = 5;
 const MIN_TOP_K = 1;
 const MAX_TOP_K = 20;
 const MAX_QUERY_CHARS = 500;
+const MAX_CONVERSATION_CONTEXT_CHARS = 8_000;
 const MAX_PATH_PREFIX_CHARS = 200;
 const MAX_LANGUAGE_CHARS = 32;
 const DEFAULT_MIN_SCORE = 0.6;
@@ -66,12 +68,14 @@ const LANGUAGE_EXTENSIONS: Record<string, string[]> = {
 type ValidatedAskInput = {
   scope: ResolvedScope;
   query: string;
+  conversationContext: string;
   topK: number;
   pathPrefix: string;
   language: string;
   minScore: number;
   llmModel: string;
   grounded: boolean;
+  knowledgeMode: KnowledgeMode;
   contentType: ContentType;
   strict: boolean;
 };
@@ -97,6 +101,32 @@ export class AskCodeTool {
     const enriched = await this.enrichEvidences(input.scope, ranked);
 
     if (enriched.length === 0) {
+      if (this.shouldAllowGeneralKnowledge(input)) {
+        const prompt = this.buildNoContextPrompt(input.query, input.conversationContext);
+        const answer = await this.chat(prompt.system, prompt.user, input.llmModel);
+        return {
+          answer: answer.trim() || '(sem resposta)',
+          evidences: [],
+          meta: {
+            scope: this.toScopeMeta(input.scope),
+            topK: input.topK,
+            minScore: input.minScore,
+            llmModel: input.llmModel,
+            knowledgeMode: input.knowledgeMode,
+            contentType: input.contentType,
+            strict: input.strict,
+            repo: input.scope.type === 'repo' ? input.scope.repos[0] : undefined,
+            collection: searchOutput.meta.collection,
+            collections: searchOutput.meta.collections,
+            totalMatches: searchOutput.results.length,
+            contextsUsed: 0,
+            elapsedMs: Date.now() - startedAt,
+            pathPrefix: input.pathPrefix || undefined,
+            language: input.language || undefined,
+          },
+        };
+      }
+
       return {
         answer: 'Sem evidencia suficiente. Tente refinar a pergunta ou ajustar os filtros.',
         evidences: [],
@@ -105,6 +135,7 @@ export class AskCodeTool {
           topK: input.topK,
           minScore: input.minScore,
           llmModel: input.llmModel,
+          knowledgeMode: input.knowledgeMode,
           contentType: input.contentType,
           strict: input.strict,
           repo: input.scope.type === 'repo' ? input.scope.repos[0] : undefined,
@@ -129,6 +160,7 @@ export class AskCodeTool {
           topK: input.topK,
           minScore: input.minScore,
           llmModel: input.llmModel,
+          knowledgeMode: input.knowledgeMode,
           contentType: input.contentType,
           strict: input.strict,
           repo: input.scope.type === 'repo' ? input.scope.repos[0] : undefined,
@@ -143,7 +175,13 @@ export class AskCodeTool {
       };
     }
 
-    const prompt = this.buildPrompt(input.query, enriched, input.grounded);
+    const prompt = this.buildPrompt(
+      input.query,
+      enriched,
+      input.grounded,
+      input.knowledgeMode,
+      input.conversationContext,
+    );
     const answer = await this.chat(prompt.system, prompt.user, input.llmModel);
 
     return {
@@ -154,6 +192,7 @@ export class AskCodeTool {
         topK: input.topK,
         minScore: input.minScore,
         llmModel: input.llmModel,
+        knowledgeMode: input.knowledgeMode,
         contentType: input.contentType,
         strict: input.strict,
         repo: input.scope.type === 'repo' ? input.scope.repos[0] : undefined,
@@ -181,24 +220,28 @@ export class AskCodeTool {
       process.env,
     );
     const query = this.validateQuery(input.query);
+    const conversationContext = this.validateConversationContext(input.conversationContext);
     const topK = this.clampTopK(input.topK);
     const pathPrefix = this.validatePathPrefix(input.pathPrefix);
     const language = this.validateLanguage(input.language);
     const minScore = this.validateMinScore(input.minScore);
     const llmModel = this.validateModel(input.llmModel);
     const grounded = this.validateGrounded(input.grounded);
+    const knowledgeMode = this.validateKnowledgeMode(input.knowledgeMode);
     const contentType = this.validateContentType(input.contentType);
     const strict = this.validateStrict(input.strict);
 
     return {
       scope,
       query,
+      conversationContext,
       topK,
       pathPrefix,
       language,
       minScore,
       llmModel,
       grounded,
+      knowledgeMode,
       contentType,
       strict,
     };
@@ -215,6 +258,24 @@ export class AskCodeTool {
     if (normalized.length > MAX_QUERY_CHARS) {
       throw new ToolInputError(`Campo "query" deve ter no máximo ${MAX_QUERY_CHARS} caracteres`);
     }
+    return normalized;
+  }
+
+  private validateConversationContext(rawContext: unknown): string {
+    if (rawContext === undefined || rawContext === null) {
+      return '';
+    }
+    if (typeof rawContext !== 'string') {
+      throw new ToolInputError('Campo "conversationContext" deve ser string');
+    }
+
+    const normalized = rawContext.trim();
+    if (normalized.length > MAX_CONVERSATION_CONTEXT_CHARS) {
+      throw new ToolInputError(
+        `Campo "conversationContext" deve ter no máximo ${MAX_CONVERSATION_CONTEXT_CHARS} caracteres`,
+      );
+    }
+
     return normalized;
   }
 
@@ -298,6 +359,16 @@ export class AskCodeTool {
       throw new ToolInputError('Campo "grounded" deve ser boolean');
     }
     return grounded;
+  }
+
+  private validateKnowledgeMode(mode: unknown): KnowledgeMode {
+    if (mode === undefined || mode === null) {
+      return 'strict';
+    }
+    if (mode !== 'strict' && mode !== 'all') {
+      throw new ToolInputError('Campo "knowledgeMode" deve ser "strict" ou "all"');
+    }
+    return mode;
   }
 
   private validateContentType(contentType: unknown): ContentType {
@@ -422,15 +493,30 @@ export class AskCodeTool {
     question: string,
     evidences: SearchCodeResult[],
     grounded: boolean,
+    knowledgeMode: KnowledgeMode,
+    conversationContext: string,
   ): { system: string; user: string } {
-    const system = [
-      'Voce e um assistente especializado em analisar codigo-fonte.',
-      'Responda as perguntas do usuario baseando-se APENAS no contexto fornecido.',
-      'Se a informacao nao estiver no contexto, diga que nao encontrou essa informacao no codigo indexado.',
-      grounded
-        ? 'Nao invente exemplos nem APIs. Use somente o que aparece nos trechos. Cite os arquivos relevantes.'
-        : 'Seja conciso e direto. Responda em portugues brasileiro.',
-    ].join('\n');
+    const system = grounded
+      ? [
+          'Voce e um assistente especializado em analisar codigo-fonte.',
+          'Responda as perguntas do usuario baseando-se APENAS no contexto fornecido.',
+          'Se a informacao nao estiver no contexto, diga que nao encontrou essa informacao no codigo indexado.',
+          'Nao invente exemplos nem APIs. Use somente o que aparece nos trechos. Cite os arquivos relevantes.',
+        ].join('\n')
+      : knowledgeMode === 'all'
+        ? [
+            'Voce e um assistente especializado em analisar codigo-fonte.',
+            'Use o contexto fornecido como evidencia principal quando ele for relevante.',
+            'Se o contexto for insuficiente, responda com conhecimento geral e deixe explicito o que veio do contexto e o que veio de conhecimento geral.',
+            'Seja conciso e direto. Responda em portugues brasileiro.',
+          ].join('\n')
+        : [
+            'Voce e um assistente especializado em analisar codigo-fonte.',
+            'Responda as perguntas do usuario baseando-se APENAS no contexto fornecido.',
+            'Nao use conhecimento externo ao contexto recuperado.',
+            'Se a informacao nao estiver no contexto, diga que nao encontrou essa informacao no codigo indexado.',
+            'Seja conciso e direto. Responda em portugues brasileiro.',
+          ].join('\n');
 
     const sections = evidences.map((evidence, index) => {
       const startLine = evidence.startLine ?? '?';
@@ -444,6 +530,13 @@ export class AskCodeTool {
       '',
       sections.join('\n\n'),
       '',
+      ...(conversationContext
+        ? [
+            '## Contexto da conversa atual:',
+            conversationContext,
+            '',
+          ]
+        : []),
       '## Pergunta:',
       question,
       '',
@@ -451,6 +544,40 @@ export class AskCodeTool {
     ].join('\n');
 
     return { system, user };
+  }
+
+  private buildNoContextPrompt(
+    question: string,
+    conversationContext: string,
+  ): { system: string; user: string } {
+    const system = [
+      'Voce e um assistente especializado em desenvolvimento de software.',
+      'Nenhum trecho relevante foi recuperado do indice nesta pergunta.',
+      'Responda usando conhecimento geral tecnico, de forma objetiva e em portugues brasileiro.',
+      'Quando fizer uma inferencia sem evidencia do repositorio, sinalize isso claramente.',
+    ].join('\n');
+
+    const user = [
+      ...(conversationContext
+        ? [
+            '## Contexto da conversa atual:',
+            conversationContext,
+            '',
+          ]
+        : []),
+      '## Pergunta:',
+      question,
+      '',
+      '## Resposta:',
+    ].join('\n');
+
+    return { system, user };
+  }
+
+  private shouldAllowGeneralKnowledge(
+    input: Pick<ValidatedAskInput, 'grounded' | 'knowledgeMode'>,
+  ): boolean {
+    return !input.grounded && input.knowledgeMode === 'all';
   }
 
   private buildGroundedAnswer(evidences: SearchCodeResult[]): string {
