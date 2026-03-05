@@ -266,6 +266,7 @@ export class McpProtocolHandler {
               ],
             },
             query: { type: 'string' },
+            conversationContext: { type: 'string' },
             topK: { type: 'number' },
             pathPrefix: { type: 'string' },
             language: { type: 'string' },
