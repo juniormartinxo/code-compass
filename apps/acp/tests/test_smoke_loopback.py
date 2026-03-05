@@ -116,7 +116,7 @@ def test_new_session_announces_available_slash_commands(
 
         available_commands = getattr(command_update, "available_commands", [])
         names = {command.name for command in available_commands}
-        assert names == {"repo", "config", "model", "grounded", "content-type"}
+        assert names == {"repo", "config", "model", "grounded", "knowledge", "content-type"}
 
         hints_by_name = {
             command.name: (
@@ -130,6 +130,7 @@ def test_new_session_announces_available_slash_commands(
         assert hints_by_name["config"] is None
         assert hints_by_name["model"] == "<model|perfil|reset>"
         assert hints_by_name["grounded"] == "<on|off|reset>"
+        assert hints_by_name["knowledge"] == "<strict|all|reset>"
         assert hints_by_name["content-type"] == "<code|docs|all|reset>"
 
     asyncio.run(run())
@@ -304,6 +305,7 @@ def test_config_command_reports_effective_payload(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("ACP_TOPK", "15")
     monkeypatch.setenv("ACP_MIN_SCORE", "0.62")
     monkeypatch.setenv("ACP_GROUNDED", "true")
+    monkeypatch.setenv("ACP_KNOWLEDGE_MODE", "all")
     monkeypatch.setenv("ACP_CONTENT_TYPE", "docs")
     monkeypatch.setenv("ACP_STRICT", "yes")
     monkeypatch.setenv("ACP_SHOW_META", "1")
@@ -332,6 +334,9 @@ def test_config_command_reports_effective_payload(monkeypatch: pytest.MonkeyPatc
         assert payload["grounded"]["active"] is True
         assert payload["grounded"]["override"] is None
         assert payload["grounded"]["env"] is True
+        assert payload["knowledge"]["active"] == "all"
+        assert payload["knowledge"]["override"] is None
+        assert payload["knowledge"]["env"] == "all"
         assert payload["contentType"]["active"] == "docs"
         assert payload["contentType"]["override"] is None
         assert payload["contentType"]["env"] == "docs"
@@ -341,6 +346,7 @@ def test_config_command_reports_effective_payload(monkeypatch: pytest.MonkeyPatc
         assert payload["filters"]["minScore"] == 0.62
         assert payload["filters"]["contentType"] == "docs"
         assert payload["filters"]["grounded"] is True
+        assert payload["filters"]["knowledgeMode"] == "all"
         assert payload["filters"]["strict"] is True
         assert payload["passthrough"]["showMeta"] is True
         assert payload["passthrough"]["showContext"] is True
@@ -349,6 +355,7 @@ def test_config_command_reports_effective_payload(monkeypatch: pytest.MonkeyPatc
             "type": "repos",
             "repos": ["golyzer", "cfi"],
         }
+        assert payload["askCodePayloadPreview"]["knowledgeMode"] == "all"
 
     asyncio.run(run())
 
@@ -399,11 +406,15 @@ def test_config_command_reflects_runtime_overrides(monkeypatch: pytest.MonkeyPat
         assert payload["model"]["override"] == "gpt-5"
         assert payload["grounded"]["active"] is False
         assert payload["grounded"]["override"] is None
+        assert payload["knowledge"]["active"] == "strict"
+        assert payload["knowledge"]["override"] is None
+        assert payload["knowledge"]["env"] is None
         assert payload["contentType"]["active"] is None
         assert payload["contentType"]["override"] is None
         assert payload["contentType"]["env"] is None
         assert payload["askCodePayloadPreview"]["scope"] == {"type": "repo", "repo": "base"}
         assert payload["askCodePayloadPreview"]["llmModel"] == "gpt-5"
+        assert payload["askCodePayloadPreview"]["knowledgeMode"] == "strict"
 
     asyncio.run(run())
 
@@ -620,6 +631,80 @@ def test_grounded_command_on_off_and_reset(monkeypatch: pytest.MonkeyPatch) -> N
         assert agent._sessions[session.session_id].grounded_override is None
         assert any(
             "Grounded resetado para o valor do ambiente." in text
+            for _, text in conn.updates
+        )
+
+    asyncio.run(run())
+
+
+def test_knowledge_command_strict_all_and_reset(monkeypatch: pytest.MonkeyPatch) -> None:
+    from code_compass_acp import agent as agent_mod
+
+    dummy = DummyBridge()
+    monkeypatch.setattr(agent_mod, "build_bridge", lambda llm_model=None: dummy)
+    monkeypatch.setenv("ACP_KNOWLEDGE_MODE", "strict")
+
+    async def run() -> None:
+        agent = agent_mod.CodeCompassAgent()
+        conn = DummyConn()
+        agent.on_connect(conn)  # type: ignore[arg-type]
+
+        session = await agent.new_session(cwd=".", mcpServers=[])
+
+        show_response = await agent.prompt(
+            acp.PromptRequest(
+                prompt=[acp.text_block("/knowledge")],
+                session_id=session.session_id,
+            )
+        )
+        assert show_response.stop_reason == "end_turn"
+        assert any("knowledge atual: strict (fonte: env)." in text for _, text in conn.updates)
+
+        all_response = await agent.prompt(
+            acp.PromptRequest(
+                prompt=[acp.text_block("/knowledge all")],
+                session_id=session.session_id,
+            )
+        )
+        assert all_response.stop_reason == "end_turn"
+        assert agent._sessions[session.session_id].knowledge_mode_override == "all"
+        assert any("knowledgeMode atualizado para: all" in text for _, text in conn.updates)
+
+        config_all_response = await agent.prompt(
+            acp.PromptRequest(
+                prompt=[acp.text_block("/config")],
+                session_id=session.session_id,
+            )
+        )
+        assert config_all_response.stop_reason == "end_turn"
+        _, config_all_text = conn.updates[-1]
+        config_all_payload = _extract_config_payload(config_all_text)
+        assert config_all_payload["knowledge"]["active"] == "all"
+        assert config_all_payload["knowledge"]["override"] == "all"
+        assert config_all_payload["knowledge"]["env"] == "strict"
+        assert config_all_payload["filters"]["knowledgeMode"] == "all"
+        assert config_all_payload["askCodePayloadPreview"]["knowledgeMode"] == "all"
+
+        strict_response = await agent.prompt(
+            acp.PromptRequest(
+                prompt=[acp.text_block("/knowledge strict")],
+                session_id=session.session_id,
+            )
+        )
+        assert strict_response.stop_reason == "end_turn"
+        assert agent._sessions[session.session_id].knowledge_mode_override == "strict"
+        assert any("knowledgeMode atualizado para: strict" in text for _, text in conn.updates)
+
+        reset_response = await agent.prompt(
+            acp.PromptRequest(
+                prompt=[acp.text_block("/knowledge reset")],
+                session_id=session.session_id,
+            )
+        )
+        assert reset_response.stop_reason == "end_turn"
+        assert agent._sessions[session.session_id].knowledge_mode_override is None
+        assert any(
+            "knowledgeMode resetado para o valor do ambiente." in text
             for _, text in conn.updates
         )
 
