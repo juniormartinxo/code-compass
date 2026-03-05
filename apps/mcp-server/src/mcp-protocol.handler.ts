@@ -272,6 +272,11 @@ export class McpProtocolHandler {
             minScore: { type: 'number' },
             llmModel: { type: 'string' },
             grounded: { type: 'boolean' },
+            knowledgeMode: {
+              type: 'string',
+              enum: ['strict', 'all'],
+              default: 'strict',
+            },
             contentType: {
               type: 'string',
               enum: ['code', 'docs', 'all'],
