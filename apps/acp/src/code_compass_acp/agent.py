@@ -12,16 +12,32 @@ from pathlib import Path
 from typing import Any
 
 import acp
+from acp import schema as acp_schema
 from acp.helpers import update_available_commands
 
+from .adk_agent_builder import build_runtime_adapter
+from .adk_runtime import LegacyRuntimeAdapter
 from .bridge import McpBridge, build_bridge
 from .chunker import chunk_by_paragraph
+from .memory.local_memory_qdrant_index import LocalMemoryQdrantIndex
+from .memory.local_session_store import LocalSessionStore
+from .memory.local_sqlite_store import LocalSQLiteMemoryStore
+from .memory.memory_commands import execute_memory_command
+from .memory.memory_extractor import MemoryExtractor
+from .memory.memory_service import (
+    CloudMemoryService,
+    LocalMemoryService,
+    MemoryContext,
+    build_memory_user_id,
+)
+from .tools.preload_memory_tool import build_memory_preload_block
 
 TRUTHY_VALUES = {"1", "true", "yes", "on"}
 VALID_CONTENT_TYPES = {"code", "docs", "all"}
 VALID_KNOWLEDGE_MODES = {"strict", "all"}
 GROUNDED_ON_VALUES = {"on", "true", "1", "yes"}
 GROUNDED_OFF_VALUES = {"off", "false", "0", "no"}
+VALID_SCOPE_MODES = {"session", "user"}
 MODEL_RESET_VALUES = {"default", "reset"}
 MODEL_PROFILES_ENV_KEY = "ACP_MODEL_PROFILES_FILE"
 DEFAULT_MODEL_PROFILES_FILE = "model-profiles.toml"
@@ -59,6 +75,13 @@ AVAILABLE_SLASH_COMMANDS: tuple[dict[str, Any], ...] = (
         "description": "Define o contentType da sessão.",
         "input": {"hint": "<code|docs|all|reset>"},
     },
+    {
+        "name": "memory",
+        "description": "Gerencia memória longa da sessão/usuário.",
+        "input": {
+            "hint": "<list|forget <termo>|clear|enable|disable|why <id|termo>|confirm <id>>"
+        },
+    },
 )
 
 
@@ -71,11 +94,23 @@ class ModelProfile:
     api_key: str | None = None
 
 
+@dataclass(frozen=True)
+class ResolvedIdentity:
+    user_id: str | None
+    tenant_id: str | None
+    source: str
+
+
 @dataclass
 class SessionState:
+    session_id: str
     cancel_event: asyncio.Event
     prompt_lock: asyncio.Lock
     mcp_bridge: McpBridge
+    runtime_mode: str = "local"
+    memory_backend: str = "sqlite"
+    session_backend: str = "memory"
+    memory_index_backend: str = "none"
     repo_override: str | None = None
     model_override: str | None = None
     model_profile_override: str | None = None
@@ -85,6 +120,15 @@ class SessionState:
     grounded_override: bool | None = None
     knowledge_mode_override: str | None = None
     content_type_override: str | None = None
+    app_name_override: str | None = None
+    user_id_override: str | None = None
+    tenant_id_override: str | None = None
+    long_term_memory_enabled_override: bool | None = None
+    memory_scope_mode_override: str | None = None
+    user_identity_source: str = "unknown"
+    memory_service: LocalMemoryService | CloudMemoryService | None = None
+    memory_extractor: MemoryExtractor | None = None
+    session_store: LocalSessionStore | None = None
     conversation_history: list[tuple[str, str]] = field(default_factory=list)
 
 
@@ -117,14 +161,26 @@ class CodeCompassAgent(acp.Agent):
         mcp_servers: list[Any] | None = None,
         **_kwargs: Any,
     ) -> acp.NewSessionResponse:
+        _ = (cwd, mcp_servers)
         llm_runtime = _resolve_llm_runtime(None)
-        bridge = _build_bridge_for_runtime(llm_runtime)
+        runtime = build_runtime_adapter(llm_runtime, build_bridge_fn=build_bridge)
+        if isinstance(runtime.adapter, LegacyRuntimeAdapter):
+            bridge = runtime.adapter.bridge
+        else:
+            # Fallback temporário: mantém o bridge legado enquanto ADK não está ativo.
+            bridge = _build_bridge_for_runtime(llm_runtime)
         await bridge.start()
+        session_id = _random_session_id()
 
         state = SessionState(
+            session_id=session_id,
             cancel_event=asyncio.Event(),
             prompt_lock=asyncio.Lock(),
             mcp_bridge=bridge,
+            runtime_mode=runtime.runtime_mode,
+            memory_backend=runtime.memory_backend,
+            session_backend=runtime.session_backend,
+            memory_index_backend=runtime.memory_index_backend,
             repo_override=None,
             model_override=None,
             model_profile_override=None,
@@ -134,11 +190,24 @@ class CodeCompassAgent(acp.Agent):
             grounded_override=None,
             knowledge_mode_override=None,
             content_type_override=None,
+            app_name_override=None,
+            user_id_override=None,
+            tenant_id_override=None,
+            long_term_memory_enabled_override=None,
+            memory_scope_mode_override=None,
+            user_identity_source="unknown",
+            memory_service=_build_memory_service(runtime.runtime_mode),
+            memory_extractor=MemoryExtractor(),
+            session_store=_build_session_store(runtime.session_backend),
         )
-        session_id = _random_session_id()
+        _hydrate_local_session_context(state)
+
         self._sessions[session_id] = state
         await self._announce_available_commands(session_id)
-        return acp.NewSessionResponse(session_id=session_id)
+        return acp.NewSessionResponse(
+            session_id=session_id,
+            config_options=_build_session_config_options(state),
+        )
 
     async def prompt(self, params: acp.PromptRequest) -> acp.PromptResponse:
         session_id = params.session_id
@@ -156,10 +225,15 @@ class CodeCompassAgent(acp.Agent):
             return acp.PromptResponse(stop_reason="refusal")
 
         state.cancel_event.clear()
+        memory_context = _build_memory_context(state)
 
         async with state.prompt_lock:
             try:
                 command_response = await _handle_config_command(self._conn, session_id, state, question)
+                if command_response is not None:
+                    return command_response
+
+                command_response = await _handle_memory_command(self._conn, session_id, state, question)
                 if command_response is not None:
                     return command_response
 
@@ -184,6 +258,8 @@ class CodeCompassAgent(acp.Agent):
                     return command_response
 
                 conversation_context = _build_conversation_context(state)
+                memory_preload = _build_memory_preload_context(state, memory_context)
+                conversation_context = _merge_context_blocks(memory_preload, conversation_context)
                 payload = _build_ask_payload(
                     question,
                     state,
@@ -229,9 +305,35 @@ class CodeCompassAgent(acp.Agent):
                     except ValueError:
                         pass
 
-            _remember_turn(state, question, answer)
+            _remember_turn(
+                state,
+                question,
+                answer,
+                memory_context=memory_context,
+            )
 
         return acp.PromptResponse(stop_reason="end_turn")
+
+    async def set_config_option(
+        self,
+        config_id: str,
+        session_id: str,
+        value: str,
+        **_kwargs: Any,
+    ) -> acp.SetSessionConfigOptionResponse:
+        state = self._sessions.get(session_id)
+        if state is None:
+            return acp.SetSessionConfigOptionResponse(config_options=[])
+
+        reply = _apply_session_config_option(state, config_id=config_id, value=value)
+        if self._conn:
+            await self._conn.session_update(
+                session_id,
+                acp.update_agent_message_text(reply),
+            )
+        return acp.SetSessionConfigOptionResponse(
+            config_options=_build_session_config_options(state),
+        )
 
     async def cancel(self, session_id: str, **_kwargs: Any) -> None:
         state = self._sessions.get(session_id)
@@ -301,6 +403,27 @@ async def _handle_config_command(
 
     if conn:
         await conn.session_update(session_id, acp.update_agent_message_text(reply))
+    return acp.PromptResponse(stop_reason="end_turn")
+
+
+async def _handle_memory_command(
+    conn: acp.Client | None,
+    session_id: str,
+    state: SessionState,
+    question: str,
+) -> acp.PromptResponse | None:
+    context = _build_memory_context(state)
+    result = execute_memory_command(
+        text=question,
+        context=context,
+        memory_service=state.memory_service,
+        set_long_term_enabled=lambda value: _set_session_long_term_memory(state, value),
+    )
+    if not result.handled:
+        return None
+
+    if conn and result.reply:
+        await conn.session_update(session_id, acp.update_agent_message_text(result.reply))
     return acp.PromptResponse(stop_reason="end_turn")
 
 
@@ -562,7 +685,10 @@ def _resolve_model_profile_by_selector(selector: str) -> tuple[ModelProfile | No
 
 
 def _build_runtime_config(state: SessionState) -> dict[str, Any]:
-    payload_preview = _build_ask_payload("<query>", state)
+    memory_context = _build_memory_context(state)
+    memory_preload = _build_memory_preload_context(state, memory_context)
+    merged_context = _merge_context_blocks(memory_preload, _build_conversation_context(state))
+    payload_preview = _build_ask_payload("<query>", state, conversation_context=merged_context)
     payload_preview.pop("query", None)
     payload_preview.pop("conversationContext", None)
 
@@ -574,8 +700,34 @@ def _build_runtime_config(state: SessionState) -> dict[str, Any]:
     grounded_active = _resolve_grounded(state)
     knowledge_mode_env = _resolve_knowledge_mode_from_env()
     knowledge_mode_active = _resolve_knowledge_mode(state)
+    app_name = _resolve_app_name(state)
+    identity = _resolve_identity(state)
+    state.user_identity_source = identity.source
+    long_term_enabled = _resolve_long_term_memory_enabled(state, identity)
+    scope_mode = _resolve_memory_scope_mode(state)
+
+    memory_health: dict[str, Any] = {
+        "serviceReady": state.memory_service is not None,
+        "identityReady": bool(identity.user_id and identity.tenant_id),
+        "preloadContextChars": len(memory_preload),
+    }
+    if isinstance(state.memory_service, (LocalMemoryService, CloudMemoryService)):
+        memory_health["memoryDbPath"] = str(state.memory_service.db_path)
+    if state.session_store is not None:
+        memory_health["sessionStore"] = "sqlite"
+    else:
+        memory_health["sessionStore"] = "memory"
 
     return {
+        "runtimeMode": state.runtime_mode,
+        "memoryBackend": state.memory_backend,
+        "sessionBackend": state.session_backend,
+        "memoryIndexBackend": state.memory_index_backend,
+        "appName": app_name,
+        "userIdentitySource": identity.source,
+        "memoryScopeMode": scope_mode,
+        "longTermMemoryEnabled": long_term_enabled,
+        "memoryHealth": memory_health,
         "scope": payload_preview.get("scope"),
         "repo": {
             "active": active_repo,
@@ -632,7 +784,11 @@ def _build_runtime_config(state: SessionState) -> dict[str, Any]:
             "turnsStored": len(state.conversation_history),
             "maxTurns": _resolve_memory_max_turns(),
             "maxChars": _resolve_memory_max_chars(),
-            "contextChars": len(_build_conversation_context(state)),
+            "contextChars": len(merged_context),
+            "sessionId": state.session_id,
+            "userId": identity.user_id,
+            "tenantId": identity.tenant_id,
+            "scopeId": memory_context.scope_id if memory_context else None,
         },
         "passthrough": {
             "showMeta": _is_truthy(os.getenv("ACP_SHOW_META", "")),
@@ -814,7 +970,13 @@ def _build_conversation_context(state: SessionState) -> str:
     return "\n\n".join(reversed(selected_blocks))
 
 
-def _remember_turn(state: SessionState, question: str, answer: str) -> None:
+def _remember_turn(
+    state: SessionState,
+    question: str,
+    answer: str,
+    *,
+    memory_context: MemoryContext | None,
+) -> None:
     user_text = question.strip()
     assistant_text = answer.strip()
     if not user_text or not assistant_text:
@@ -826,6 +988,55 @@ def _remember_turn(state: SessionState, question: str, answer: str) -> None:
     overflow = len(state.conversation_history) - max_stored_turns
     if overflow > 0:
         del state.conversation_history[:overflow]
+
+    if state.session_store is not None:
+        app_name = _resolve_app_name(state)
+        environment = _resolve_environment()
+        tenant_id = memory_context.tenant_id if memory_context else None
+        memory_user_id = (
+            memory_context.scope_id
+            if memory_context and memory_context.scope_mode == "user"
+            else None
+        )
+        base_turn_index = max(0, (len(state.conversation_history) - 1) * 2)
+        state.session_store.append_turn(
+            app_name=app_name,
+            environment=environment,
+            tenant_id=tenant_id,
+            memory_user_id=memory_user_id,
+            session_id=state.session_id,
+            role="user",
+            content=user_text,
+            turn_index=base_turn_index,
+        )
+        state.session_store.append_turn(
+            app_name=app_name,
+            environment=environment,
+            tenant_id=tenant_id,
+            memory_user_id=memory_user_id,
+            session_id=state.session_id,
+            role="assistant",
+            content=assistant_text,
+            turn_index=base_turn_index + 1,
+        )
+
+    if (
+        state.memory_service is not None
+        and state.memory_extractor is not None
+        and memory_context is not None
+    ):
+        for extracted in state.memory_extractor.extract(
+            user_text=user_text,
+            assistant_text=assistant_text,
+        ):
+            state.memory_service.remember(
+                context=memory_context,
+                kind=extracted.kind,
+                topic=extracted.topic,
+                value=extracted.value,
+                confidence=extracted.confidence,
+                source_session_id=state.session_id,
+            )
 
 
 async def _handle_model_command(
@@ -1026,6 +1237,274 @@ async def _handle_content_type_command(
     if conn:
         await conn.session_update(session_id, acp.update_agent_message_text(reply))
     return acp.PromptResponse(stop_reason="end_turn")
+
+
+def _resolve_environment() -> str:
+    return os.getenv("ACP_ENVIRONMENT", "").strip() or "local"
+
+
+def _resolve_app_name(state: SessionState) -> str:
+    return state.app_name_override or os.getenv("ACP_APP_NAME", "").strip() or "code-compass"
+
+
+def _build_memory_db_path() -> Path:
+    configured = os.getenv("ACP_MEMORY_DB_PATH", "").strip()
+    if configured:
+        path = Path(configured).expanduser()
+        if path.is_absolute():
+            return path
+        return _repo_root() / path
+    return _repo_root() / "apps" / "acp" / ".data" / "memory.sqlite3"
+
+
+def _build_session_db_path() -> Path:
+    configured = os.getenv("ACP_SESSION_DB_PATH", "").strip()
+    if configured:
+        path = Path(configured).expanduser()
+        if path.is_absolute():
+            return path
+        return _repo_root() / path
+    return _build_memory_db_path()
+
+
+def _build_memory_service(runtime_mode: str) -> LocalMemoryService | CloudMemoryService:
+    store = LocalSQLiteMemoryStore(_build_memory_db_path())
+    index = LocalMemoryQdrantIndex()
+    local = LocalMemoryService(store=store, semantic_index=index)
+    if runtime_mode == "cloud":
+        return CloudMemoryService(local)
+    return local
+
+
+def _build_session_store(session_backend: str) -> LocalSessionStore | None:
+    if session_backend != "sqlite":
+        return None
+    return LocalSessionStore(_build_session_db_path())
+
+
+def _resolve_identity(state: SessionState) -> ResolvedIdentity:
+    if state.user_id_override and state.tenant_id_override:
+        return ResolvedIdentity(
+            user_id=state.user_id_override,
+            tenant_id=state.tenant_id_override,
+            source="session_config",
+        )
+
+    env_user = _coerce_optional_string(os.getenv("CODE_COMPASS_USER_ID", ""))
+    env_tenant = _coerce_optional_string(os.getenv("ACP_TENANT_ID", "")) or "local"
+    if env_user:
+        return ResolvedIdentity(user_id=env_user, tenant_id=env_tenant, source="env")
+
+    disable_os_fallback = _is_truthy(os.getenv("ACP_DISABLE_OS_USER_FALLBACK", ""))
+    if not disable_os_fallback and state.runtime_mode == "local":
+        os_user = _coerce_optional_string(os.getenv("USER", "")) or _coerce_optional_string(
+            os.getenv("USERNAME", "")
+        )
+        if os_user:
+            return ResolvedIdentity(user_id=os_user, tenant_id=env_tenant, source="os_user")
+
+    return ResolvedIdentity(user_id=None, tenant_id=None, source="none")
+
+
+def _resolve_memory_scope_mode(state: SessionState) -> str:
+    if state.memory_scope_mode_override in VALID_SCOPE_MODES:
+        return state.memory_scope_mode_override
+    raw = os.getenv("ACP_MEMORY_SCOPE_MODE", "").strip().lower()
+    if raw in VALID_SCOPE_MODES:
+        return raw
+    return "user"
+
+
+def _resolve_long_term_memory_enabled(
+    state: SessionState,
+    identity: ResolvedIdentity,
+) -> bool:
+    if state.long_term_memory_enabled_override is not None:
+        enabled = state.long_term_memory_enabled_override
+    else:
+        raw = os.getenv("ACP_MEMORY_LONG_TERM_ENABLED", "").strip()
+        enabled = True if not raw else _is_truthy(raw)
+
+    if state.runtime_mode == "cloud" and not (identity.user_id and identity.tenant_id):
+        return False
+    return enabled
+
+
+def _build_memory_context(state: SessionState) -> MemoryContext | None:
+    identity = _resolve_identity(state)
+    user_id = identity.user_id
+    tenant_id = identity.tenant_id
+    if not user_id or not tenant_id:
+        return None
+
+    scope_mode = _resolve_memory_scope_mode(state)
+    scope_id = (
+        state.session_id
+        if scope_mode == "session"
+        else build_memory_user_id(tenant_id=tenant_id, user_id=user_id)
+    )
+    return MemoryContext(
+        app_name=_resolve_app_name(state),
+        environment=_resolve_environment(),
+        tenant_id=tenant_id,
+        user_id=user_id,
+        session_id=state.session_id,
+        scope_mode=scope_mode,
+        scope_id=scope_id,
+        long_term_enabled=_resolve_long_term_memory_enabled(state, identity),
+    )
+
+
+def _set_session_long_term_memory(state: SessionState, enabled: bool) -> None:
+    state.long_term_memory_enabled_override = enabled
+
+
+def _build_memory_preload_context(
+    state: SessionState,
+    context: MemoryContext | None,
+) -> str:
+    if context is None or state.memory_service is None:
+        return ""
+    return build_memory_preload_block(memory_service=state.memory_service, context=context)
+
+
+def _merge_context_blocks(*blocks: str) -> str:
+    cleaned = [block.strip() for block in blocks if block and block.strip()]
+    return "\n\n".join(cleaned)
+
+
+def _hydrate_local_session_context(state: SessionState) -> None:
+    # Preparação para load/resume de sessão: em new_session normalmente não haverá turnos.
+    if state.session_store is None:
+        return
+    app_name = _resolve_app_name(state)
+    environment = _resolve_environment()
+    turns = state.session_store.load_session_turns(
+        app_name=app_name,
+        environment=environment,
+        session_id=state.session_id,
+        limit=max(50, _resolve_memory_max_turns() * 4),
+    )
+    if not turns:
+        return
+
+    history: list[tuple[str, str]] = []
+    current_user: str | None = None
+    for turn in turns:
+        if turn.role == "user":
+            current_user = turn.content
+            continue
+        if turn.role == "assistant" and current_user:
+            history.append((current_user, turn.content))
+            current_user = None
+    state.conversation_history = history[-max(32, _resolve_memory_max_turns() * 3) :]
+
+
+def _parse_bool_value(value: str) -> bool | None:
+    normalized = value.strip().lower()
+    if normalized in TRUTHY_VALUES:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return None
+
+
+def _apply_session_config_option(state: SessionState, *, config_id: str, value: str) -> str:
+    config_key = config_id.strip()
+    normalized_value = value.strip()
+    if config_key == "user.id":
+        state.user_id_override = normalized_value or None
+        return f"user.id atualizado para: {state.user_id_override or 'null'}"
+    if config_key == "user.tenant":
+        state.tenant_id_override = normalized_value or None
+        return f"user.tenant atualizado para: {state.tenant_id_override or 'null'}"
+    if config_key == "app.name":
+        state.app_name_override = normalized_value or None
+        return f"app.name atualizado para: {_resolve_app_name(state)}"
+    if config_key == "memory.scope.mode":
+        mode = normalized_value.lower()
+        if mode not in VALID_SCOPE_MODES:
+            return "Valor inválido para memory.scope.mode. Use session|user."
+        state.memory_scope_mode_override = mode
+        return f"memory.scope.mode atualizado para: {mode}"
+    if config_key == "memory.long_term.enabled":
+        parsed = _parse_bool_value(normalized_value)
+        if parsed is None:
+            return "Valor inválido para memory.long_term.enabled. Use true|false."
+        state.long_term_memory_enabled_override = parsed
+        return f"memory.long_term.enabled atualizado para: {parsed}"
+    return (
+        "Configuração desconhecida. Use user.id, user.tenant, app.name, "
+        "memory.scope.mode ou memory.long_term.enabled."
+    )
+
+
+def _build_session_config_options(state: SessionState) -> list[acp_schema.SessionConfigOption]:
+    identity = _resolve_identity(state)
+    scope_mode = _resolve_memory_scope_mode(state)
+    long_term = _resolve_long_term_memory_enabled(state, identity)
+    app_name = _resolve_app_name(state)
+
+    options: list[acp_schema.SessionConfigOption] = [
+        acp_schema.SessionConfigOptionSelect(
+            id="user.id",
+            name="User ID",
+            type="select",
+            current_value=identity.user_id or "",
+            options=[acp_schema.SessionConfigSelectOption(name="Current", value=identity.user_id or "")],
+            description="Identificador do usuário para isolamento de memória.",
+        ),
+        acp_schema.SessionConfigOptionSelect(
+            id="user.tenant",
+            name="Tenant",
+            type="select",
+            current_value=identity.tenant_id or "",
+            options=[acp_schema.SessionConfigSelectOption(name="Current", value=identity.tenant_id or "")],
+            description="Tenant de isolamento de memória.",
+        ),
+        acp_schema.SessionConfigOptionSelect(
+            id="app.name",
+            name="App Name",
+            type="select",
+            current_value=app_name,
+            options=[acp_schema.SessionConfigSelectOption(name="Current", value=app_name)],
+            description="Nome lógico da aplicação para isolamento adicional.",
+        ),
+        acp_schema.SessionConfigOptionSelect(
+            id="memory.scope.mode",
+            name="Memory Scope",
+            type="select",
+            current_value=scope_mode,
+            options=[
+                acp_schema.SessionConfigSelectOption(
+                    name="Session",
+                    value="session",
+                    description="Isola memória longa na sessão atual.",
+                ),
+                acp_schema.SessionConfigSelectOption(
+                    name="User",
+                    value="user",
+                    description="Reaproveita memória entre sessões do mesmo usuário.",
+                ),
+            ],
+            description="Escopo de recuperação e persistência de memória.",
+        ),
+        acp_schema.SessionConfigOptionSelect(
+            id="memory.long_term.enabled",
+            name="Long-term Memory",
+            type="select",
+            current_value="true" if long_term else "false",
+            options=[
+                acp_schema.SessionConfigSelectOption(name="Enabled", value="true"),
+                acp_schema.SessionConfigSelectOption(name="Disabled", value="false"),
+            ],
+            description=(
+                "Habilita gravação de memória longa. "
+                "Em cloud exige identidade autenticada."
+            ),
+        ),
+    ]
+    return options
 
 
 def _random_session_id() -> str:
