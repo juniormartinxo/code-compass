@@ -102,3 +102,4 @@ code-base/**
 !code-base/.gitkeep
 
 qdrant_data/
+apps/acp/.data/
