@@ -87,6 +87,31 @@ normalize_codebase_paths() {
 
 normalize_codebase_paths
 
+ensure_acp_defaults() {
+  export AGENT_RUNTIME_MODE="${AGENT_RUNTIME_MODE:-local}"
+  export ACP_ENGINE="${ACP_ENGINE:-legacy}"
+  export ACP_APP_NAME="${ACP_APP_NAME:-code-compass}"
+  export ACP_ENVIRONMENT="${ACP_ENVIRONMENT:-local}"
+  export ACP_MEMORY_SCOPE_MODE="${ACP_MEMORY_SCOPE_MODE:-user}"
+  export ACP_MEMORY_LONG_TERM_ENABLED="${ACP_MEMORY_LONG_TERM_ENABLED:-true}"
+
+  if [[ -z "${ACP_MEMORY_DB_PATH:-}" ]]; then
+    export ACP_MEMORY_DB_PATH="$ROOT/apps/acp/.data/memory.sqlite3"
+  fi
+  if [[ -z "${ACP_SESSION_DB_PATH:-}" ]]; then
+    export ACP_SESSION_DB_PATH="$ACP_MEMORY_DB_PATH"
+  fi
+  if [[ -z "${ACP_SESSION_BACKEND:-}" ]]; then
+    if [[ "$AGENT_RUNTIME_MODE" == "local" ]]; then
+      export ACP_SESSION_BACKEND="sqlite"
+    else
+      export ACP_SESSION_BACKEND="memory"
+    fi
+  fi
+}
+
+ensure_acp_defaults
+
 check_mcp_runtime_deps() {
   local mcp_dir="$ROOT/apps/mcp-server"
   local missing=()
