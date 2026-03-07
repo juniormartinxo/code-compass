@@ -17,9 +17,19 @@ apps/acp/
 ├── src/code_compass_acp/
 │   ├── __init__.py
 │   ├── __main__.py
+│   ├── adk_agent_builder.py
+│   ├── adk_runtime.py
 │   ├── agent.py
 │   ├── bridge.py
-│   └── chunker.py
+│   ├── chunker.py
+│   ├── memory/
+│   │   ├── local_session_store.py
+│   │   ├── local_sqlite_store.py
+│   │   ├── memory_service.py
+│   │   └── memory_commands.py
+│   └── tools/
+│       ├── preload_memory_tool.py
+│       └── search_code_qdrant_tool.py
 └── tests/
     └── test_smoke_loopback.py
 ```
@@ -69,6 +79,8 @@ Env vars úteis:
 
 - `MCP_COMMAND`: comando para subir o MCP server (`--transport stdio`)
 - `LLM_MODEL`: repassado ao MCP via `env` (usado apenas como default base, prefira o `model-profiles.toml` para perfis isolados)
+- `AGENT_RUNTIME_MODE`: `local|cloud` (default `local`)
+- `ACP_ENGINE`: `legacy|adk` (default `legacy` nesta fase)
 - `ACP_MODEL_PROFILES_FILE`: arquivo TOML contendo perfis (ex: model, provider, url, keys) para `/model` (default `model-profiles.toml`, local e não versionado). **Recomendado para chats.**
 - `ACP_REPO`: repo padrão enviado ao `ask_code`
 - `ACP_PATH_PREFIX`, `ACP_LANGUAGE`, `ACP_TOPK`, `ACP_MIN_SCORE`: filtros do `ask_code`
@@ -76,6 +88,12 @@ Env vars úteis:
 - `ACP_CONTENT_TYPE`: tipo de conteúdo (`code`, `docs`, `all`)
 - `ACP_STRICT`: ativa modo estrito no `ask_code`
 - `ACP_SHOW_META`, `ACP_SHOW_CONTEXT`: habilitam passthrough de meta/evidences no chat
+- `ACP_APP_NAME`, `ACP_ENVIRONMENT`: isolamento lógico para memória/sessão
+- `ACP_SESSION_BACKEND=sqlite|memory`, `ACP_SESSION_DB_PATH`: backend de sessão local
+- `ACP_MEMORY_DB_PATH`, `ACP_MEMORY_SCOPE_MODE=session|user`, `ACP_MEMORY_LONG_TERM_ENABLED`
+- `ACP_MEMORY_QDRANT_INDEX_ENABLED`, `ACP_MEMORY_SIMILARITY_MODE=lexical|semantic`
+- `ACP_MEMORY_SIMILARITY_HIGH`, `ACP_MEMORY_SIMILARITY_MEDIUM`
+- `ACP_PRELOAD_MEMORY_MAX_ENTRIES`, `ACP_PRELOAD_MEMORY_MAX_TOKENS`
 
 Comandos de sessão no Toad:
 
@@ -84,6 +102,7 @@ Comandos de sessão no Toad:
 - `/grounded` e `/grounded <on|off|reset>`: controla grounded em runtime por sessão
 - `/content-type` e `/contentType <code|docs|all|reset>`: controla `contentType` em runtime por sessão
 - `/config`: imprime a configuração efetiva atual e preview do payload enviado ao MCP
+- `/memory`: governança de memória longa (`list`, `forget`, `clear`, `enable`, `disable`, `why`, `confirm`)
 
 Se `/model <nome>` casar com um perfil no arquivo TOML, o ACP aplica
 `model/provider/api_url/api_key` no bridge da sessão e reinicia o subprocesso MCP.
