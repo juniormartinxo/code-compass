@@ -6,6 +6,7 @@
 - Nao quebrar contratos publicos (tools/API/schemas/payloads) sem plano explicito de migracao.
 - Nunca commitar segredos, chaves ou tokens.
 - Se houver ambiguidade com risco de breaking change, parar e perguntar.
+- Só implemente código após receber aprovação do usuário com o comando `implemente`.
 
 ## Skills
 
