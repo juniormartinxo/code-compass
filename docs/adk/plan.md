@@ -38,7 +38,8 @@ Evoluir o `apps/acp` para Google ADK com adaptação controlada do motor atual, 
    - Regras:
    - `memory.long_term.enabled=false` impede gravação de memória longa.
    - Em `cloud`, sem identidade autenticada válida (`user.id` + `user.tenant`), memória longa é bloqueada mesmo se habilitada.
-   - `memory.scope.mode=session` limita recuperação/gravação ao contexto da sessão; `user` usa escopo de usuário.
+   - `memory.scope.mode=session` limita a memória persistida e recuperada àquela sessão específica, com retenção local apenas para continuidade e auditoria, sem reaproveitamento cross-session.
+   - `memory.scope.mode=user` permite reaproveitamento de memória entre sessões do mesmo usuário, respeitando `app_name + environment + tenant_id`.
 
 4. Expansão de `/config`:
    - Exibir `runtimeMode`, `memoryBackend`, `sessionBackend`, `memoryIndexBackend`, `appName`, `userIdentitySource`, `memoryScopeMode`, `longTermMemoryEnabled`, `memoryHealth`.
@@ -118,7 +119,11 @@ Evoluir o `apps/acp` para Google ADK com adaptação controlada do motor atual, 
    - Guardrail de consulta: `scope_id` nunca deve ser consultado isoladamente; sempre com filtro conjunto de `app_name + environment + tenant_id`.
 
 3. Tabela de sessão local persistente:
-   - `session_turns(id, session_id, role, content, created_at, turn_index)`.
+   - `session_turns(id, app_name, environment, tenant_id, memory_user_id, session_id, role, content, created_at, turn_index)`.
+   - `tenant_id` e `memory_user_id` devem ser preenchidos quando disponíveis para suportar investigação e limpeza operacional sem depender apenas de `session_id`.
+   - Índices operacionais:
+   - `(app_name, environment, session_id, turn_index)`
+   - `(app_name, environment, tenant_id, memory_user_id, created_at)`
    - Em `local`, é o backend default de histórico imediato.
 
 4. Campos derivados em runtime (não persistidos como verdade final):
@@ -195,6 +200,9 @@ Evoluir o `apps/acp` para Google ADK com adaptação controlada do motor atual, 
 4. Sessão local persistente:
    - Criar [apps/acp/src/code_compass_acp/memory/local_session_store.py](/home/junior/apps/jm/code-compass/apps/acp/src/code_compass_acp/memory/local_session_store.py).
    - Persistir histórico imediato em SQLite por padrão (`ACP_SESSION_BACKEND=sqlite`).
+   - Persistir `app_name` e `environment` em todos os turnos; persistir `tenant_id` e `memory_user_id` quando disponíveis no contexto autenticado.
+   - Criar índices de suporte para leitura por `session_id` e para investigação/limpeza por `app_name + environment + tenant_id + memory_user_id`.
+   - Migração compatível: adicionar novas colunas como nullable e preencher obrigatoriamente apenas novos registros.
    - Manter backend `memory` apenas como fallback secundário.
 
 5. Store SQLite de memória:
@@ -265,6 +273,7 @@ Evoluir o `apps/acp` para Google ADK com adaptação controlada do motor atual, 
 
 3. Sessão local persistente:
    - Reinício de processo no modo `local` preserva histórico imediato via SQLite.
+   - Consulta e limpeza operacional de sessões funcionam por `app_name + environment + tenant_id + memory_user_id`, sem depender apenas de `session_id`.
    - Fallback in-memory funciona quando explicitamente configurado.
 
 4. Decay e ranking:
