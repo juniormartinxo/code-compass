@@ -66,6 +66,48 @@ def _extract_config_payload(text: str) -> dict[str, object]:
     return json.loads(payload_text)
 
 
+def test_build_runtime_adapter_bridge_compat_with_minimal_signature() -> None:
+    from code_compass_acp.adk_agent_builder import build_runtime_adapter
+    from code_compass_acp.adk_runtime import LegacyRuntimeAdapter
+
+    calls: list[str | None] = []
+
+    def legacy_bridge(llm_model: str | None = None) -> DummyBridge:
+        calls.append(llm_model)
+        return DummyBridge()
+
+    result = build_runtime_adapter(
+        {
+            "model": "gpt-5-mini",
+            "provider": "openai",
+            "api_url": "https://api.example.com",
+            "api_key": "token",
+        },
+        build_bridge_fn=legacy_bridge,
+    )
+    assert calls == ["gpt-5-mini"]
+    assert isinstance(result.adapter, LegacyRuntimeAdapter)
+
+
+def test_build_runtime_adapter_does_not_swallow_internal_type_error() -> None:
+    from code_compass_acp.adk_agent_builder import build_runtime_adapter
+
+    def broken_bridge(**kwargs: object) -> DummyBridge:
+        _ = kwargs
+        raise TypeError("internal type error")
+
+    with pytest.raises(TypeError, match="internal type error"):
+        build_runtime_adapter(
+            {
+                "model": "gpt-5-mini",
+                "provider": "openai",
+                "api_url": "https://api.example.com",
+                "api_key": "token",
+            },
+            build_bridge_fn=broken_bridge,
+        )
+
+
 def test_prompt_receives_updates(monkeypatch: pytest.MonkeyPatch) -> None:
     from code_compass_acp import agent as agent_mod
 
@@ -160,7 +202,15 @@ def test_new_session_announces_available_slash_commands(
 
         available_commands = getattr(command_update, "available_commands", [])
         names = {command.name for command in available_commands}
-        assert names == {"repo", "config", "model", "grounded", "knowledge", "content-type"}
+        assert names == {
+            "repo",
+            "config",
+            "model",
+            "grounded",
+            "knowledge",
+            "content-type",
+            "memory",
+        }
 
         hints_by_name = {
             command.name: (
@@ -176,6 +226,106 @@ def test_new_session_announces_available_slash_commands(
         assert hints_by_name["grounded"] == "<on|off|reset>"
         assert hints_by_name["knowledge"] == "<strict|all|reset>"
         assert hints_by_name["content-type"] == "<code|docs|all|reset>"
+        assert (
+            hints_by_name["memory"]
+            == "<list|forget <termo>|clear|enable|disable|why <id|termo>|confirm <id>>"
+        )
+
+    asyncio.run(run())
+
+
+def test_set_config_option_updates_memory_identity(monkeypatch: pytest.MonkeyPatch) -> None:
+    from code_compass_acp import agent as agent_mod
+
+    dummy = DummyBridge()
+    monkeypatch.setattr(agent_mod, "build_bridge", lambda llm_model=None: dummy)
+
+    async def run() -> None:
+        agent = agent_mod.CodeCompassAgent()
+        conn = DummyConn()
+        agent.on_connect(conn)  # type: ignore[arg-type]
+
+        session = await agent.new_session(cwd=".", mcpServers=[])
+        await agent.set_config_option(
+            config_id="user.id",
+            session_id=session.session_id,
+            value="junior",
+        )
+        await agent.set_config_option(
+            config_id="user.tenant",
+            session_id=session.session_id,
+            value="acme",
+        )
+        await agent.set_config_option(
+            config_id="memory.scope.mode",
+            session_id=session.session_id,
+            value="session",
+        )
+        response = await agent.set_config_option(
+            config_id="memory.long_term.enabled",
+            session_id=session.session_id,
+            value="false",
+        )
+
+        assert response.config_options
+        state = agent._sessions[session.session_id]
+        assert state.user_id_override == "junior"
+        assert state.tenant_id_override == "acme"
+        assert state.memory_scope_mode_override == "session"
+        assert state.long_term_memory_enabled_override is False
+
+    asyncio.run(run())
+
+
+def test_memory_command_list_and_toggle(monkeypatch: pytest.MonkeyPatch) -> None:
+    from code_compass_acp import agent as agent_mod
+
+    dummy = DummyBridge()
+    monkeypatch.setattr(agent_mod, "build_bridge", lambda llm_model=None: dummy)
+    monkeypatch.setenv("ACP_SESSION_BACKEND", "memory")
+
+    async def run() -> None:
+        agent = agent_mod.CodeCompassAgent()
+        conn = DummyConn()
+        agent.on_connect(conn)  # type: ignore[arg-type]
+
+        session = await agent.new_session(cwd=".", mcpServers=[])
+        await agent.set_config_option(
+            config_id="user.id",
+            session_id=session.session_id,
+            value="junior",
+        )
+        await agent.set_config_option(
+            config_id="user.tenant",
+            session_id=session.session_id,
+            value="acme",
+        )
+
+        first = await agent.prompt(
+            acp.PromptRequest(
+                prompt=[acp.text_block("Meu nome é Junior")],
+                session_id=session.session_id,
+            )
+        )
+        assert first.stop_reason == "end_turn"
+
+        list_response = await agent.prompt(
+            acp.PromptRequest(
+                prompt=[acp.text_block("/memory list")],
+                session_id=session.session_id,
+            )
+        )
+        assert list_response.stop_reason == "end_turn"
+        assert any("Memórias do escopo atual" in text for _, text in conn.updates)
+
+        disable_response = await agent.prompt(
+            acp.PromptRequest(
+                prompt=[acp.text_block("/memory disable")],
+                session_id=session.session_id,
+            )
+        )
+        assert disable_response.stop_reason == "end_turn"
+        assert agent._sessions[session.session_id].long_term_memory_enabled_override is False
 
     asyncio.run(run())
 
@@ -844,3 +994,103 @@ def test_content_type_command_set_show_and_reset(monkeypatch: pytest.MonkeyPatch
         )
 
     asyncio.run(run())
+
+
+def test_memory_why_marks_superseded_status(tmp_path: Path) -> None:
+    from code_compass_acp.memory.local_sqlite_store import LocalSQLiteMemoryStore
+    from code_compass_acp.memory.memory_service import LocalMemoryService, MemoryContext
+
+    store = LocalSQLiteMemoryStore(tmp_path / "memory.sqlite3")
+    service = LocalMemoryService(store=store)
+    context = MemoryContext(
+        app_name="code-compass",
+        environment="test",
+        tenant_id="tenant-a",
+        user_id="user-a",
+        session_id="session-1",
+        scope_mode="user",
+        scope_id="scope-user-a",
+        long_term_enabled=True,
+    )
+
+    first = service.remember(
+        context=context,
+        kind="convention",
+        topic="style",
+        value="use tabs in code",
+        confidence=0.9,
+        source_session_id="session-1",
+    )
+    assert first is not None
+
+    second = service.remember(
+        context=context,
+        kind="convention",
+        topic="style",
+        value="nao use tabs in code",
+        confidence=0.9,
+        source_session_id="session-1",
+    )
+    assert second is not None
+    assert second.id != first.id
+
+    diagnosis = service.explain(context=context, selector=first.id)
+    assert diagnosis
+    assert diagnosis[0]["status"] == "superseded"
+
+
+def test_store_confirm_and_disable_enforce_isolation(tmp_path: Path) -> None:
+    from code_compass_acp.memory.local_sqlite_store import LocalSQLiteMemoryStore
+
+    store = LocalSQLiteMemoryStore(tmp_path / "memory.sqlite3")
+    entry = store.add_entry(
+        app_name="code-compass",
+        environment="test",
+        tenant_id="tenant-a",
+        user_id="user-a",
+        scope_mode="user",
+        scope_id="scope-user-a",
+        kind="fact",
+        topic="name",
+        value="junior",
+        confidence=0.9,
+        source_session_id="session-1",
+    )
+
+    denied_confirm = store.confirm_entry(
+        entry_id=entry.id,
+        app_name="code-compass",
+        environment="test",
+        tenant_id="tenant-a",
+        user_id="user-b",
+    )
+    assert denied_confirm == 0
+
+    allowed_confirm = store.confirm_entry(
+        entry_id=entry.id,
+        app_name="code-compass",
+        environment="test",
+        tenant_id="tenant-a",
+        user_id="user-a",
+    )
+    assert allowed_confirm == 1
+
+    denied_disable = store.disable_entries(
+        [entry.id],
+        app_name="code-compass",
+        environment="test",
+        tenant_id="tenant-a",
+        user_id="user-b",
+        reason="manual_forget",
+    )
+    assert denied_disable == 0
+
+    allowed_disable = store.disable_entries(
+        [entry.id],
+        app_name="code-compass",
+        environment="test",
+        tenant_id="tenant-a",
+        user_id="user-a",
+        reason="manual_forget",
+    )
+    assert allowed_disable == 1
