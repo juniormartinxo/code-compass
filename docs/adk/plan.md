@@ -57,8 +57,9 @@ Evoluir o `apps/acp` para Google ADK com adaptação controlada do motor atual, 
    - `ACP_MEMORY_QDRANT_COLLECTION` (default `compass_memory_local`).
    - `ACP_DISABLE_OS_USER_FALLBACK=true|false` (default `false` local, `true` cloud).
    - `ACP_MEMORY_MIN_CONFIDENCE` (default inicial `0.7`).
-   - `ACP_MEMORY_SIMILARITY_HIGH` (default inicial `0.92`).
-   - `ACP_MEMORY_SIMILARITY_MEDIUM` (default inicial `0.78`).
+   - `ACP_MEMORY_SIMILARITY_MODE=lexical|semantic` (default inicial `lexical` durante rollout local).
+   - `ACP_MEMORY_SIMILARITY_HIGH` (default inicial `0.60` em `lexical`; `0.92` em `semantic`).
+   - `ACP_MEMORY_SIMILARITY_MEDIUM` (default inicial `0.30` em `lexical`; `0.78` em `semantic`).
    - `ACP_PRELOAD_MEMORY_MAX_ENTRIES` (default `20`).
    - `ACP_PRELOAD_MEMORY_MAX_TOKENS` (default `1500`).
 
@@ -150,8 +151,10 @@ Evoluir o `apps/acp` para Google ADK com adaptação controlada do motor atual, 
 2. Resolução de conflito:
    - Dedupe por hash não é suficiente.
    - Para entradas do mesmo `app_name + environment + tenant_id + user_id + kind + topic`, usar similaridade semântica com thresholds configuráveis:
-   - Similaridade alta (`>= ACP_MEMORY_SIMILARITY_HIGH`, default inicial `0.92`): classificar como reforço ou contradição conforme polaridade/intenção.
-   - Similaridade intermediária (`>= ACP_MEMORY_SIMILARITY_MEDIUM` e `< HIGH`, default inicial `0.78..0.91`): classificar como complemento.
+   - `ACP_MEMORY_SIMILARITY_MODE=lexical`: fallback com token/Jaccard e defaults `HIGH=0.60`, `MEDIUM=0.30` para operação local sem embeddings de memória.
+   - `ACP_MEMORY_SIMILARITY_MODE=semantic`: uso de embeddings com defaults iniciais `HIGH=0.92`, `MEDIUM=0.78`.
+   - Similaridade alta (`>= ACP_MEMORY_SIMILARITY_HIGH`): classificar como reforço ou contradição conforme polaridade/intenção.
+   - Similaridade intermediária (`>= ACP_MEMORY_SIMILARITY_MEDIUM` e `< HIGH`): classificar como complemento.
    - Similaridade baixa (`< MEDIUM`): nova entrada independente.
    - Reforço: manter entrada ativa, atualizar `last_confirmed_at` e incrementar `times_reinforced`.
    - Complemento: manter entradas ativas com contexto/escopo distinto.
