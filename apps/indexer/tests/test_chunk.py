@@ -6,6 +6,7 @@ import tempfile
 import unittest
 import uuid
 from pathlib import Path
+from unittest import mock
 
 from indexer.chunk import (
     chunk_file,
@@ -135,6 +136,15 @@ class ChunkFileTests(unittest.TestCase):
             self.assertEqual(first_chunk["chunkSchemaVersion"], CHUNK_SCHEMA_VERSION)
             self.assertEqual(first_chunk["chunkStrategy"], LINE_WINDOW_CHUNK_STRATEGY)
             self.assertEqual(first_chunk["contentType"], "code")
+            self.assertEqual(
+                first_chunk["summaryText"],
+                (
+                    "apps/indexer/indexer/chunk.py | python | lines 1-4 | type=code "
+                    "| first_line=line 1"
+                ),
+            )
+            self.assertIn("Path: apps/indexer/indexer/chunk.py", first_chunk["contextText"])
+            self.assertIn("Preview: line 1 line 2 line 3 line 4", first_chunk["contextText"])
             expected_chunk_id = make_chunk_id(
                 payload["path"],
                 first_chunk["startLine"],
@@ -192,6 +202,41 @@ class ChunkFileTests(unittest.TestCase):
             self.assertEqual(initial.chunks[0].chunkId, updated.chunks[0].chunkId)
             self.assertNotEqual(initial.chunks[0].contentHash, updated.chunks[0].contentHash)
 
+    def test_chunk_file_populates_summary_and_context_from_first_useful_line(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            file_path = repo_root / "src" / "service.py"
+            file_path.parent.mkdir(parents=True)
+            file_path.write_text(
+                "\n\n"
+                "def load_data(user_id: str) -> dict[str, str]:\n"
+                "    return {'id': user_id}\n",
+                encoding="utf-8",
+            )
+
+            result = chunk_file_documents(
+                file_path=file_path,
+                repo_root=repo_root,
+                chunk_lines=10,
+                overlap=0,
+                as_posix=True,
+            )
+
+            chunk = result.chunks[0]
+            self.assertEqual(
+                chunk.summaryText,
+                (
+                    "src/service.py | python | lines 1-4 | type=code "
+                    "| first_line=def load_data(user_id: str) -> dict[str, str]:"
+                ),
+            )
+            self.assertIn("Chunk strategy: line_window", chunk.contextText)
+            self.assertNotIn("Summary:", chunk.contextText)
+            self.assertIn(
+                "Preview: def load_data(user_id: str) -> dict[str, str]: return {'id': user_id}",
+                chunk.contextText,
+            )
+
     def test_indexed_chunk_serializes_qdrant_payload_with_schema_metadata(self) -> None:
         document = chunk_file_documents(
             file_path=Path(__file__),
@@ -220,6 +265,8 @@ class ChunkFileTests(unittest.TestCase):
         self.assertEqual(payload["start_line"], document.startLine)
         self.assertEqual(payload["end_line"], document.endLine)
         self.assertEqual(payload["text"], document.content)
+        self.assertEqual(payload["summary_text"], document.summaryText)
+        self.assertEqual(payload["context_text"], document.contextText)
 
     def test_chunk_document_to_dict_serializes_tuple_fields_as_lists(self) -> None:
         document = chunk_file_documents(
@@ -329,7 +376,7 @@ class ChunkFileTests(unittest.TestCase):
             file_path = repo_root / "README.guide"
             file_path.write_text("custom docs\n", encoding="utf-8")
 
-            with unittest.mock.patch.dict("os.environ", {"DOC_EXTENSIONS": ".guide"}, clear=False):
+            with mock.patch.dict("os.environ", {"DOC_EXTENSIONS": ".guide"}, clear=False):
                 result = chunk_file_documents(
                     file_path=file_path,
                     repo_root=repo_root,
@@ -347,7 +394,7 @@ class ChunkFileTests(unittest.TestCase):
             file_path.parent.mkdir(parents=True)
             file_path.write_text("export const guide = true;\n", encoding="utf-8")
 
-            with unittest.mock.patch.dict("os.environ", {"DOC_PATH_HINTS": "/manual/"}, clear=False):
+            with mock.patch.dict("os.environ", {"DOC_PATH_HINTS": "/manual/"}, clear=False):
                 result = chunk_file_documents(
                     file_path=file_path,
                     repo_root=repo_root,
