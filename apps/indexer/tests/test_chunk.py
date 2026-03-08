@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import hashlib
 import tempfile
 import unittest
+import uuid
 from pathlib import Path
 
 from indexer.chunk import (
     chunk_file,
+    chunk_file_documents,
     chunk_lines,
     detect_language,
     hash_content,
@@ -14,6 +17,7 @@ from indexer.chunk import (
     normalize_path,
     read_text,
 )
+from indexer.chunk_models import CHUNK_SCHEMA_VERSION, IndexedChunk, LINE_WINDOW_CHUNK_STRATEGY
 
 
 class ChunkCoreTests(unittest.TestCase):
@@ -43,21 +47,23 @@ class ChunkCoreTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "maior ou igual"):
             chunk_lines(lines=["a"], chunk_lines=2, overlap=-1)
 
-    def test_hash_and_chunk_id_are_deterministic(self) -> None:
-        content = "alpha\nbeta\n"
-        expected_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    def test_hash_and_chunk_id_are_stable_for_structure(self) -> None:
+        content = "alpha\r\nbeta\r\n"
+        expected_hash = hashlib.sha256("alpha\nbeta\n".encode("utf-8")).hexdigest()
         content_hash = hash_content(content)
 
         self.assertEqual(content_hash, expected_hash)
 
-        chunk_id = make_chunk_id("apps/indexer/file.py", 1, 2, content_hash)
-        same_chunk_id = make_chunk_id("apps/indexer/file.py", 1, 2, content_hash)
-        different_path = make_chunk_id("apps/indexer/other.py", 1, 2, content_hash)
-        different_range = make_chunk_id("apps/indexer/file.py", 2, 2, content_hash)
+        chunk_id = make_chunk_id("apps/indexer/file.py", 1, 2, "python")
+        same_chunk_id = make_chunk_id("apps/indexer/file.py", 1, 2, "python")
+        different_path = make_chunk_id("apps/indexer/other.py", 1, 2, "python")
+        different_range = make_chunk_id("apps/indexer/file.py", 2, 2, "python")
+        different_language = make_chunk_id("apps/indexer/file.py", 1, 2, "markdown")
 
         self.assertEqual(chunk_id, same_chunk_id)
         self.assertNotEqual(chunk_id, different_path)
         self.assertNotEqual(chunk_id, different_range)
+        self.assertNotEqual(chunk_id, different_language)
 
     def test_normalize_path_relative_and_absolute_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -123,14 +129,17 @@ class ChunkFileTests(unittest.TestCase):
 
             first_chunk = payload["chunks"][0]
             expected_content_hash = hash_content(
-                "\n".join([f"line {idx}" for idx in range(1, 8)]) + "\n"
+                "\n".join([f"line {idx}" for idx in range(1, 5)])
             )
             self.assertEqual(first_chunk["contentHash"], expected_content_hash)
+            self.assertEqual(first_chunk["chunkSchemaVersion"], CHUNK_SCHEMA_VERSION)
+            self.assertEqual(first_chunk["chunkStrategy"], LINE_WINDOW_CHUNK_STRATEGY)
+            self.assertEqual(first_chunk["contentType"], "code")
             expected_chunk_id = make_chunk_id(
                 payload["path"],
                 first_chunk["startLine"],
                 first_chunk["endLine"],
-                first_chunk["contentHash"],
+                first_chunk["language"],
             )
             self.assertEqual(first_chunk["chunkId"], expected_chunk_id)
 
@@ -154,6 +163,200 @@ class ChunkFileTests(unittest.TestCase):
             self.assertEqual(len(payload["warnings"]), 1)
             self.assertIn("fora de REPO_ROOT", payload["warnings"][0])
             self.assertEqual(payload["chunks"][0]["path"], payload["path"])
+
+    def test_chunk_file_keeps_chunk_id_stable_when_content_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            file_path = repo_root / "src" / "module.py"
+            file_path.parent.mkdir(parents=True)
+            file_path.write_text("line 1\nline 2\nline 3\nline 4\n", encoding="utf-8")
+
+            initial = chunk_file_documents(
+                file_path=file_path,
+                repo_root=repo_root,
+                chunk_lines=4,
+                overlap=0,
+                as_posix=True,
+            )
+
+            file_path.write_text("line 1\nline 2 changed\nline 3\nline 4\n", encoding="utf-8")
+
+            updated = chunk_file_documents(
+                file_path=file_path,
+                repo_root=repo_root,
+                chunk_lines=4,
+                overlap=0,
+                as_posix=True,
+            )
+
+            self.assertEqual(initial.chunks[0].chunkId, updated.chunks[0].chunkId)
+            self.assertNotEqual(initial.chunks[0].contentHash, updated.chunks[0].contentHash)
+
+    def test_indexed_chunk_serializes_qdrant_payload_with_schema_metadata(self) -> None:
+        document = chunk_file_documents(
+            file_path=Path(__file__),
+            repo_root=Path(__file__).resolve().parents[1],
+            chunk_lines=40,
+            overlap=0,
+            as_posix=True,
+        ).chunks[0]
+        indexed = IndexedChunk(
+            document=document,
+            chunkIndex=0,
+            fileMtime=123.0,
+            fileSize=456,
+        )
+
+        payload = indexed.to_qdrant_payload(
+            repo="indexer",
+            repo_root=Path(__file__).resolve().parents[1],
+        )
+
+        self.assertEqual(payload["chunk_id"], document.chunkId)
+        self.assertEqual(payload["content_hash"], document.contentHash)
+        self.assertEqual(payload["chunk_schema_version"], CHUNK_SCHEMA_VERSION)
+        self.assertEqual(payload["chunk_strategy"], LINE_WINDOW_CHUNK_STRATEGY)
+        self.assertEqual(payload["content_type"], "code")
+        self.assertEqual(payload["start_line"], document.startLine)
+        self.assertEqual(payload["end_line"], document.endLine)
+        self.assertEqual(payload["text"], document.content)
+
+    def test_chunk_document_to_dict_serializes_tuple_fields_as_lists(self) -> None:
+        document = chunk_file_documents(
+            file_path=Path(__file__),
+            repo_root=Path(__file__).resolve().parents[1],
+            chunk_lines=40,
+            overlap=0,
+            as_posix=True,
+        ).chunks[0]
+        enriched = replace(
+            document,
+            imports=("a", "b"),
+            exports=("c",),
+            callers=("d",),
+            callees=("e",),
+        )
+
+        serialized = enriched.to_dict()
+
+        self.assertEqual(serialized["imports"], ["a", "b"])
+        self.assertEqual(serialized["exports"], ["c"])
+        self.assertEqual(serialized["callers"], ["d"])
+        self.assertEqual(serialized["callees"], ["e"])
+
+    def test_indexed_chunk_generates_uuid_point_id_from_chunk_id(self) -> None:
+        document = chunk_file_documents(
+            file_path=Path(__file__),
+            repo_root=Path(__file__).resolve().parents[1],
+            chunk_lines=40,
+            overlap=0,
+            as_posix=True,
+        ).chunks[0]
+        indexed = IndexedChunk(
+            document=document,
+            chunkIndex=0,
+            fileMtime=123.0,
+            fileSize=456,
+        )
+        repo_root = Path(__file__).resolve().parents[1]
+
+        point_id = indexed.point_id(repo="indexer", repo_root=repo_root)
+
+        self.assertEqual(
+            point_id,
+            str(
+                uuid.uuid5(
+                    uuid.NAMESPACE_URL,
+                    f"indexer:{repo_root}:{document.chunkId}",
+                )
+            ),
+        )
+        self.assertEqual(
+            indexed.to_qdrant_point(
+                repo="indexer",
+                repo_root=repo_root,
+                vector=[0.1, 0.2],
+            )["id"],
+            point_id,
+        )
+
+    def test_indexed_chunk_point_id_differs_between_repo_roots_with_same_repo_name(self) -> None:
+        document = chunk_file_documents(
+            file_path=Path(__file__),
+            repo_root=Path(__file__).resolve().parents[1],
+            chunk_lines=40,
+            overlap=0,
+            as_posix=True,
+        ).chunks[0]
+        indexed = IndexedChunk(
+            document=document,
+            chunkIndex=0,
+            fileMtime=123.0,
+            fileSize=456,
+        )
+
+        first = indexed.point_id(
+            repo="shared-lib",
+            repo_root=Path("/tmp/codebase-a/shared-lib"),
+        )
+        second = indexed.point_id(
+            repo="shared-lib",
+            repo_root=Path("/tmp/codebase-b/shared-lib"),
+        )
+
+        self.assertNotEqual(first, second)
+
+    def test_chunk_file_classifies_doc_like_paths_as_docs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            file_path = repo_root / "docs" / "config.json"
+            file_path.parent.mkdir(parents=True)
+            file_path.write_text('{"name":"guide"}\n', encoding="utf-8")
+
+            result = chunk_file_documents(
+                file_path=file_path,
+                repo_root=repo_root,
+                chunk_lines=20,
+                overlap=0,
+                as_posix=True,
+            )
+
+            self.assertEqual(result.chunks[0].contentType, "docs")
+
+    def test_chunk_file_respects_runtime_doc_extension_overrides(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            file_path = repo_root / "README.guide"
+            file_path.write_text("custom docs\n", encoding="utf-8")
+
+            with unittest.mock.patch.dict("os.environ", {"DOC_EXTENSIONS": ".guide"}, clear=False):
+                result = chunk_file_documents(
+                    file_path=file_path,
+                    repo_root=repo_root,
+                    chunk_lines=20,
+                    overlap=0,
+                    as_posix=True,
+                )
+
+            self.assertEqual(result.chunks[0].contentType, "docs")
+
+    def test_chunk_file_respects_runtime_doc_path_hint_overrides(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            file_path = repo_root / "pkg" / "manual" / "index.ts"
+            file_path.parent.mkdir(parents=True)
+            file_path.write_text("export const guide = true;\n", encoding="utf-8")
+
+            with unittest.mock.patch.dict("os.environ", {"DOC_PATH_HINTS": "/manual/"}, clear=False):
+                result = chunk_file_documents(
+                    file_path=file_path,
+                    repo_root=repo_root,
+                    chunk_lines=20,
+                    overlap=0,
+                    as_posix=True,
+                )
+
+            self.assertEqual(result.chunks[0].contentType, "docs")
 
 
 if __name__ == "__main__":
