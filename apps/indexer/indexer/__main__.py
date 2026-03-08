@@ -25,7 +25,13 @@ from .config import (
 )
 from .content_classification import classify_content_type, find_doc_path_hint
 from .env import load_env_files
-from .embedder import EmbedderConfig, EmbedderError, OllamaEmbedder, load_embedder_config
+from .embedder import (
+    EmbedderConfig,
+    EmbedderError,
+    OllamaEmbedder,
+    build_embedding_text,
+    load_embedder_config,
+)
 from .qdrant_store import CONTENT_TYPE_FIELD, QdrantStore, QdrantStoreError, load_qdrant_config
 from .scan import scan_repo
 
@@ -1029,7 +1035,14 @@ def _index_command(args: argparse.Namespace) -> int:
                 continue
 
             config = embedder_configs[content_type]
-            texts = [chunk.document.content for chunk in target_chunks]
+            # TODO(phase-9): support switching between content and summary_content.
+            texts = [
+                build_embedding_text(
+                    content=chunk.document.content,
+                    summary_text=chunk.document.summaryText,
+                )
+                for chunk in target_chunks
+            ]
             with OllamaEmbedder(config) as embedder:
                 embeddings_by_type[content_type] = embedder.embed_texts_batched(
                     texts=texts,
