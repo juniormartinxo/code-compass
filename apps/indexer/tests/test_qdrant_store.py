@@ -343,6 +343,54 @@ class TestQdrantStore(unittest.TestCase):
 
         self.assertTrue(store.has_payload_field("test_collection", field_name=CONTENT_TYPE_FIELD))
 
+    @patch("indexer.qdrant_store.QdrantClient")
+    def test_count_points_uses_qdrant_count_api(
+        self, mock_client_class: MagicMock
+    ) -> None:
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+        mock_client.count.return_value.count = 7
+
+        config = self._make_config()
+        store = QdrantStore(config)
+
+        result = store.count_points(collection_name="test_collection")
+
+        self.assertEqual(result, 7)
+        mock_client.count.assert_called_once_with(
+            collection_name="test_collection",
+            count_filter=None,
+            exact=True,
+        )
+
+    @patch("indexer.qdrant_store.QdrantClient")
+    def test_count_points_without_payload_match_filters_legacy_points(
+        self, mock_client_class: MagicMock
+    ) -> None:
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+        mock_client.count.return_value.count = 3
+
+        config = self._make_config()
+        store = QdrantStore(config)
+
+        result = store.count_points_without_payload_match(
+            collection_name="test_collection",
+            field_name="chunk_schema_version",
+            expected_value="v2",
+        )
+
+        self.assertEqual(result, 3)
+        _, kwargs = mock_client.count.call_args
+        self.assertEqual(kwargs["collection_name"], "test_collection")
+        self.assertTrue(kwargs["exact"])
+        count_filter = kwargs["count_filter"]
+        self.assertIsNotNone(count_filter)
+        self.assertEqual(len(count_filter.must_not), 1)
+        condition = count_filter.must_not[0]
+        self.assertEqual(condition.key, "chunk_schema_version")
+        self.assertEqual(condition.match.value, "v2")
+
 
 if __name__ == "__main__":
     unittest.main()
