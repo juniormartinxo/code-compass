@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .config import RuntimeConfig
 from .content_classification import classify_content_type
-from .chunk_models import ChunkDocument, ChunkFileResult
+from .chunk_models import ChunkDocument, ChunkFileResult, LINE_WINDOW_CHUNK_STRATEGY
 
 _LANGUAGE_BY_SUFFIX: dict[str, str] = {
     ".ts": "typescript",
@@ -18,6 +18,9 @@ _LANGUAGE_BY_SUFFIX: dict[str, str] = {
     ".yaml": "yaml",
     ".yml": "yaml",
 }
+_SUMMARY_FIRST_LINE_MAX_CHARS = 120
+_CONTEXT_PREVIEW_MAX_CHARS = 280
+
 
 def read_text(path: Path) -> tuple[str, str]:
     encodings: tuple[tuple[str, str], ...] = (
@@ -113,6 +116,83 @@ def detect_language(path: Path) -> str:
     return _LANGUAGE_BY_SUFFIX.get(path.suffix.lower(), "text")
 
 
+def _collapse_inline_text(value: str) -> str:
+    return " ".join(value.strip().split())
+
+
+def _truncate_text(value: str, max_chars: int) -> str:
+    if len(value) <= max_chars:
+        return value
+    if max_chars <= 3:
+        return value[:max_chars]
+    return f"{value[: max_chars - 3].rstrip()}..."
+
+
+def _first_useful_line(content: str) -> str | None:
+    for line in content.splitlines():
+        normalized = _collapse_inline_text(line)
+        if normalized:
+            return _truncate_text(normalized, _SUMMARY_FIRST_LINE_MAX_CHARS)
+    return None
+
+
+def _content_preview(content: str) -> str | None:
+    normalized = _collapse_inline_text(content)
+    if not normalized:
+        return None
+    return _truncate_text(normalized, _CONTEXT_PREVIEW_MAX_CHARS)
+
+
+def _format_line_range(start: int, end: int) -> str:
+    if start == end:
+        return f"line {start}"
+    return f"lines {start}-{end}"
+
+
+def _build_summary_text(
+    *,
+    path: str,
+    language: str,
+    start_line: int,
+    end_line: int,
+    content_type: str | None,
+    content: str,
+) -> str:
+    parts = [
+        path,
+        language,
+        _format_line_range(start_line, end_line),
+        f"type={content_type or 'unknown'}",
+    ]
+    first_line = _first_useful_line(content)
+    if first_line:
+        parts.append(f"first_line={first_line}")
+    return " | ".join(parts)
+
+
+def _build_context_text(
+    *,
+    path: str,
+    language: str,
+    start_line: int,
+    end_line: int,
+    content_type: str | None,
+    chunk_strategy: str,
+    content: str,
+) -> str:
+    lines = [
+        f"Path: {path}",
+        f"Language: {language}",
+        f"Range: {_format_line_range(start_line, end_line)}",
+        f"Type: {content_type or 'unknown'}",
+        f"Chunk strategy: {chunk_strategy}",
+    ]
+    preview = _content_preview(content)
+    if preview:
+        lines.append(f"Preview: {preview}")
+    return "\n".join(lines)
+
+
 def chunk_file_documents(
     file_path: Path,
     repo_root: Path,
@@ -161,19 +241,42 @@ def chunk_file_documents(
         overlap=overlap,
     )
 
-    chunks = tuple(
-        ChunkDocument(
-            chunkId=make_chunk_id(normalized_path, start, end, language),
-            contentHash=hash_content("\n".join(chunk_content)),
+    chunks_list: list[ChunkDocument] = []
+    for start, end, chunk_content in blocks:
+        content = "\n".join(chunk_content)
+        summary_text = _build_summary_text(
             path=normalized_path,
-            startLine=start,
-            endLine=end,
             language=language,
-            content="\n".join(chunk_content),
-            contentType=content_type,
+            start_line=start,
+            end_line=end,
+            content_type=content_type,
+            content=content,
         )
-        for start, end, chunk_content in blocks
-    )
+        context_text = _build_context_text(
+            path=normalized_path,
+            language=language,
+            start_line=start,
+            end_line=end,
+            content_type=content_type,
+            chunk_strategy=LINE_WINDOW_CHUNK_STRATEGY,
+            content=content,
+        )
+        chunks_list.append(
+            ChunkDocument(
+                chunkId=make_chunk_id(normalized_path, start, end, language),
+                contentHash=hash_content(content),
+                path=normalized_path,
+                startLine=start,
+                endLine=end,
+                language=language,
+                content=content,
+                contentType=content_type,
+                summaryText=summary_text,
+                contextText=context_text,
+            )
+        )
+
+    chunks = tuple(chunks_list)
 
     return ChunkFileResult(
         path=normalized_path,
