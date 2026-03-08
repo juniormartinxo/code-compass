@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 class ScanCliTests(unittest.TestCase):
@@ -116,6 +117,8 @@ class ChunkCliTests(unittest.TestCase):
             self.assertEqual(first_chunk["language"], "python")
             self.assertEqual(first_chunk["chunkSchemaVersion"], "v2")
             self.assertEqual(first_chunk["chunkStrategy"], "line_window")
+            self.assertIn("summaryText", first_chunk)
+            self.assertIn("contextText", first_chunk)
             self.assertEqual(payload["warnings"], [])
 
     def test_cli_chunk_rejects_invalid_overlap(self) -> None:
@@ -233,7 +236,7 @@ class IndexPreflightTests(unittest.TestCase):
         from indexer.__main__ import _fail_if_legacy_chunk_schema_points
         from indexer.qdrant_store import QdrantStoreError
 
-        store = unittest.mock.Mock()
+        store = mock.Mock()
         store.count_points_without_payload_match.side_effect = [2, 0]
 
         with self.assertRaisesRegex(
@@ -251,7 +254,7 @@ class IndexPreflightTests(unittest.TestCase):
     def test_preflight_allows_collections_when_only_v2_points_exist(self) -> None:
         from indexer.__main__ import _fail_if_legacy_chunk_schema_points
 
-        store = unittest.mock.Mock()
+        store = mock.Mock()
         store.count_points_without_payload_match.side_effect = [0, 0]
 
         _fail_if_legacy_chunk_schema_points(
@@ -266,7 +269,7 @@ class IndexPreflightTests(unittest.TestCase):
         from indexer.__main__ import _fail_if_repo_name_collides_with_other_repo_root
         from indexer.qdrant_store import QdrantStoreError
 
-        store = unittest.mock.Mock()
+        store = mock.Mock()
         store.count_points.side_effect = [1, 0]
 
         with self.assertRaisesRegex(
@@ -295,7 +298,7 @@ class IndexPreflightTests(unittest.TestCase):
     def test_preflight_allows_same_repo_name_when_repo_root_matches(self) -> None:
         from indexer.__main__ import _fail_if_repo_name_collides_with_other_repo_root
 
-        store = unittest.mock.Mock()
+        store = mock.Mock()
         store.count_points.side_effect = [0, 0]
 
         _fail_if_repo_name_collides_with_other_repo_root(
