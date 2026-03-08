@@ -41,8 +41,8 @@ help:
 	@echo "  make index-docker-incremental -> fallback para indexação full via container"
 	@echo "  make index-all         -> indexa todos os repos de code-base/"
 	@echo "  make dev               -> sobe MCP server em modo dev"
-	@echo "  make chat-setup        -> prepara infra + CLI/ACP + build MCP para chat"
-	@echo "  make chat              -> abre o chat no terminal (requer make chat-setup prévio)"
+	@echo "  make chat-setup        -> prepara a infra base para o chat"
+	@echo "  make chat              -> abre o chat no terminal (instala/builda o MCP se necessario)"
 	@echo "  make py-setup          -> instala deps Python (indexer/cli/acp)"
 	@echo "  make py-test           -> roda pytest em apps Python"
 	@echo "  make py-lint           -> roda lint Python (ruff)"
@@ -138,8 +138,15 @@ dev: ensure-mcp-server
 
 chat-setup: up
 
-chat:
-	@test -d "$(MCP_SERVER_DIR)/dist" || { echo "Erro: rode 'make chat-setup' primeiro."; exit 1; }
+chat: ensure-mcp-server
+	@if [ ! -d "$(MCP_SERVER_DIR)/node_modules" ]; then \
+		echo "Dependencias do MCP server ausentes; instalando..."; \
+		pnpm -C "$(MCP_SERVER_DIR)" install; \
+	fi
+	@if [ ! -d "$(MCP_SERVER_DIR)/dist" ]; then \
+		echo "Build do MCP server ausente; executando build..."; \
+		pnpm -C "$(MCP_SERVER_DIR)" run build; \
+	fi
 	pnpm chat
 
 ensure-mcp-server:
