@@ -23,7 +23,11 @@ from .config import (
     load_runtime_config,
     load_scan_config,
 )
-from .content_classification import classify_content_type, find_doc_path_hint
+from .content_classification import (
+    classify_content_type,
+    find_doc_path_hint,
+    resolve_collection_content_type,
+)
 from .env import load_env_files
 from .embedder import (
     EmbedderConfig,
@@ -261,18 +265,24 @@ def _classify_content_type(
     return classify_content_type(path, runtime_config=runtime_config)
 
 
+def _resolve_collection_content_type(content_type: str) -> str:
+    return resolve_collection_content_type(content_type)
+
+
 def _build_classification_log_record(
     *,
     file_path: str,
     ext: str,
     path_hint: str | None,
     classified_as: str,
+    collection_content_type: str,
 ) -> dict[str, object]:
     return {
         "file": file_path,
         "ext": ext,
         "path_hint": path_hint,
         "classified_as": classified_as,
+        "collection_content_type": collection_content_type,
         "ts": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -942,11 +952,13 @@ def _index_command(args: argparse.Namespace) -> int:
                 str(file_path),
                 runtime_config=runtime_config,
             )
+            collection_content_type = _resolve_collection_content_type(content_type)
             classification_log = _build_classification_log_record(
                 file_path=str(file_path),
                 ext=ext,
                 path_hint=path_hint,
                 classified_as=content_type,
+                collection_content_type=collection_content_type,
             )
             logger.info("classification=%s", json.dumps(classification_log, ensure_ascii=False))
             try:
@@ -1018,12 +1030,13 @@ def _index_command(args: argparse.Namespace) -> int:
             for content_type in runtime_config.content_types
         }
         for chunk in all_chunks:
-            content_type = chunk.document.contentType
-            if content_type not in chunks_by_type:
+            collection_content_type = chunk.document.collectionContentType
+            if collection_content_type not in chunks_by_type:
                 raise ValueError(
-                    f"contentType de chunk não suportado no pipeline atual: {content_type}"
+                    "collectionContentType de chunk não suportado no pipeline atual: "
+                    f"{collection_content_type}"
                 )
-            chunks_by_type[content_type].append(chunk)
+            chunks_by_type[collection_content_type].append(chunk)
 
         embeddings_by_type: dict[str, list[list[float]]] = {
             content_type: []
