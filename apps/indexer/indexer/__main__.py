@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import logging
 import os
@@ -12,7 +11,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
 
-from .chunk import chunk_file, read_text
+from qdrant_client.http import models
+
+from .chunk import chunk_file, chunk_file_documents, read_text
+from .chunk_models import CHUNK_SCHEMA_VERSION, IndexedChunk
 from .config import (
     ChunkConfig,
     RuntimeConfig,
@@ -21,6 +23,7 @@ from .config import (
     load_runtime_config,
     load_scan_config,
 )
+from .content_classification import classify_content_type, find_doc_path_hint
 from .env import load_env_files
 from .embedder import EmbedderConfig, EmbedderError, OllamaEmbedder, load_embedder_config
 from .qdrant_store import CONTENT_TYPE_FIELD, QdrantStore, QdrantStoreError, load_qdrant_config
@@ -242,24 +245,14 @@ def _find_doc_path_hint(
     path: str,
     runtime_config: RuntimeConfig | None = None,
 ) -> str | None:
-    config = runtime_config or load_runtime_config()
-    normalized = f"/{path.replace('\\', '/').strip('/').lower()}"
-    for hint in config.doc_path_hints:
-        if hint in normalized:
-            return hint
-    return None
+    return find_doc_path_hint(path, runtime_config=runtime_config)
 
 
 def _classify_content_type(
     path: str,
     runtime_config: RuntimeConfig | None = None,
 ) -> tuple[str, str | None]:
-    config = runtime_config or load_runtime_config()
-    ext = Path(path).suffix.lower()
-    path_hint = _find_doc_path_hint(path, runtime_config=config)
-    if path_hint is not None or ext in config.doc_extensions:
-        return "docs", path_hint
-    return "code", path_hint
+    return classify_content_type(path, runtime_config=runtime_config)
 
 
 def _build_classification_log_record(
@@ -281,6 +274,98 @@ def _build_classification_log_record(
 def _resolve_min_file_coverage(runtime_config: RuntimeConfig | None = None) -> float:
     config = runtime_config or load_runtime_config()
     return config.min_file_coverage
+
+
+def _fail_if_legacy_chunk_schema_points(
+    *,
+    store: QdrantStore,
+    collection_names: dict[str, str],
+    content_types: tuple[str, ...],
+) -> None:
+    legacy_points_by_type: dict[str, dict[str, object]] = {}
+
+    for content_type in content_types:
+        collection_name = collection_names[content_type]
+        legacy_points = store.count_points_without_payload_match(
+            collection_name=collection_name,
+            field_name="chunk_schema_version",
+            expected_value=CHUNK_SCHEMA_VERSION,
+        )
+        if legacy_points > 0:
+            legacy_points_by_type[content_type] = {
+                "collection": collection_name,
+                "legacy_points": legacy_points,
+            }
+
+    if not legacy_points_by_type:
+        return
+
+    details = ", ".join(
+        (
+            f"{content_type}={info['collection']} "
+            f"({info['legacy_points']} points legados)"
+        )
+        for content_type, info in legacy_points_by_type.items()
+    )
+    raise QdrantStoreError(
+        "Collections com schema de chunk legado detectadas. "
+        "Execute reindexacao completa obrigatoria antes do rollout v2 "
+        f"(remova/recrie as collections antigas). Detectado: {details}"
+    )
+
+
+def _fail_if_repo_name_collides_with_other_repo_root(
+    *,
+    store: QdrantStore,
+    collection_names: dict[str, str],
+    content_types: tuple[str, ...],
+    repo: str,
+    repo_root: Path,
+) -> None:
+    conflicting_points_by_type: dict[str, dict[str, object]] = {}
+    repo_root_value = str(repo_root)
+
+    for content_type in content_types:
+        collection_name = collection_names[content_type]
+        conflicting_points = store.count_points(
+            collection_name=collection_name,
+            count_filter=models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key="repo",
+                        match=models.MatchValue(value=repo),
+                    )
+                ],
+                must_not=[
+                    models.FieldCondition(
+                        key="repo_root",
+                        match=models.MatchValue(value=repo_root_value),
+                    )
+                ],
+            ),
+        )
+        if conflicting_points > 0:
+            conflicting_points_by_type[content_type] = {
+                "collection": collection_name,
+                "conflicting_points": conflicting_points,
+            }
+
+    if not conflicting_points_by_type:
+        return
+
+    details = ", ".join(
+        (
+            f"{content_type}={info['collection']} "
+            f"({info['conflicting_points']} points conflitantes)"
+        )
+        for content_type, info in conflicting_points_by_type.items()
+    )
+    raise QdrantStoreError(
+        "Repo com basename duplicado detectado nas collections atuais. "
+        "O contrato publico ainda filtra por nome simples de repo; "
+        "para evitar resultados ambiguos, use nomes de repos unicos "
+        f"ou limpe as collections antes de reindexar. Detectado: {details}"
+    )
 
 
 def _parse_scope_repos(raw_repos: str) -> list[str]:
@@ -746,19 +831,6 @@ def _init_command(args: argparse.Namespace) -> int:
         return 1
 
 
-def _make_point_id(rel_path: str, chunk_index: int, content_hash: str) -> str:
-    """
-    Gera ID determinístico para um ponto como UUID.
-    
-    Usa UUID v5 (namespace-based) para converter o hash composto em UUID válido.
-    Isso garante IDs estáveis e reproduzíveis.
-    """
-    import uuid
-    composed = f"{rel_path}:{chunk_index}:{content_hash}"
-    # UUID v5 usa namespace + name para gerar UUID determinístico
-    return str(uuid.uuid5(uuid.NAMESPACE_DNS, composed))
-
-
 def _index_command(args: argparse.Namespace) -> int:
     """
     Pipeline completo: scan → chunk → embed → upsert.
@@ -820,6 +892,18 @@ def _index_command(args: argparse.Namespace) -> int:
                     collection_name=target_collection,
                     field_name=CONTENT_TYPE_FIELD,
                 )
+            _fail_if_legacy_chunk_schema_points(
+                store=store,
+                collection_names=collection_names,
+                content_types=runtime_config.content_types,
+            )
+            _fail_if_repo_name_collides_with_other_repo_root(
+                store=store,
+                collection_names=collection_names,
+                content_types=runtime_config.content_types,
+                repo=scan_config.repo_root.name,
+                repo_root=scan_config.repo_root,
+            )
 
         logger.info(
             "Collections: code=%s docs=%s",
@@ -840,7 +924,7 @@ def _index_command(args: argparse.Namespace) -> int:
 
         # 3. Chunk todos os arquivos
         logger.info("Iniciando chunking...")
-        all_chunks: list[dict] = []
+        all_chunks: list[IndexedChunk] = []
         chunk_errors: int = 0
         indexed_files: set[str] = set()
         min_coverage = _resolve_min_file_coverage(runtime_config)
@@ -860,20 +944,25 @@ def _index_command(args: argparse.Namespace) -> int:
             )
             logger.info("classification=%s", json.dumps(classification_log, ensure_ascii=False))
             try:
-                result = chunk_file(
+                result = chunk_file_documents(
                     file_path=abs_path,
                     repo_root=scan_config.repo_root,
                     chunk_lines=chunk_config.chunk_lines,
                     overlap=chunk_config.overlap_lines,
                     as_posix=True,
+                    runtime_config=runtime_config,
                 )
-                for idx, chunk in enumerate(result["chunks"]):
-                    chunk["_file_path"] = str(file_path)
-                    chunk["_chunk_index"] = idx
-                    chunk["_file_mtime"] = abs_path.stat().st_mtime
-                    chunk["_file_size"] = abs_path.stat().st_size
-                    chunk["_content_type"] = content_type
-                    all_chunks.append(chunk)
+                file_mtime = abs_path.stat().st_mtime
+                file_size = abs_path.stat().st_size
+                for idx, chunk in enumerate(result.chunks):
+                    all_chunks.append(
+                        IndexedChunk(
+                            document=chunk,
+                            chunkIndex=idx,
+                            fileMtime=file_mtime,
+                            fileSize=file_size,
+                        )
+                    )
                 indexed_files.add(str(file_path))
             except Exception as exc:
                 logger.warning(f"Erro ao chunkar {file_path}: {exc}")
@@ -918,12 +1007,17 @@ def _index_command(args: argparse.Namespace) -> int:
 
         # 4. Embed em batches por tipo de conteúdo
         logger.info("Iniciando embedding...")
-        chunks_by_type: dict[str, list[dict]] = {
+        chunks_by_type: dict[str, list[IndexedChunk]] = {
             content_type: []
             for content_type in runtime_config.content_types
         }
         for chunk in all_chunks:
-            chunks_by_type[chunk["_content_type"]].append(chunk)
+            content_type = chunk.document.contentType
+            if content_type not in chunks_by_type:
+                raise ValueError(
+                    f"contentType de chunk não suportado no pipeline atual: {content_type}"
+                )
+            chunks_by_type[content_type].append(chunk)
 
         embeddings_by_type: dict[str, list[list[float]]] = {
             content_type: []
@@ -935,7 +1029,7 @@ def _index_command(args: argparse.Namespace) -> int:
                 continue
 
             config = embedder_configs[content_type]
-            texts = [chunk["content"] for chunk in target_chunks]
+            texts = [chunk.document.content for chunk in target_chunks]
             with OllamaEmbedder(config) as embedder:
                 embeddings_by_type[content_type] = embedder.embed_texts_batched(
                     texts=texts,
@@ -960,41 +1054,13 @@ def _index_command(args: argparse.Namespace) -> int:
                 chunks_by_type[content_type],
                 embeddings_by_type[content_type],
             ):
-                # Derivar content_hash do chunk
-                chunk_text = chunk["content"]
-                content_hash = hashlib.sha1(chunk_text.encode("utf-8")).hexdigest()
-
-                # ID estável
-                point_id = _make_point_id(
-                    rel_path=chunk["path"],
-                    chunk_index=chunk["_chunk_index"],
-                    content_hash=content_hash,
+                points_by_type[content_type].append(
+                    chunk.to_qdrant_point(
+                        repo=scan_config.repo_root.name,
+                        repo_root=scan_config.repo_root,
+                        vector=embedding,
+                    )
                 )
-
-                # Payload rico
-                payload = {
-                    "repo": scan_config.repo_root.name,
-                    "path": chunk["path"],
-                    "chunk_index": chunk["_chunk_index"],
-                    "content_hash": content_hash,
-                    "ext": Path(chunk["path"]).suffix.lower(),
-                    "mtime": chunk["_file_mtime"],
-                    "size_bytes": chunk["_file_size"],
-                    "text_len": len(chunk_text),
-                    "start_line": chunk["startLine"],
-                    "end_line": chunk["endLine"],
-                    "language": chunk["language"],
-                    "content_type": chunk["_content_type"],
-                    "source": "repo",
-                    "repo_root": str(scan_config.repo_root),
-                }
-
-                point = {
-                    "id": point_id,
-                    "vector": embedding,
-                    "payload": payload,
-                }
-                points_by_type[content_type].append(point)
 
         # 6. Upsert no Qdrant
         logger.info("Iniciando upsert no Qdrant...")
