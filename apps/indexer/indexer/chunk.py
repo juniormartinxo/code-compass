@@ -3,6 +3,10 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+from .config import RuntimeConfig
+from .content_classification import classify_content_type
+from .chunk_models import ChunkDocument, ChunkFileResult
+
 _LANGUAGE_BY_SUFFIX: dict[str, str] = {
     ".ts": "typescript",
     ".tsx": "typescriptreact",
@@ -14,7 +18,6 @@ _LANGUAGE_BY_SUFFIX: dict[str, str] = {
     ".yaml": "yaml",
     ".yml": "yaml",
 }
-
 
 def read_text(path: Path) -> tuple[str, str]:
     encodings: tuple[tuple[str, str], ...] = (
@@ -82,11 +85,12 @@ def chunk_lines(
 
 
 def hash_content(content: str) -> str:
-    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+    normalized = content.replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
-def make_chunk_id(path: str, start: int, end: int, content_hash: str) -> str:
-    composed = f"{path}:{start}:{end}:{content_hash}"
+def make_chunk_id(path: str, start: int, end: int, language: str) -> str:
+    composed = f"{path}:{start}:{end}:{language}"
     return hashlib.sha256(composed.encode("utf-8")).hexdigest()
 
 
@@ -109,13 +113,14 @@ def detect_language(path: Path) -> str:
     return _LANGUAGE_BY_SUFFIX.get(path.suffix.lower(), "text")
 
 
-def chunk_file(
+def chunk_file_documents(
     file_path: Path,
     repo_root: Path,
     chunk_lines: int,
     overlap: int,
     as_posix: bool,
-) -> dict:
+    runtime_config: RuntimeConfig | None = None,
+) -> ChunkFileResult:
     if chunk_lines <= 0:
         raise ValueError("chunk_lines deve ser maior que 0")
     if overlap < 0:
@@ -147,8 +152,8 @@ def chunk_file(
 
     text, encoding = read_text(resolved_file)
     lines = text.splitlines()
-    content_hash = hash_content(text)
     language = detect_language(resolved_file)
+    content_type, _ = classify_content_type(normalized_path, runtime_config=runtime_config)
 
     blocks = _chunk_lines_impl(
         lines=lines,
@@ -156,24 +161,43 @@ def chunk_file(
         overlap=overlap,
     )
 
-    chunks = [
-        {
-            "chunkId": make_chunk_id(normalized_path, start, end, content_hash),
-            "contentHash": content_hash,
-            "path": normalized_path,
-            "startLine": start,
-            "endLine": end,
-            "language": language,
-            "content": "\n".join(chunk_content),
-        }
+    chunks = tuple(
+        ChunkDocument(
+            chunkId=make_chunk_id(normalized_path, start, end, language),
+            contentHash=hash_content("\n".join(chunk_content)),
+            path=normalized_path,
+            startLine=start,
+            endLine=end,
+            language=language,
+            content="\n".join(chunk_content),
+            contentType=content_type,
+        )
         for start, end, chunk_content in blocks
-    ]
+    )
 
-    return {
-        "path": normalized_path,
-        "pathIsRelative": path_is_relative,
-        "totalLines": len(lines),
-        "encoding": encoding,
-        "chunks": chunks,
-        "warnings": warnings,
-    }
+    return ChunkFileResult(
+        path=normalized_path,
+        pathIsRelative=path_is_relative,
+        totalLines=len(lines),
+        encoding=encoding,
+        chunks=chunks,
+        warnings=tuple(warnings),
+    )
+
+
+def chunk_file(
+    file_path: Path,
+    repo_root: Path,
+    chunk_lines: int,
+    overlap: int,
+    as_posix: bool,
+    runtime_config: RuntimeConfig | None = None,
+) -> dict:
+    return chunk_file_documents(
+        file_path=file_path,
+        repo_root=repo_root,
+        chunk_lines=chunk_lines,
+        overlap=overlap,
+        as_posix=as_posix,
+        runtime_config=runtime_config,
+    ).to_dict()
