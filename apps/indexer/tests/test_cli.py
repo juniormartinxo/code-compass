@@ -117,6 +117,8 @@ class ChunkCliTests(unittest.TestCase):
             self.assertEqual(first_chunk["language"], "python")
             self.assertEqual(first_chunk["chunkSchemaVersion"], "v2")
             self.assertEqual(first_chunk["chunkStrategy"], "line_window")
+            self.assertEqual(first_chunk["contentType"], "code_context")
+            self.assertEqual(first_chunk["collectionContentType"], "code")
             self.assertIn("summaryText", first_chunk)
             self.assertIn("contextText", first_chunk)
             self.assertEqual(payload["warnings"], [])
