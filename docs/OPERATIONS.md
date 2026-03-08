@@ -72,7 +72,7 @@ make index-incremental         # fallback para full (ainda não implementado CLI
 make index-docker              # full via container
 make index-all                 # indexa todos os repos de code-base/
 make dev                       # sobe apps/mcp-server em dev
-make chat-setup                # sobe o necessário para o chat (qdrant + cli/acp + build mcp)
+make chat-setup                # sobe a infra base para o chat
 make chat                      # executa chat com bootstrap automático
 make logs                      # logs do qdrant
 make down                      # derruba serviços
@@ -104,7 +104,9 @@ make down                      # derruba serviços
 
 O scanner em `apps/indexer/indexer` faz varreduras recursivas. Ignorados por padrão: `.git,node_modules,dist,build,.next,.qdrant_storage,.venv,venv,__pycache__`. Allowlist padrão: `.ts,.tsx,.js,.jsx,.py,.md,.json,.yaml,.yml`.
 
-O Chunking (`python -m indexer chunk`) fatia arquivos limitados por `CHUNK_LINES` (padrão 120) e `CHUNK_OVERLAP_LINES` (padrão 20), usando hashes locais de cada chunk.
+O Chunking (`python -m indexer chunk`) fatia arquivos limitados por `CHUNK_LINES` (padrao 120) e `CHUNK_OVERLAP_LINES` (padrao 20), com `chunkId` estrutural estavel e `contentHash` separado por conteudo.
+
+No primeiro rollout do schema `v2`, execute **reindexacao completa obrigatoria**. Nao mantenha pontos antigos e novos misturados na mesma collection do Qdrant.
 
 ---
 
@@ -121,6 +123,7 @@ O diretório local `code-base/` concentra os clones de repositórios.
 ```
 
 ⚠️ Atenção: Para separar bem no Qdrant, a indexação percorre os repositórios individualmente (loop) e aplica o path do repo no payload do Qdrant.
+⚠️ Atenção: Basenames de repo precisam ser únicos; se dois roots diferentes tiverem o mesmo nome, o indexer rejeita a indexação para evitar ambiguidade no escopo público por `repo`.
 
 ---
 
