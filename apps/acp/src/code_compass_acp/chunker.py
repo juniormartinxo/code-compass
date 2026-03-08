@@ -3,7 +3,8 @@ from __future__ import annotations
 import re
 
 def chunk_by_paragraph(text: str, max_size: int = 300) -> list[str]:
-    if not text:
+    # Ignore respostas compostas apenas por whitespace para evitar updates vazios no stream.
+    if not text or not text.strip():
         return []
     if max_size <= 0:
         return [text]
@@ -43,7 +44,8 @@ def chunk_by_paragraph(text: str, max_size: int = 300) -> list[str]:
 
 
 def _split_paragraphs(text: str) -> list[str]:
-    # Keep `\n\n...` separators interleaved so joining chunks reproduces input exactly.
+    # Keep `\n\n...` separators interleaved for non-whitespace segments.
+    # Whitespace-only segments are intentionally descartados para evitar chunks vazios.
     # `re.split` with a capture group returns separators as odd-indexed entries.
     parts = re.split(r"(\n\n+)", text)
     if len(parts) == 1:
@@ -57,7 +59,7 @@ def _split_paragraphs(text: str) -> list[str]:
         piece = parts[index]
         separator = parts[index + 1] if index + 1 < total else ""
         combined = f"{piece}{separator}"
-        if combined:
+        if combined.strip():
             paragraphs.append(combined)
         index += 2
 
@@ -90,6 +92,8 @@ def _split_long_paragraph(paragraph: str, *, max_size: int) -> list[str]:
             current = line
         else:
             current = candidate
+        # Keep the accumulator bounded even if this loop is refactored later.
+        assert len(current) <= max_size
 
     if current:
         chunks.append(current)
