@@ -12,6 +12,7 @@ from indexer.embedder import (
     DEFAULT_EMBEDDING_API_URL,
     DEFAULT_EMBEDDING_BACKOFF_BASE_MS,
     DEFAULT_EMBEDDING_BATCH_SIZE,
+    DEFAULT_EMBEDDING_INPUT_MODE,
     DEFAULT_EMBEDDING_MAX_RETRIES,
     DEFAULT_EMBEDDING_MODEL_CODE,
     DEFAULT_EMBEDDING_MODEL_DOCS,
@@ -22,6 +23,7 @@ from indexer.embedder import (
     EmbedderRetryError,
     EmbedderValidationError,
     OllamaEmbedder,
+    build_embedding_text,
     load_embedder_config,
 )
 
@@ -95,6 +97,43 @@ class TestEmbedderConfig(unittest.TestCase):
                 provider="openai-compatible",
                 api_url="https://api.example.com/v1",
             )
+
+    def test_build_embedding_text_defaults_to_content_mode(self) -> None:
+        self.assertEqual(DEFAULT_EMBEDDING_INPUT_MODE, "content")
+        self.assertEqual(
+            build_embedding_text(content="def run():\n    pass", summary_text="summary"),
+            "def run():\n    pass",
+        )
+
+    def test_build_embedding_text_supports_summary_content_mode(self) -> None:
+        self.assertEqual(
+            build_embedding_text(
+                content="def run():\n    pass",
+                summary_text="src/main.py | python | lines 1-2",
+                mode="summary_content",
+            ),
+            "src/main.py | python | lines 1-2\n\ndef run():\n    pass",
+        )
+        self.assertEqual(
+            build_embedding_text(
+                content="def run():\n    pass",
+                summary_text=None,
+                mode="summary_content",
+            ),
+            "def run():\n    pass",
+        )
+        self.assertEqual(
+            build_embedding_text(
+                content="",
+                summary_text="src/main.py | python | lines 1-2",
+                mode="summary_content",
+            ),
+            "src/main.py | python | lines 1-2",
+        )
+
+    def test_build_embedding_text_rejects_invalid_mode(self) -> None:
+        with self.assertRaises(ValueError):
+            build_embedding_text(content="x", mode="invalid")
 
 
 class MockOllamaHandler(BaseHTTPRequestHandler):
