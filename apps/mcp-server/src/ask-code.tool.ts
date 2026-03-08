@@ -31,6 +31,12 @@ const DEFAULT_LLM_MODEL = 'gpt-oss:latest';
 const DEFAULT_LLM_MODEL_PROVIDER = 'ollama';
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_CONTEXTS_PER_REPO_WIDE_SCOPE = 2;
+const STRUCTURED_RESPONSE_INSTRUCTION =
+  'Prefira respostas detalhadas e estruturadas: resposta direta, explicacao de como funciona no codigo e evidencias (arquivo e linhas).';
+const NO_EVIDENCE_FALLBACK = `Sem evidencia suficiente no contexto recuperado para responder com confianca. \
+Tente: (1) deixar a pergunta mais especifica com simbolos/arquivos, \
+(2) ajustar topK/minScore, (3) revisar filtros de repo/path/language, \
+ou (4) usar knowledgeMode=all para permitir complemento com conhecimento geral.`;
 
 type EmbeddingContentType = Exclude<ContentType, 'all'>;
 type ChatProvider = 'ollama' | 'deepseek' | 'openai-compatible';
@@ -128,7 +134,7 @@ export class AskCodeTool {
       }
 
       return {
-        answer: 'Sem evidencia suficiente. Tente refinar a pergunta ou ajustar os filtros.',
+        answer: NO_EVIDENCE_FALLBACK,
         evidences: [],
         meta: {
           scope: this.toScopeMeta(input.scope),
@@ -502,20 +508,23 @@ export class AskCodeTool {
           'Responda as perguntas do usuario baseando-se APENAS no contexto fornecido.',
           'Se a informacao nao estiver no contexto, diga que nao encontrou essa informacao no codigo indexado.',
           'Nao invente exemplos nem APIs. Use somente o que aparece nos trechos. Cite os arquivos relevantes.',
+          'Quando houver evidencia suficiente, responda com profundidade e estrutura: resposta direta, explicacao de como funciona no codigo e evidencias (arquivo e linhas).',
         ].join('\n')
       : knowledgeMode === 'all'
         ? [
             'Voce e um assistente especializado em analisar codigo-fonte.',
             'Use o contexto fornecido como evidencia principal quando ele for relevante.',
             'Se o contexto for insuficiente, responda com conhecimento geral e deixe explicito o que veio do contexto e o que veio de conhecimento geral.',
-            'Seja conciso e direto. Responda em portugues brasileiro.',
+            STRUCTURED_RESPONSE_INSTRUCTION,
+            'Responda em portugues brasileiro.',
           ].join('\n')
         : [
             'Voce e um assistente especializado em analisar codigo-fonte.',
             'Responda as perguntas do usuario baseando-se APENAS no contexto fornecido.',
             'Nao use conhecimento externo ao contexto recuperado.',
             'Se a informacao nao estiver no contexto, diga que nao encontrou essa informacao no codigo indexado.',
-            'Seja conciso e direto. Responda em portugues brasileiro.',
+            STRUCTURED_RESPONSE_INSTRUCTION,
+            'Responda em portugues brasileiro.',
           ].join('\n');
 
     const sections = evidences.map((evidence, index) => {
