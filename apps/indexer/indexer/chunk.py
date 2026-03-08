@@ -4,7 +4,7 @@ import hashlib
 from pathlib import Path
 
 from .config import RuntimeConfig
-from .content_classification import classify_content_type
+from .content_classification import classify_content_type, resolve_collection_content_type
 from .chunk_models import ChunkDocument, ChunkFileResult, LINE_WINDOW_CHUNK_STRATEGY
 
 _LANGUAGE_BY_SUFFIX: dict[str, str] = {
@@ -234,6 +234,7 @@ def chunk_file_documents(
     lines = text.splitlines()
     language = detect_language(resolved_file)
     content_type, _ = classify_content_type(normalized_path, runtime_config=runtime_config)
+    collection_content_type = resolve_collection_content_type(content_type)
 
     blocks = _chunk_lines_impl(
         lines=lines,
@@ -271,6 +272,7 @@ def chunk_file_documents(
                 language=language,
                 content=content,
                 contentType=content_type,
+                collectionContentType=collection_content_type,
                 summaryText=summary_text,
                 contextText=context_text,
             )
