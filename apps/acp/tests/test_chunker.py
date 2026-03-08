@@ -55,3 +55,23 @@ def test_chunker_splits_text_without_paragraph_separator() -> None:
     assert chunks
     assert "".join(chunks) == text
     assert all(0 < len(chunk) <= 8 for chunk in chunks)
+
+
+def test_chunker_discards_whitespace_only_text() -> None:
+    assert chunk_by_paragraph("   \n\n\t  ", max_size=3) == []
+
+
+def test_split_paragraphs_discards_whitespace_only_segments() -> None:
+    text = "   \n\n\t\t\n\nconteudo util\n\n   "
+
+    assert chunk_by_paragraph(text, max_size=20) == ["conteudo util\n\n"]
+
+
+def test_split_long_paragraph_preserves_size_invariant() -> None:
+    paragraph = "a\nb\nc\n"
+
+    chunks = chunk_by_paragraph(paragraph, max_size=4)
+
+    assert chunks
+    assert "".join(chunks) == paragraph
+    assert all(0 < len(chunk) <= 4 for chunk in chunks)
