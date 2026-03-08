@@ -181,7 +181,9 @@ Este comando:
 3. **Embed** - Gera embeddings em batches via provider por tipo de conteúdo
 4. **Upsert** - Armazena vetores no Qdrant com IDs estáveis
 
-**IDs estáveis**: Reindexar o mesmo arquivo/chunk não duplica pontos. Se o texto não mudou, o ID permanece o mesmo e o upsert é um no-op/overwrite.
+**IDs estáveis**: o `chunkId` agora representa a identidade estrutural do chunk (`path:start:end:language`) e o `contentHash` representa a versão textual atual do conteúdo do chunk. Reindexar o mesmo bloco estrutural não duplica pontos; mudanças de texto atualizam o payload, mas preservam a identidade do ponto.
+
+**Migracao de schema**: a introducao de `chunkSchemaVersion=v2` exige **reindexacao completa obrigatoria** no primeiro rollout. Nao tente misturar pontos antigos e novos na mesma collection; descarte os pontos antigos ou recrie a collection antes do rebuild.
 
 **Saída:**
 ```json
@@ -394,6 +396,7 @@ Observação importante:
 - O valor de `repo` vem do nome do `REPO_ROOT` usado na execução.
 - Em ambiente multi-repo (`code-base/`), não use `REPO_ROOT` apontando para a pasta agregadora.
 - Indexe cada subdiretório (`code-base/<repo>`) separadamente para preservar o filtro por `repo` no MCP.
+- O basename de cada repo indexado precisa ser único dentro da mesma base; se houver dois roots diferentes com o mesmo nome, o indexer rejeita a operação para evitar ambiguidade no escopo público atual.
 
 ## Nome Automático de Collection
 
