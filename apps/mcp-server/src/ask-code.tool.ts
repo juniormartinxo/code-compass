@@ -31,6 +31,7 @@ const DEFAULT_LLM_MODEL = 'gpt-oss:latest';
 const DEFAULT_LLM_MODEL_PROVIDER = 'ollama';
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_CONTEXTS_PER_REPO_WIDE_SCOPE = 2;
+// Keep the answer shape aligned across modes; grounding is enforced by the surrounding rules.
 const STRUCTURED_RESPONSE_INSTRUCTION =
   'Prefira respostas detalhadas e estruturadas: resposta direta, explicacao de como funciona no codigo e evidencias (arquivo e linhas).';
 const NO_EVIDENCE_FALLBACK = `Sem evidencia suficiente no contexto recuperado para responder com confianca. \
@@ -508,7 +509,7 @@ export class AskCodeTool {
           'Responda as perguntas do usuario baseando-se APENAS no contexto fornecido.',
           'Se a informacao nao estiver no contexto, diga que nao encontrou essa informacao no codigo indexado.',
           'Nao invente exemplos nem APIs. Use somente o que aparece nos trechos. Cite os arquivos relevantes.',
-          'Quando houver evidencia suficiente, responda com profundidade e estrutura: resposta direta, explicacao de como funciona no codigo e evidencias (arquivo e linhas).',
+          STRUCTURED_RESPONSE_INSTRUCTION,
         ].join('\n')
       : knowledgeMode === 'all'
         ? [
