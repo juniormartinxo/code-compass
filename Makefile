@@ -23,11 +23,12 @@ CLI_PYTHON ?= python3.14
 MCP_SERVER_DIR ?= apps/mcp-server
 INDEXER_DOCKER_PROFILE ?= indexer
 
-.PHONY: help up down restart logs ps health wait-qdrant index index-full index-incremental index-docker index-docker-full index-docker-incremental setup-indexer ensure-indexer dev ensure-mcp-server index-all py-test py-lint py-typecheck py-setup acp-setup cli-setup chat-setup chat
+.PHONY: help up up-infra down restart logs ps health wait-qdrant index index-full index-incremental index-docker index-docker-full index-docker-incremental setup-indexer ensure-indexer dev ensure-mcp-server index-all py-test py-lint py-typecheck py-setup acp-setup cli-setup chat-setup chat
 
 help:
 	@echo "Targets disponíveis:"
-	@echo "  make up                -> sobe o Qdrant e aguarda readiness"
+	@echo "  make up                -> sobe Qdrant + prepara ACP/CLI + instala/build MCP"
+	@echo "  make up-infra          -> sobe somente o Qdrant e aguarda readiness"
 	@echo "  make down              -> derruba o Qdrant"
 	@echo "  make restart           -> reinicia o Qdrant"
 	@echo "  make logs              -> acompanha logs do Qdrant"
@@ -41,15 +42,24 @@ help:
 	@echo "  make index-all         -> indexa todos os repos de code-base/"
 	@echo "  make dev               -> sobe MCP server em modo dev"
 	@echo "  make chat-setup        -> prepara infra + CLI/ACP + build MCP para chat"
-	@echo "  make chat              -> prepara ambiente e abre o chat no terminal"
+	@echo "  make chat              -> abre o chat no terminal (requer make chat-setup prévio)"
 	@echo "  make py-setup          -> instala deps Python (indexer/cli/acp)"
 	@echo "  make py-test           -> roda pytest em apps Python"
 	@echo "  make py-lint           -> roda lint Python (ruff)"
 	@echo "  make py-typecheck      -> roda typecheck Python (mypy/pyright)"
 
-up:
+up-infra:
 	$(COMPOSE) up -d qdrant
 	$(MAKE) wait-qdrant
+
+up: up-infra cli-setup acp-setup ensure-mcp-server
+	@if [ ! -d "$(MCP_SERVER_DIR)/node_modules" ]; then \
+		echo "Instalando dependências do MCP server..."; \
+		pnpm -C $(MCP_SERVER_DIR) install; \
+	fi
+	@echo "Buildando MCP server..."
+	pnpm -C $(MCP_SERVER_DIR) run build
+	@echo "Stack local pronta (Qdrant + ACP/CLI + MCP build). Rode 'make chat' para abrir o TUI."
 
 down:
 	$(COMPOSE) down
@@ -126,15 +136,10 @@ index-all: ensure-indexer setup-indexer wait-qdrant
 dev: ensure-mcp-server
 	cd $(MCP_SERVER_DIR) && npm install && npm run dev
 
-chat-setup: up cli-setup acp-setup ensure-mcp-server
-	@if [ ! -d "$(MCP_SERVER_DIR)/node_modules" ]; then \
-		echo "Instalando dependências do MCP server..."; \
-		pnpm -C $(MCP_SERVER_DIR) install; \
-	fi
-	@echo "Buildando MCP server..."
-	pnpm -C $(MCP_SERVER_DIR) run build
+chat-setup: up
 
-chat: chat-setup
+chat:
+	@test -d "$(MCP_SERVER_DIR)/dist" || { echo "Erro: rode 'make chat-setup' primeiro."; exit 1; }
 	pnpm chat
 
 ensure-mcp-server:
