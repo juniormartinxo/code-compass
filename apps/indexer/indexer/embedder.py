@@ -21,6 +21,7 @@ DEFAULT_EMBEDDING_BATCH_SIZE = 16
 DEFAULT_EMBEDDING_MAX_RETRIES = 5
 DEFAULT_EMBEDDING_BACKOFF_BASE_MS = 500
 DEFAULT_TIMEOUT_SECONDS = 120
+DEFAULT_EMBEDDING_INPUT_MODE = "content"
 
 
 def _normalize_content_type(content_type: str) -> str:
@@ -28,6 +29,25 @@ def _normalize_content_type(content_type: str) -> str:
     if normalized not in {"code", "docs"}:
         raise ValueError("content_type deve ser 'code' ou 'docs'")
     return normalized
+
+
+def build_embedding_text(
+    *,
+    content: str,
+    summary_text: str | None = None,
+    mode: str = DEFAULT_EMBEDDING_INPUT_MODE,
+) -> str:
+    normalized_mode = mode.strip().lower()
+    if normalized_mode == "content":
+        return content
+    if normalized_mode == "summary_content":
+        normalized_summary = summary_text.strip() if summary_text else ""
+        if not normalized_summary:
+            return content
+        if not content:
+            return normalized_summary
+        return f"{normalized_summary}\n\n{content}"
+    raise ValueError("mode deve ser 'content' ou 'summary_content'")
 
 
 @dataclass(frozen=True)
