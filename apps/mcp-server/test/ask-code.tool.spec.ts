@@ -296,6 +296,7 @@ describe('AskCodeTool', () => {
     const systemPrompt = chatSpy.mock.calls[0]?.[0] as string;
     expect(systemPrompt).toContain('APENAS no contexto fornecido.');
     expect(systemPrompt).toContain('Nao use conhecimento externo');
+    expect(systemPrompt).toContain('Prefira respostas detalhadas e estruturadas');
     expect(systemPrompt).not.toContain('conhecimento geral');
   });
 
@@ -362,6 +363,7 @@ describe('AskCodeTool', () => {
     expect(output.meta.knowledgeMode).toBe('all');
     const systemPrompt = chatSpy.mock.calls[0]?.[0] as string;
     expect(systemPrompt).toContain('conhecimento geral');
+    expect(systemPrompt).toContain('Prefira respostas detalhadas e estruturadas');
     expect(systemPrompt).not.toContain('Nao use conhecimento externo');
   });
 
@@ -394,6 +396,7 @@ describe('AskCodeTool', () => {
     expect(chatSpy).not.toHaveBeenCalled();
     expect(output.meta.knowledgeMode).toBe('strict');
     expect(output.answer).toContain('Sem evidencia suficiente');
+    expect(output.answer).toContain('topK/minScore');
     expect(output.evidences).toHaveLength(0);
     expect(output.meta.contextsUsed).toBe(0);
   });
