@@ -29,6 +29,7 @@ class ChunkDocument:
     content: str
     chunkSchemaVersion: str = CHUNK_SCHEMA_VERSION
     contentType: str | None = None
+    collectionContentType: str | None = None
     symbolName: str | None = None
     qualifiedSymbolName: str | None = None
     symbolType: str | None = None
@@ -87,7 +88,8 @@ class IndexedChunk:
             "start_line": document.startLine,
             "end_line": document.endLine,
             "language": document.language,
-            "content_type": document.contentType,
+            "content_type": document.collectionContentType,
+            "chunk_content_type": document.contentType,
             "source": "repo",
             "repo_root": str(repo_root),
             "text": document.content,
