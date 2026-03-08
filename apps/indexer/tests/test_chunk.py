@@ -135,11 +135,12 @@ class ChunkFileTests(unittest.TestCase):
             self.assertEqual(first_chunk["contentHash"], expected_content_hash)
             self.assertEqual(first_chunk["chunkSchemaVersion"], CHUNK_SCHEMA_VERSION)
             self.assertEqual(first_chunk["chunkStrategy"], LINE_WINDOW_CHUNK_STRATEGY)
-            self.assertEqual(first_chunk["contentType"], "code")
+            self.assertEqual(first_chunk["contentType"], "code_context")
+            self.assertEqual(first_chunk["collectionContentType"], "code")
             self.assertEqual(
                 first_chunk["summaryText"],
                 (
-                    "apps/indexer/indexer/chunk.py | python | lines 1-4 | type=code "
+                    "apps/indexer/indexer/chunk.py | python | lines 1-4 | type=code_context "
                     "| first_line=line 1"
                 ),
             )
@@ -226,7 +227,7 @@ class ChunkFileTests(unittest.TestCase):
             self.assertEqual(
                 chunk.summaryText,
                 (
-                    "src/service.py | python | lines 1-4 | type=code "
+                    "src/service.py | python | lines 1-4 | type=code_context "
                     "| first_line=def load_data(user_id: str) -> dict[str, str]:"
                 ),
             )
@@ -262,11 +263,43 @@ class ChunkFileTests(unittest.TestCase):
         self.assertEqual(payload["chunk_schema_version"], CHUNK_SCHEMA_VERSION)
         self.assertEqual(payload["chunk_strategy"], LINE_WINDOW_CHUNK_STRATEGY)
         self.assertEqual(payload["content_type"], "code")
+        self.assertEqual(payload["chunk_content_type"], document.contentType)
         self.assertEqual(payload["start_line"], document.startLine)
         self.assertEqual(payload["end_line"], document.endLine)
         self.assertEqual(payload["text"], document.content)
         self.assertEqual(payload["summary_text"], document.summaryText)
         self.assertEqual(payload["context_text"], document.contextText)
+
+    def test_indexed_chunk_serializes_doc_payload_to_docs_collection(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            file_path = repo_root / "docs" / "guide.md"
+            file_path.parent.mkdir(parents=True)
+            file_path.write_text("# Guide\n\nHello\n", encoding="utf-8")
+
+            document = chunk_file_documents(
+                file_path=file_path,
+                repo_root=repo_root,
+                chunk_lines=20,
+                overlap=0,
+                as_posix=True,
+            ).chunks[0]
+            indexed = IndexedChunk(
+                document=document,
+                chunkIndex=0,
+                fileMtime=123.0,
+                fileSize=file_path.stat().st_size,
+            )
+
+            payload = indexed.to_qdrant_payload(
+                repo="indexer",
+                repo_root=repo_root,
+            )
+
+            self.assertEqual(document.contentType, "doc_section")
+            self.assertEqual(document.collectionContentType, "docs")
+            self.assertEqual(payload["content_type"], "docs")
+            self.assertEqual(payload["chunk_content_type"], "doc_section")
 
     def test_chunk_document_to_dict_serializes_tuple_fields_as_lists(self) -> None:
         document = chunk_file_documents(
@@ -368,7 +401,8 @@ class ChunkFileTests(unittest.TestCase):
                 as_posix=True,
             )
 
-            self.assertEqual(result.chunks[0].contentType, "docs")
+            self.assertEqual(result.chunks[0].contentType, "doc_section")
+            self.assertEqual(result.chunks[0].collectionContentType, "docs")
 
     def test_chunk_file_respects_runtime_doc_extension_overrides(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -385,7 +419,8 @@ class ChunkFileTests(unittest.TestCase):
                     as_posix=True,
                 )
 
-            self.assertEqual(result.chunks[0].contentType, "docs")
+            self.assertEqual(result.chunks[0].contentType, "doc_section")
+            self.assertEqual(result.chunks[0].collectionContentType, "docs")
 
     def test_chunk_file_respects_runtime_doc_path_hint_overrides(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -403,7 +438,38 @@ class ChunkFileTests(unittest.TestCase):
                     as_posix=True,
                 )
 
-            self.assertEqual(result.chunks[0].contentType, "docs")
+            self.assertEqual(result.chunks[0].contentType, "doc_section")
+            self.assertEqual(result.chunks[0].collectionContentType, "docs")
+
+    def test_chunk_file_classifies_test_and_config_blocks_as_code_collection(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            test_file = repo_root / "tests" / "service.spec.ts"
+            config_file = repo_root / "infra" / "settings.yaml"
+            test_file.parent.mkdir(parents=True)
+            config_file.parent.mkdir(parents=True)
+            test_file.write_text("export const ok = true;\n", encoding="utf-8")
+            config_file.write_text("debug: true\n", encoding="utf-8")
+
+            test_result = chunk_file_documents(
+                file_path=test_file,
+                repo_root=repo_root,
+                chunk_lines=20,
+                overlap=0,
+                as_posix=True,
+            )
+            config_result = chunk_file_documents(
+                file_path=config_file,
+                repo_root=repo_root,
+                chunk_lines=20,
+                overlap=0,
+                as_posix=True,
+            )
+
+            self.assertEqual(test_result.chunks[0].contentType, "test_case")
+            self.assertEqual(test_result.chunks[0].collectionContentType, "code")
+            self.assertEqual(config_result.chunks[0].contentType, "config_block")
+            self.assertEqual(config_result.chunks[0].collectionContentType, "code")
 
 
 if __name__ == "__main__":
