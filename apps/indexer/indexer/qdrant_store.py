@@ -372,6 +372,47 @@ class QdrantStore:
             return False
         return field_name in payload_schema
 
+    def count_points(
+        self,
+        *,
+        collection_name: str,
+        count_filter: models.Filter | None = None,
+    ) -> int:
+        """Conta pontos de uma collection, opcionalmente filtrando por payload."""
+        try:
+            result = self.client.count(
+                collection_name=collection_name,
+                count_filter=count_filter,
+                exact=True,
+            )
+        except Exception as exc:
+            raise QdrantStoreError(
+                f"Erro ao contar pontos da collection '{collection_name}': {exc}"
+            ) from exc
+
+        return int(result.count)
+
+    def count_points_without_payload_match(
+        self,
+        *,
+        collection_name: str,
+        field_name: str,
+        expected_value: str,
+    ) -> int:
+        """Conta pontos cujo payload não corresponde ao valor esperado."""
+        mismatch_filter = models.Filter(
+            must_not=[
+                models.FieldCondition(
+                    key=field_name,
+                    match=models.MatchValue(value=expected_value),
+                )
+            ]
+        )
+        return self.count_points(
+            collection_name=collection_name,
+            count_filter=mismatch_filter,
+        )
+
     def upsert(
         self,
         points: list[dict[str, Any]],
