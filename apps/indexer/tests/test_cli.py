@@ -114,6 +114,8 @@ class ChunkCliTests(unittest.TestCase):
             self.assertEqual(second_chunk["startLine"], 4)
             self.assertEqual(second_chunk["endLine"], 7)
             self.assertEqual(first_chunk["language"], "python")
+            self.assertEqual(first_chunk["chunkSchemaVersion"], "v2")
+            self.assertEqual(first_chunk["chunkStrategy"], "line_window")
             self.assertEqual(payload["warnings"], [])
 
     def test_cli_chunk_rejects_invalid_overlap(self) -> None:
@@ -224,6 +226,87 @@ class AskScopePayloadTests(unittest.TestCase):
         args = self._ask_args(scope_all=True)
         payload = _build_ask_scope_payload(args)
         self.assertEqual(payload, {"scope": {"type": "all"}})
+
+
+class IndexPreflightTests(unittest.TestCase):
+    def test_preflight_rejects_legacy_chunk_schema_points(self) -> None:
+        from indexer.__main__ import _fail_if_legacy_chunk_schema_points
+        from indexer.qdrant_store import QdrantStoreError
+
+        store = unittest.mock.Mock()
+        store.count_points_without_payload_match.side_effect = [2, 0]
+
+        with self.assertRaisesRegex(
+            QdrantStoreError,
+            "reindexacao completa obrigatoria",
+        ):
+            _fail_if_legacy_chunk_schema_points(
+                store=store,
+                collection_names={"code": "shared__code", "docs": "shared__docs"},
+                content_types=("code", "docs"),
+            )
+
+        self.assertEqual(store.count_points_without_payload_match.call_count, 2)
+
+    def test_preflight_allows_collections_when_only_v2_points_exist(self) -> None:
+        from indexer.__main__ import _fail_if_legacy_chunk_schema_points
+
+        store = unittest.mock.Mock()
+        store.count_points_without_payload_match.side_effect = [0, 0]
+
+        _fail_if_legacy_chunk_schema_points(
+            store=store,
+            collection_names={"code": "shared__code", "docs": "shared__docs"},
+            content_types=("code", "docs"),
+        )
+
+        self.assertEqual(store.count_points_without_payload_match.call_count, 2)
+
+    def test_preflight_rejects_same_repo_name_from_other_repo_root(self) -> None:
+        from indexer.__main__ import _fail_if_repo_name_collides_with_other_repo_root
+        from indexer.qdrant_store import QdrantStoreError
+
+        store = unittest.mock.Mock()
+        store.count_points.side_effect = [1, 0]
+
+        with self.assertRaisesRegex(
+            QdrantStoreError,
+            "basename duplicado",
+        ):
+            _fail_if_repo_name_collides_with_other_repo_root(
+                store=store,
+                collection_names={"code": "shared__code", "docs": "shared__docs"},
+                content_types=("code", "docs"),
+                repo="shared-lib",
+                repo_root=Path("/tmp/code-base-a/shared-lib"),
+            )
+
+        self.assertEqual(store.count_points.call_count, 2)
+        _, kwargs = store.count_points.call_args_list[0]
+        count_filter = kwargs["count_filter"]
+        self.assertEqual(count_filter.must[0].key, "repo")
+        self.assertEqual(count_filter.must[0].match.value, "shared-lib")
+        self.assertEqual(count_filter.must_not[0].key, "repo_root")
+        self.assertEqual(
+            count_filter.must_not[0].match.value,
+            "/tmp/code-base-a/shared-lib",
+        )
+
+    def test_preflight_allows_same_repo_name_when_repo_root_matches(self) -> None:
+        from indexer.__main__ import _fail_if_repo_name_collides_with_other_repo_root
+
+        store = unittest.mock.Mock()
+        store.count_points.side_effect = [0, 0]
+
+        _fail_if_repo_name_collides_with_other_repo_root(
+            store=store,
+            collection_names={"code": "shared__code", "docs": "shared__docs"},
+            content_types=("code", "docs"),
+            repo="shared-lib",
+            repo_root=Path("/tmp/code-base-a/shared-lib"),
+        )
+
+        self.assertEqual(store.count_points.call_count, 2)
 
 
 if __name__ == "__main__":
