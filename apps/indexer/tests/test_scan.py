@@ -57,7 +57,23 @@ class ScanRepoTests(unittest.TestCase):
             self.assertEqual(len(files), 1)
             self.assertEqual(stats["files_kept"], 2)
 
+    def test_scan_repo_applies_ignore_patterns(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            (repo_root / "src").mkdir()
+            (repo_root / "src" / "user.generated.ts").write_text("const ignored = true;\n", encoding="utf-8")
+            (repo_root / "src" / "main.ts").write_text("const kept = true;\n", encoding="utf-8")
+
+            files, stats = scan_repo(
+                repo_root=repo_root,
+                ignore_dirs=set(),
+                allow_exts={".ts"},
+                ignore_patterns=["src/*.generated.ts"],
+            )
+
+            self.assertEqual([path.as_posix() for path in files], ["src/main.ts"])
+            self.assertEqual(stats["files_ignored_pattern"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
-
