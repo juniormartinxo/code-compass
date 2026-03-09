@@ -312,6 +312,67 @@ class ChunkCliTests(unittest.TestCase):
             self.assertEqual(first_chunk["contentType"], "code_context")
             self.assertIsNone(first_chunk["symbolName"])
 
+    def test_cli_chunk_uses_specialized_strategies_for_docs_config_and_sql(self) -> None:
+        scenarios = (
+            (
+                "docs/guide.md",
+                "# Guide\nintro\n\n## Install\nstep 1\n",
+                "doc_section",
+                "doc_section",
+                2,
+            ),
+            (
+                "infra/settings.yaml",
+                "app:\n  debug: true\n\ndb:\n  host: localhost\n",
+                "config_section",
+                "config_block",
+                2,
+            ),
+            (
+                "db/queries.sql",
+                "SELECT 1;\n\nSELECT 2;\n",
+                "sql_statement",
+                "sql_block",
+                2,
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+
+            for relative_path, content, expected_strategy, expected_type, expected_chunks in scenarios:
+                file_path = repo_root / relative_path
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                file_path.write_text(content, encoding="utf-8")
+
+                completed = subprocess.run(
+                    [
+                        sys.executable,
+                        "-m",
+                        "indexer",
+                        "chunk",
+                        "--file",
+                        str(file_path),
+                        "--repo-root",
+                        str(repo_root),
+                        "--chunk-lines",
+                        "40",
+                        "--overlap-lines",
+                        "0",
+                        "--as-posix",
+                    ],
+                    cwd=Path(__file__).resolve().parents[1],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+
+                self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+                payload = json.loads(completed.stdout)
+                self.assertEqual(payload["stats"]["chunks"], expected_chunks)
+                self.assertEqual(payload["chunks"][0]["chunkStrategy"], expected_strategy)
+                self.assertEqual(payload["chunks"][0]["contentType"], expected_type)
+
     def test_cli_chunk_rejects_invalid_overlap(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir)
