@@ -1,103 +1,147 @@
-# Plano de Implementação do Tree-sitter no Code Compass
+# Plano Completo de Integração do Tree-sitter no Code Compass
 
 ## Resumo
 
-Objetivo: substituir o parsing atual de chunks de código por uma base Tree-sitter no indexer, mantendo o pipeline `scan -> chunk -> embed -> upsert -> search` e preservando os contratos já consumidos pelo MCP e pelo Qdrant.
+Este plano substitui a base atual de parsing semântico de código do indexer por Tree-sitter, mantendo os contratos externos do Code Compass e preservando a arquitetura atual do pipeline `scan -> chunk -> embed -> upsert -> search`.
 
-Decisões já travadas:
+Adoção decidida:
 
-1. rollout direto: o backend padrão passa a ser Tree-sitter
-2. arquitetura ampla para múltiplas linguagens
-3. primeira entrega funcional cobre as linguagens já presentes no repositório: `python`, `typescript`, `typescriptreact`, `javascript`, `javascriptreact`
-4. `docs`, `config` e `sql` permanecem com os chunkers especializados atuais
-5. haverá rebuild completo obrigatório do índice por mudança material de chunking e identidade estrutural
+- rollout direto: `tree_sitter` será o backend default
+- arquitetura preparada para múltiplas linguagens
+- primeira entrega funcional cobre apenas as linguagens já presentes no repositório: `python`, `typescript`, `typescriptreact`, `javascript`, `javascriptreact`
+- `docs`, `config` e `sql` continuam com os chunkers especializados atuais
+- haverá rebuild completo obrigatório do índice por mudança estrutural de chunking
+- `legacy` será mantido apenas como escape hatch operacional temporário
 
-Base técnica validada via Context7:
+Base técnica:
 
-- usar os bindings Python oficiais com `Language(...)`, `Parser`, `Query` e `QueryCursor`
-- carregar grammars por pacotes pré-compilados por linguagem, evitando build manual de grammars no primeiro ciclo
+- usar os bindings oficiais Python do Tree-sitter
+- carregar grammars por pacotes pré-compilados por linguagem
+- usar `Parser`, `Language`, `Query` e `QueryCursor` como fundação do parsing e da extração semântica
+
+## Objetivo
+
+Trocar o parser atual por uma base estrutural real para:
+
+- reduzir manutenção heurística em `TS/TSX/JS`
+- unificar o modelo de parsing semântico de código
+- preparar expansão futura para outras linguagens
+- preservar `chunkId`, `contentHash`, `summaryText`, `contextText`, `callers`, `callees` e o payload já consumido pelo MCP/Qdrant
+
+## Fora de Escopo
+
+- migrar `markdown`, `config` ou `sql` para Tree-sitter
+- entregar suporte semântico completo a Go, Rust ou Java neste ciclo
+- mudar contrato público do MCP
+- redesenhar payload do Qdrant fora do estritamente necessário
+- remover o backend `legacy` neste mesmo trabalho
 
 ## Estado Atual
 
-Hoje o Code Compass usa:
+Hoje o indexer usa:
 
-1. `ast` nativo em [chunk_python.py](/home/junior/apps/jm/code-compass/apps/indexer/indexer/chunk_python.py)
-2. parser heurístico com regex e balanceamento estrutural em [chunk_ts.py](/home/junior/apps/jm/code-compass/apps/indexer/indexer/chunk_ts.py)
-3. dispatch por linguagem em [chunk.py](/home/junior/apps/jm/code-compass/apps/indexer/indexer/chunk.py)
-4. schema atual `v5` em [chunk_models.py](/home/junior/apps/jm/code-compass/apps/indexer/indexer/chunk_models.py)
+- `ast` nativo para Python em [chunk_python.py](apps/indexer/indexer/chunk_python.py)
+- parser heurístico com regex e balanceamento estrutural para TS/TSX/JS em [chunk_ts.py](apps/indexer/indexer/chunk_ts.py)
+- dispatch por linguagem em [chunk.py](apps/indexer/indexer/chunk.py)
+- schema atual `v5` em [chunk_models.py](apps/indexer/indexer/chunk_models.py)
 
-Problema que este plano resolve:
+Problemas atuais:
 
-- custo crescente de manutenção do parser heurístico
-- fragilidade em edge cases de TS/TSX/JS moderno
-- ausência de fundação real para expansão multi-linguagem
-- necessidade de unificar a extração estrutural de símbolos e chamadas
+- manutenção alta do parser heurístico
+- edge cases frequentes em TS/TSX/JS moderno
+- pouca extensibilidade multi-linguagem
+- dificuldade de observabilidade sobre fallback, cobertura estrutural e custo do parsing
 
-## Escopo
+## Mudanças de Interface, Tipos e Contratos
 
-Em escopo:
+### Mudanças explícitas
 
-- chunking semântico de código via Tree-sitter
-- Python
-- TypeScript / TSX / JavaScript / JSX
-- extração de símbolos, imports, exports, callers e callees
-- fallback controlado para `line_window`
-- rollout operacional e testes
+1. Adicionar `CODE_CHUNK_PARSER_BACKEND=tree_sitter|legacy` em [config.py](apps/indexer/indexer/config.py), com default `tree_sitter`.
+2. Subir `CHUNK_SCHEMA_VERSION` de `v5` para `v6` em [chunk_models.py](apps/indexer/indexer/chunk_models.py).
+3. Adicionar logs estruturados de parsing e fallback no runtime do indexer.
+4. Documentar rebuild completo obrigatório e rollback operacional.
 
-Fora de escopo:
+### Mudanças que não serão feitas
 
-- migrar `markdown`, `config` ou `sql` para Tree-sitter
-- adicionar suporte semântico completo a Go, Rust ou Java na primeira entrega
-- mudar contratos do MCP
-- mudar estrutura do payload além do necessário para rollout e observabilidade
+1. Não renomear `chunkStrategy` existente:
+   - `python_symbol`
+   - `ts_symbol`
+2. Não remover campos atuais do payload:
+   - `chunk_schema_version`
+   - `chunk_strategy`
+   - `content_type`
+   - `chunk_content_type`
+   - `symbol_name`
+   - `qualified_symbol_name`
+   - `symbol_type`
+   - `parent_symbol`
+   - `imports`
+   - `exports`
+   - `callers`
+   - `callees`
+   - `summary_text`
+   - `context_text`
+3. Não registrar estado de fallback no payload do Qdrant.
+   - fallback será observabilidade de runtime, não contrato de armazenamento.
 
-## Mudanças de Interface e Contrato
+## Estratégia de Dependências e Compatibilidade
 
-Mudanças explícitas:
+### Dependências novas
 
-1. adicionar dependências do indexer para Tree-sitter e grammars oficiais das linguagens da primeira entrega em [requirements.txt](/home/junior/apps/jm/code-compass/apps/indexer/requirements.txt)
-2. adicionar `CODE_CHUNK_PARSER_BACKEND=tree_sitter|legacy` em [config.py](/home/junior/apps/jm/code-compass/apps/indexer/indexer/config.py), com default `tree_sitter`
-3. subir `CHUNK_SCHEMA_VERSION` de `v5` para `v6` em [chunk_models.py](/home/junior/apps/jm/code-compass/apps/indexer/indexer/chunk_models.py)
-4. documentar rebuild completo obrigatório no rollout
+Adicionar em [requirements.txt](apps/indexer/requirements.txt):
 
-Mudanças que não serão feitas:
+- binding principal de Tree-sitter
+- grammar package Python
+- grammar package TypeScript/TSX
+- grammar package JavaScript/JSX, se necessário separado
 
-1. não mudar nomes atuais de `chunkStrategy` para linguagens já suportadas
-2. não mudar nomes de campos de payload já persistidos no Qdrant
-3. não mudar o contrato do comando `indexer chunk` além de warnings adicionais de fallback quando aplicável
+### Regra de versionamento
 
-Defaults escolhidos:
+1. Fixar versões exatas dos bindings e grammars na primeira entrega.
+2. Documentar uma matriz de compatibilidade mínima em [apps/indexer/README.md](apps/indexer/README.md).
+3. Não permitir upgrade implícito solto de grammars neste ciclo.
+4. Atualizar versões apenas via follow-up controlado com regressão de fixtures.
 
-1. `python` continua emitindo `chunkStrategy=python_symbol`
-2. `typescript/js` continuam emitindo `chunkStrategy=ts_symbol`
-3. linguagens sem adapter Tree-sitter continuam no comportamento atual e, se não houver parser dedicado, caem em `line_window`
-4. `CODE_CHUNK_PARSER_BACKEND=legacy` existe apenas como escape hatch operacional temporário para rollback
+### Matriz inicial de compatibilidade
+
+Documentar:
+
+- versão do binding Python Tree-sitter usada
+- versão das grammars Python/TypeScript/JavaScript
+- linguagens efetivamente suportadas semanticamente neste ciclo
+- linguagens fora de suporte semântico continuam em fallback atual
 
 ## Arquitetura Proposta
 
-### 1. Camada Tree-sitter interna
+### Camada interna `tree_sitter/`
 
-Criar um pacote novo em `apps/indexer/indexer/tree_sitter/` com estes módulos:
+Criar `apps/indexer/indexer/tree_sitter/` com:
 
 1. `runtime.py`
    - carrega grammars
+   - cria e reutiliza `Language`
    - cria e reutiliza `Parser`
-   - centraliza `Language`, `Query`, `QueryCursor`
-   - expõe helpers para bytes, ranges e texto de nó
+   - compila e reutiliza `Query`
+   - expõe helpers de bytes, texto e linhas
 
 2. `registry.py`
-   - mapeia `language` do indexer para adapter Tree-sitter
-   - resolve qual adapter usar para `python`, `typescript`, `typescriptreact`, `javascript`, `javascriptreact`
+   - resolve adapter por linguagem do indexer
+   - mapeia:
+     - `python`
+     - `typescript`
+     - `typescriptreact`
+     - `javascript`
+     - `javascriptreact`
 
 3. `types.py`
-   - define um `SyntaxChunkSpec` compartilhado para parsing estrutural
-   - mantém o shape necessário para virar `ChunkDocument`
+   - define `SyntaxChunkSpec` compartilhado
+   - shape compatível com `ChunkDocument`
 
 4. `adapters/python.py`
-   - faz parse, consulta e montagem dos chunks Python
+   - parse e extração semântica Python
 
 5. `adapters/typescript.py`
-   - faz parse, consulta e montagem dos chunks TS/TSX/JS/JSX
+   - parse e extração semântica TS/TSX/JS/JSX
 
 6. `queries/python.scm`
 7. `queries/typescript.scm`
@@ -105,310 +149,454 @@ Criar um pacote novo em `apps/indexer/indexer/tree_sitter/` com estes módulos:
 9. `queries/javascript.scm`
 10. `queries/jsx.scm`
 
-Regra arquitetural:
+### Regra arquitetural
 
-- nenhum módulo fora de `tree_sitter/` importa grammar packages diretamente
-- `chunk.py` só enxerga a registry e objetos de saída normalizados
+- módulos fora de `tree_sitter/` não importam grammars diretamente
+- [chunk.py](apps/indexer/indexer/chunk.py) só enxerga a registry e specs normalizados
+- `legacy` e `tree_sitter` devem produzir a mesma estrutura de saída pública
 
-### 2. Estratégia de migração do código atual
+## Estratégia de Migração do Código Atual
 
-Antes da troca:
+### Congelamento dos parsers atuais
 
-1. mover a implementação atual de [chunk_python.py](/home/junior/apps/jm/code-compass/apps/indexer/indexer/chunk_python.py) para `chunk_python_legacy.py`
-2. mover a implementação atual de [chunk_ts.py](/home/junior/apps/jm/code-compass/apps/indexer/indexer/chunk_ts.py) para `chunk_ts_legacy.py`
+Criar:
+- `chunk_python_legacy.py`
+- `chunk_ts_legacy.py`
 
-Depois:
+Esses módulos recebem o código atual, sem refactor funcional adicional.
 
-1. [chunk_python.py](/home/junior/apps/jm/code-compass/apps/indexer/indexer/chunk_python.py) vira wrapper Tree-sitter
-2. [chunk_ts.py](/home/junior/apps/jm/code-compass/apps/indexer/indexer/chunk_ts.py) vira wrapper Tree-sitter
-3. o backend `legacy` chama os módulos congelados antigos
-4. o backend `tree_sitter` chama a nova registry
+### Wrappers públicos
 
-Isso permite rollout direto com fallback operacional sem deixar o restante do indexer tomar decisões.
+- [chunk_python.py](apps/indexer/indexer/chunk_python.py) vira wrapper que resolve backend e chama:
+  - `tree_sitter/adapters/python.py`
+  - ou `chunk_python_legacy.py`
+- [chunk_ts.py](apps/indexer/indexer/chunk_ts.py) idem
 
-## Plano de Implementação
+### Regra de seleção de backend
 
-### Fase 1 — Fundação e dependências
+1. `CODE_CHUNK_PARSER_BACKEND=tree_sitter`
+   - usa Tree-sitter
+2. `CODE_CHUNK_PARSER_BACKEND=legacy`
+   - usa parsers antigos
+3. default:
+   - `tree_sitter`
 
-Arquivos:
+## Fase 0 — Baseline e Benchmark Pré-Migração
 
-- [requirements.txt](/home/junior/apps/jm/code-compass/apps/indexer/requirements.txt)
-- [config.py](/home/junior/apps/jm/code-compass/apps/indexer/indexer/config.py)
-- novos módulos em `apps/indexer/indexer/tree_sitter/`
+### Objetivo
 
-Implementar:
+Criar baseline comparável antes da troca do parser.
 
-1. dependências Tree-sitter do indexer
-2. `load_runtime_config()` passando a ler `CODE_CHUNK_PARSER_BACKEND`
-3. `runtime.py` com cache de `Language`, `Parser` e `Query`
-4. `registry.py` com resolução por linguagem do indexer
-5. utilitários de range:
-   - `node.start_point` / `node.end_point` para `startLine` e `endLine`
-   - helpers de slice do texto original por byte range
-6. política de erro de grammar loading:
-   - se backend for `tree_sitter` e grammar não carregar, falhar cedo com erro explícito
-   - se backend for `legacy`, não tentar inicializar Tree-sitter
+### Entregas
 
-### Fase 2 — Backend Tree-sitter para Python
+1. benchmark do backend atual em repo real e fixture repo
+2. relatório base com:
+   - tempo total de `indexer chunk`
+   - tempo total de `index`
+   - quantidade de chunks por arquivo
+   - distribuição de `chunkStrategy`
+   - taxa de fallback atual
+   - cobertura por arquivo
+3. salvar baseline em documento técnico de apoio em `docs/tree-sitter/`
 
-Arquivos:
+### Cenários de benchmark
 
-- [chunk_python.py](/home/junior/apps/jm/code-compass/apps/indexer/indexer/chunk_python.py)
-- `apps/indexer/indexer/tree_sitter/adapters/python.py`
-- [chunk_graph.py](/home/junior/apps/jm/code-compass/apps/indexer/indexer/chunk_graph.py)
+1. fixture repo em [fixtures/chunking](apps/indexer/tests/fixtures/chunking)
+2. repo atual em amostra controlada
+3. arquivos grandes e arquivos com alta cardinalidade de símbolos
 
-Implementar:
+### Critério de saída
 
-1. captura de top-level:
+Ter números objetivos antes de implementar Tree-sitter.
+
+## Fase 1 — Fundação Tree-sitter
+
+### Arquivos
+
+- [requirements.txt](apps/indexer/requirements.txt)
+- [config.py](apps/indexer/indexer/config.py)
+- `apps/indexer/indexer/tree_sitter/`
+
+### Implementação
+
+1. adicionar dependências fixadas
+2. adicionar `CODE_CHUNK_PARSER_BACKEND`
+3. implementar cache de:
+   - `Language`
+   - `Parser`
+   - `Query`
+4. padronizar helpers de:
+   - `startLine`
+   - `endLine`
+   - byte ranges
+   - slice de conteúdo
+5. falhar cedo se backend for `tree_sitter` e grammar não carregar
+
+### Testes
+
+1. grammar load por linguagem
+2. parser cache
+3. query cache
+4. erro explícito quando grammar faltar
+
+## Fase 2 — Python com Tree-sitter
+
+### Arquivos
+
+- [chunk_python.py](apps/indexer/indexer/chunk_python.py)
+- `chunk_python_legacy.py`
+- `tree_sitter/adapters/python.py`
+- [chunk_graph.py](apps/indexer/indexer/chunk_graph.py)
+
+### Implementação
+
+1. capturar:
    - `function_definition`
    - `decorated_definition`
    - `class_definition`
-2. captura de membros de classe:
+2. extrair:
+   - funções
    - métodos
-   - `async def`
-   - decorators
-3. regras de chunk:
-   - função -> chunk
-   - método -> chunk
-   - classe pequena -> chunk único
-   - classe grande -> chunk-resumo + métodos + contextos lexicais não cobertos
-4. extração de metadados:
+   - classes pequenas
+   - classes grandes com resumo + métodos
+3. incluir contexto lexical não coberto
+4. extrair:
    - `symbolName`
    - `qualifiedSymbolName`
    - `symbolType`
    - `parentSymbol`
    - `signature`
 5. grafo:
-   - visitar o subtree do símbolo para chamadas
-   - incluir decorators no conjunto de `callees`
-   - preservar as correções já conquistadas: não promover temporários para símbolo local e não mapear `super.method` para a classe atual
-6. regra de fallback:
-   - se `root_node.has_error`
-   - ou houver nós `missing/error` dentro de um símbolo emitido
-   - ou a cobertura estrutural útil do arquivo ficar abaixo de `INDEX_MIN_FILE_COVERAGE`
-   - então voltar para `line_window`
+   - chamadas no subtree do símbolo
+   - decorators entram em `callees`
+   - manter proteção contra:
+     - `get_client().load()` virar símbolo local
+     - `super.load()` virar método da classe atual
 
-### Fase 3 — Backend Tree-sitter para TypeScript / TSX / JS / JSX
+### Fallback
 
-Arquivos:
+Voltar para `line_window` se:
+1. houver erro sintático relevante
+2. houver nós missing/error em símbolo emitido
+3. cobertura estrutural útil do arquivo ficar abaixo de `INDEX_MIN_FILE_COVERAGE`
 
-- [chunk_ts.py](/home/junior/apps/jm/code-compass/apps/indexer/indexer/chunk_ts.py)
-- `apps/indexer/indexer/tree_sitter/adapters/typescript.py`
-- [chunk_graph.py](/home/junior/apps/jm/code-compass/apps/indexer/indexer/chunk_graph.py)
+### Testes obrigatórios
 
-Implementar:
+1. função simples
+2. `async def`
+3. classe pequena
+4. classe grande
+5. decorators
+6. comentários fora do AST relevante
+7. `get_client().load()`
+8. `super.load()`
+9. arquivo inválido com fallback
 
-1. captura de símbolos:
+## Fase 3 — TypeScript / TSX / JS / JSX com Tree-sitter
+
+### Arquivos
+
+- [chunk_ts.py](apps/indexer/indexer/chunk_ts.py)
+- `chunk_ts_legacy.py`
+- `tree_sitter/adapters/typescript.py`
+- [chunk_graph.py](apps/indexer/indexer/chunk_graph.py)
+
+### Implementação
+
+1. capturar:
    - `class_declaration`
    - `method_definition`
    - `function_declaration`
-   - `lexical_declaration` cujo valor seja `arrow_function` ou `function`
-   - `export default` nomeado ou anônimo
+   - `lexical_declaration` com `arrow_function` ou `function`
+   - `export default` nomeado e anônimo
    - getters e setters
-2. regras semânticas:
-   - `hook` por nome `use[A-Z]`
-   - `component` por PascalCase e retorno JSX
-   - `helper` para função/arrow top-level não classificada como hook/component
-   - `class` e `method` como hoje
-3. casos obrigatórios:
-   - overloads: assinatura sem implementação vira `code_context`; implementação vira `code_symbol`
-   - decorators de classe e método, inclusive multiline
+2. classificar semântica:
+   - `hook` por nome `useX`
+   - `component` por PascalCase com JSX
+   - `helper` para função top-level restante
+3. tratar casos obrigatórios:
+   - overloads
+   - decorators de classe e método
+   - decorators multiline
    - `export default memo(function Name() {})`
+   - `export default forwardRef(function Name() {})`
    - `export default () => ...`
+   - `export default async () => ...`
    - `export default function() {}`
    - `export default class extends Base {}`
+   - `abstract class`
+   - fragments JSX `<>...</>`
+   - JSX condicional e aninhado
 4. grafo:
-   - extrair chamadas apenas do subtree do símbolo
+   - chamadas só no subtree do símbolo
    - incluir decorators
-   - manter proteção contra `new Client().run()` virar símbolo local `run`
-   - manter proteção contra `super.load()` virar método da classe atual
-5. fallback:
-   - mesma regra da Fase 2 com base em erros e cobertura
+   - manter proteção contra:
+     - `new Client().run()` virar símbolo local
+     - `super.load()` virar método da classe atual
 
-### Fase 4 — Integração no pipeline
+### Compatibilidade de decorators
 
-Arquivos:
+Documentar e testar:
+1. decorators legacy
+2. decorators Stage-3 suportados pela grammar escolhida
+3. explicitar no README qual variante é assumida como suportada
 
-- [chunk.py](/home/junior/apps/jm/code-compass/apps/indexer/indexer/chunk.py)
-- [__main__.py](/home/junior/apps/jm/code-compass/apps/indexer/indexer/__main__.py)
+### Testes obrigatórios
 
-Implementar:
+1. helper
+2. hook
+3. component
+4. classe pequena
+5. classe grande
+6. overloads
+7. getters/setters
+8. default export nomeado
+9. default export anônimo
+10. wrappers `memo` / `forwardRef`
+11. decorators multiline
+12. JSX fragment
+13. JSX condicional aninhado
+14. arquivo inválido com fallback
 
-1. `chunk.py` deixa de decidir parsing por módulos específicos e passa a consultar a registry Tree-sitter para linguagens de código
-2. `docs/config/sql` continuam com os chunkers atuais
-3. o backend é resolvido assim:
-   - `tree_sitter`: usa registry para código
-   - `legacy`: usa `chunk_python_legacy.py` e `chunk_ts_legacy.py`
-4. manter `summaryText`, `contextText`, `contentType`, `collectionContentType`, `callers`, `callees` e `chunkId` com a mesma estrutura atual
-5. warnings adicionais:
-   - parser backend usado
-   - motivo de fallback para `line_window`, quando ocorrer
+## Fase 4 — Integração no Pipeline
 
-### Fase 5 — Schema, rollout e documentação
+### Arquivos
 
-Arquivos:
+- [chunk.py](apps/indexer/indexer/chunk.py)
+- [__main__.py](apps/indexer/indexer/__main__.py)
 
-- [chunk_models.py](/home/junior/apps/jm/code-compass/apps/indexer/indexer/chunk_models.py)
-- [README.md](/home/junior/apps/jm/code-compass/apps/indexer/README.md)
-- [OPERATIONS.md](/home/junior/apps/jm/code-compass/docs/OPERATIONS.md)
-- [ROADMAP.md](/home/junior/apps/jm/code-compass/docs/ROADMAP.md)
+### Implementação
 
-Implementar:
+1. [chunk.py](apps/indexer/indexer/chunk.py) passa a resolver backend de código via registry
+2. `docs`, `config` e `sql` permanecem como estão
+3. manter construção atual de:
+   - `ChunkDocument`
+   - `summaryText`
+   - `contextText`
+   - `chunkId`
+   - `contentHash`
+4. warnings estruturados de fallback por arquivo
+5. nenhuma mudança no contrato do payload final além do bump de schema
 
-1. `CHUNK_SCHEMA_VERSION = "v6"`
-2. preflight de legado continua bloqueando mistura de schema
-3. documentar:
-   - rebuild completo obrigatório
-   - novo backend default
-   - escape hatch `CODE_CHUNK_PARSER_BACKEND=legacy`
-   - smoke de validação do rollout
-4. manter `legacy` por um ciclo de estabilização
-5. remover `legacy` em follow-up posterior, não neste trabalho
+## Fase 5 — Schema, Observabilidade e Operação
 
-### Fase 6 — Expansão arquitetural pós-primeira entrega
+### Schema
 
-Objetivo:
+1. subir `CHUNK_SCHEMA_VERSION` para `v6`
+2. manter bloqueio de mistura de schema legado
+3. exigir rebuild completo obrigatório
 
-- deixar o pacote Tree-sitter pronto para novas linguagens sem retrabalho estrutural
+### Observabilidade
 
-Implementar já nesta fase:
+Adicionar logs estruturados por arquivo com este shape mínimo:
 
-1. contrato interno de adapter por linguagem
-2. registry preparada para idiomas novos
-3. convenção de query files por linguagem
+```json
+{
+  "event": "chunk_parse",
+  "parser_backend": "tree_sitter",
+  "language": "typescriptreact",
+  "path": "src/product-card.tsx",
+  "fallback": false,
+  "fallback_reason": null,
+  "chunk_count": 4,
+  "duration_ms": 12
+}
+```
 
-Não implementar agora:
+Em fallback:
 
-1. chunking semântico de Go
-2. chunking semântico de Rust
-3. chunking semântico de Java
+```json
+{
+  "event": "chunk_parse",
+  "parser_backend": "tree_sitter",
+  "language": "python",
+  "path": "src/broken.py",
+  "fallback": true,
+  "fallback_reason": "parse_error",
+  "chunk_count": 1,
+  "duration_ms": 3
+}
+```
 
-Essas linguagens entram apenas em roadmap futuro, depois de estabilizar a primeira entrega.
+Métricas mínimas a emitir/agrupar:
+1. arquivos parseados por backend
+2. taxa de fallback por linguagem
+3. duração média e p95 por linguagem
+4. chunks gerados por linguagem
+5. erros de grammar loading
+6. cobertura estrutural média por arquivo
 
-## Estratégia de `chunkId` e Schema
+### Regra explícita
 
-Regras:
+Fallback não entra no payload do Qdrant.
 
-1. manter a lógica atual de `make_chunk_id()` baseada em símbolo quando existir
-2. não criar novo formato especial de `chunkId` só porque o parser mudou
-3. aceitar que a troca de parser muda ranges, cobertura e, em alguns casos, identidade estrutural prática
-4. por isso, o rollout exige `chunkSchemaVersion=v6` e rebuild completo obrigatório
+## Fase 6 — Benchmark Pós-Migração e Gate de Qualidade
 
-## Testes e Cenários Obrigatórios
+### Comparação obrigatória
+
+Comparar `legacy` vs `tree_sitter` em:
+1. tempo de `indexer chunk`
+2. tempo de `index`
+3. número de chunks por arquivo
+4. distribuição de `chunkStrategy`
+5. taxa de fallback
+6. preservação dos campos do payload
+
+### Gate de qualidade
+
+1. 100% dos campos de payload preservados
+2. smoke `index -> search` aprovado
+3. taxa de fallback em repos conhecidos abaixo de um threshold inicial documentado
+4. tempo de parsing `tree_sitter` não pode degradar sem explicação documentada
+
+Default escolhido:
+- meta inicial de performance: `tree_sitter` deve ficar até `1.5x` do legacy em parsing puro nos cenários conhecidos
+- isso é gate inicial de engenharia, não contrato público
+
+## Estratégia de Regressão
+
+### Reuso de fixtures existentes
+
+Usar como base principal:
+- [fixtures/chunking](apps/indexer/tests/fixtures/chunking)
+
+Expandir com novas fixtures específicas de Tree-sitter:
+1. Python com decorators complexos
+2. TS com overloads
+3. TSX com wrappers
+4. TSX com JSX fragment e JSX aninhado
+5. default exports anônimos
+6. decorators Stage-3 e legacy
+7. arquivos quebrados para fallback
+
+### Estratégia de comparação legacy vs tree_sitter
+
+Não usar diff textual cego como verdade absoluta.
+
+Usar três níveis:
+1. invariantes obrigatórios
+   - campo presente
+   - payload compatível
+   - `chunkStrategy` correta
+2. regressão estrutural
+   - conjunto de símbolos
+   - cardinalidade esperada
+   - ranges coerentes
+3. revisão manual só dos casos divergentes relevantes
+
+## Testes e Cenários
 
 ### Testes unitários
 
 Arquivos:
-
-- [test_chunk_python.py](/home/junior/apps/jm/code-compass/apps/indexer/tests/test_chunk_python.py)
-- [test_chunk_ts.py](/home/junior/apps/jm/code-compass/apps/indexer/tests/test_chunk_ts.py)
-- [test_chunk.py](/home/junior/apps/jm/code-compass/apps/indexer/tests/test_chunk.py)
-- [test_config.py](/home/junior/apps/jm/code-compass/apps/indexer/tests/test_config.py)
+- [test_chunk_python.py](apps/indexer/tests/test_chunk_python.py)
+- [test_chunk_ts.py](apps/indexer/tests/test_chunk_ts.py)
+- [test_chunk.py](apps/indexer/tests/test_chunk.py)
+- [test_config.py](apps/indexer/tests/test_config.py)
 
 Cobertura mínima:
-
-1. Python:
-   - função simples
-   - `async def`
-   - classe pequena
-   - classe grande
-   - decorators
-   - comentários e contexto lexical não coberto
-   - fallback em arquivo inválido
-2. TS/TSX/JS:
-   - helper
-   - hook
-   - component
-   - classe grande
-   - overloads
-   - default export nomeado
-   - default export anônimo
-   - wrappers `memo` e `forwardRef`
-   - decorators multiline
-   - getters e setters
-   - fallback em arquivo inválido
-3. grafo:
-   - `self/this.method`
-   - temporário `get_client().load()` não promovido
-   - `new Client().run()` não promovido
-   - `super.load()` não promovido
-4. runtime Tree-sitter:
-   - grammar load
-   - parser cache
-   - query compilation
+1. grammar loading
+2. query execution
+3. parsing por linguagem
+4. fallback por parse error
+5. `chunkId` estável
+6. `contentHash` mutável
+7. `summaryText` e `contextText`
+8. `callers` e `callees`
+9. casos de borda já corrigidos historicamente
 
 ### Testes de integração
 
 Arquivos:
-
-- [test_cli.py](/home/junior/apps/jm/code-compass/apps/indexer/tests/test_cli.py)
-- smoke de indexação/search já existente
+- [test_cli.py](apps/indexer/tests/test_cli.py)
+- smoke do indexer
 
 Cobertura mínima:
+1. `indexer chunk` com backend default
+2. `indexer chunk` com backend `legacy`
+3. `indexer index` em collection temporária
+4. `indexer search` após indexação
+5. bloqueio de mistura `v5/v6`
 
-1. `indexer chunk` para Python e TSX usando backend default `tree_sitter`
-2. `indexer chunk` com `CODE_CHUNK_PARSER_BACKEND=legacy`
-3. `indexer index` com rebuild limpo em collection temporária
-4. `indexer search` retornando payload coerente após indexação Tree-sitter
+## Runbook Operacional
 
-### Critérios de aceitação
+### Rollout
 
-1. nenhum campo público de payload atual é removido
-2. `python_symbol` e `ts_symbol` continuam sendo emitidos
-3. `summaryText` e `contextText` continuam preenchidos
-4. `callers` e `callees` continuam presentes e sem reabrir regressões já corrigidas
-5. `indexer chunk`, `indexer index` e `indexer search` continuam funcionando ponta a ponta
-6. `legacy` funciona como rollback emergencial
-7. rollout `v6` bloqueia mistura com schemas antigos
+1. backup lógico do estado operacional atual
+2. atualizar dependências Python do indexer
+3. validar grammar loading
+4. recriar ou limpar collections antigas
+5. rodar rebuild completo
+6. rodar smoke `index -> search`
+7. validar taxa de fallback e cardinalidade de chunks
+8. liberar uso padrão com backend `tree_sitter`
 
-## Rollout, Validação e Rollback
+### Sequência operacional documentada
 
-Rollout:
+1. `make py-setup`
+2. validar ambiente do indexer
+3. `make health`
+4. rebuild completo do índice
+5. smoke controlado de busca
+6. checagem de logs estruturados de parsing
 
-1. publicar dependências novas
-2. subir `CHUNK_SCHEMA_VERSION` para `v6`
-3. recriar ou limpar collections antigas
-4. rodar `index` completo
-5. validar `search` em repo de smoke e repo real pequeno
+### Rollback
 
-Validação operacional:
+1. setar `CODE_CHUNK_PARSER_BACKEND=legacy`
+2. recriar/reindexar com backend compatível com o estado desejado
+3. repetir smoke `index -> search`
+4. manter rollback só como mecanismo de estabilização temporária
 
-1. `make health`
-2. smoke `index -> search`
-3. checagem de `chunk_strategy`, `chunk_content_type`, `symbol_name`, `callers`, `callees`
-4. checagem de taxa de fallback para `line_window`
+### Remoção do backend legacy
 
-Rollback:
+Planejar como follow-up separado.
 
-1. se houver regressão funcional imediata, usar `CODE_CHUNK_PARSER_BACKEND=legacy`
-2. manter essa rota apenas durante o ciclo de estabilização
-3. não reutilizar points `v6` como se fossem equivalentes aos de `v5`; o rollback operacional exige rebuild compatível com o backend selecionado
+Critério de remoção:
+1. ciclo de estabilização de 2 sprints
+2. zero incidentes críticos de parsing em produção
+3. taxa de fallback controlada
+4. benchmark e smoke estáveis
+
+## Critérios de Aceitação Finais
+
+1. `tree_sitter` é o backend default para código
+2. `legacy` permanece disponível para rollback temporário
+3. `v6` bloqueia mistura com schemas antigos
+4. Python e TS/TSX/JS/JSX continuam emitindo payload compatível com o ecossistema atual
+5. o pipeline `index -> search` funciona ponta a ponta
+6. existem métricas e logs suficientes para diagnosticar fallback e degradação
+7. benchmark antes/depois está documentado
+8. fixtures cobrindo casos reais foram ampliadas e aprovadas
 
 ## Assunções e Defaults
 
-1. o plano usa a API oficial do `py-tree-sitter`, validada via Context7
-2. a primeira entrega Tree-sitter cobre só linguagens de código já existentes no repositório atual
-3. `markdown`, `config` e `sql` não entram nessa migração
-4. a troca do parser é considerada mudança estrutural suficiente para exigir `v6`
-5. o backend `legacy` é temporário e existe só para estabilização operacional
-6. o objetivo não é “suportar todas as linguagens já”, e sim criar a fundação multi-linguagem correta sem reabrir a fragilidade atual
+1. A primeira entrega semântica Tree-sitter cobre apenas linguagens de código já presentes no repositório.
+2. `docs`, `config` e `sql` permanecem nos parsers atuais.
+3. O payload do Qdrant não receberá campos extras de fallback.
+4. `CODE_CHUNK_PARSER_BACKEND=legacy` é temporário.
+5. A troca de parser é mudança estrutural suficiente para exigir `v6`.
+6. O objetivo deste ciclo é robustez e fundação multi-linguagem, não suporte amplo imediato a outras linguagens.
 
 ## Arquivos-Alvo
 
-1. [apps/indexer/requirements.txt](/home/junior/apps/jm/code-compass/apps/indexer/requirements.txt)
-2. [apps/indexer/indexer/config.py](/home/junior/apps/jm/code-compass/apps/indexer/indexer/config.py)
-3. [apps/indexer/indexer/chunk.py](/home/junior/apps/jm/code-compass/apps/indexer/indexer/chunk.py)
-4. [apps/indexer/indexer/chunk_python.py](/home/junior/apps/jm/code-compass/apps/indexer/indexer/chunk_python.py)
-5. [apps/indexer/indexer/chunk_ts.py](/home/junior/apps/jm/code-compass/apps/indexer/indexer/chunk_ts.py)
-6. [apps/indexer/indexer/chunk_graph.py](/home/junior/apps/jm/code-compass/apps/indexer/indexer/chunk_graph.py)
-7. [apps/indexer/indexer/chunk_models.py](/home/junior/apps/jm/code-compass/apps/indexer/indexer/chunk_models.py)
-8. [apps/indexer/indexer/__main__.py](/home/junior/apps/jm/code-compass/apps/indexer/indexer/__main__.py)
+1. [apps/indexer/requirements.txt](apps/indexer/requirements.txt)
+2. [apps/indexer/indexer/config.py](apps/indexer/indexer/config.py)
+3. [apps/indexer/indexer/chunk.py](apps/indexer/indexer/chunk.py)
+4. [apps/indexer/indexer/chunk_python.py](apps/indexer/indexer/chunk_python.py)
+5. [apps/indexer/indexer/chunk_ts.py](apps/indexer/indexer/chunk_ts.py)
+6. [apps/indexer/indexer/chunk_graph.py](apps/indexer/indexer/chunk_graph.py)
+7. [apps/indexer/indexer/chunk_models.py](apps/indexer/indexer/chunk_models.py)
+8. [apps/indexer/indexer/__main__.py](apps/indexer/indexer/__main__.py)
 9. `apps/indexer/indexer/tree_sitter/`
-10. [apps/indexer/tests/test_chunk_python.py](/home/junior/apps/jm/code-compass/apps/indexer/tests/test_chunk_python.py)
-11. [apps/indexer/tests/test_chunk_ts.py](/home/junior/apps/jm/code-compass/apps/indexer/tests/test_chunk_ts.py)
-12. [apps/indexer/tests/test_chunk.py](/home/junior/apps/jm/code-compass/apps/indexer/tests/test_chunk.py)
-13. [apps/indexer/tests/test_cli.py](/home/junior/apps/jm/code-compass/apps/indexer/tests/test_cli.py)
-14. [apps/indexer/tests/test_config.py](/home/junior/apps/jm/code-compass/apps/indexer/tests/test_config.py)
-15. [apps/indexer/README.md](/home/junior/apps/jm/code-compass/apps/indexer/README.md)
-16. [docs/OPERATIONS.md](/home/junior/apps/jm/code-compass/docs/OPERATIONS.md)
-17. [docs/tree-sitter/plan.md](/home/junior/apps/jm/code-compass/docs/tree-sitter/plan.md)
+10. `apps/indexer/indexer/chunk_python_legacy.py`
+11. `apps/indexer/indexer/chunk_ts_legacy.py`
+12. [apps/indexer/tests/test_chunk_python.py](apps/indexer/tests/test_chunk_python.py)
+13. [apps/indexer/tests/test_chunk_ts.py](apps/indexer/tests/test_chunk_ts.py)
+14. [apps/indexer/tests/test_chunk.py](apps/indexer/tests/test_chunk.py)
+15. [apps/indexer/tests/test_cli.py](apps/indexer/tests/test_cli.py)
+16. [apps/indexer/tests/test_config.py](apps/indexer/tests/test_config.py)
+17. [apps/indexer/tests/fixtures/chunking](apps/indexer/tests/fixtures/chunking)
+18. [apps/indexer/README.md](apps/indexer/README.md)
+19. [docs/OPERATIONS.md](docs/OPERATIONS.md)
+20. [docs/ROADMAP.md](docs/ROADMAP.md)
+21. [docs/tree-sitter/plan.md](docs/tree-sitter/plan.md)
