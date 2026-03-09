@@ -118,6 +118,113 @@ class PythonChunkSourceTests(unittest.TestCase):
         self.assertEqual(len(value_methods), 2)
         self.assertNotEqual(value_methods[0].signature, value_methods[1].signature)
 
+    def test_extracts_callees_and_reverse_callers_for_python_symbols(self) -> None:
+        specs = chunk_python_source(
+            text=(
+                "def helper() -> str:\n"
+                "    return 'ok'\n\n"
+                "def load() -> str:\n"
+                "    return helper()\n\n"
+                "class Service:\n"
+                "    def run(self) -> str:\n"
+                "        return self.load()\n\n"
+                "    def load(self) -> str:\n"
+                "        return helper()\n"
+            ),
+            file_content_type="code_context",
+            class_max_lines=3,
+        )
+
+        self.assertIsNotNone(specs)
+        assert specs is not None
+
+        by_symbol = {
+            spec.qualifiedSymbolName: spec
+            for spec in specs
+            if spec.qualifiedSymbolName is not None
+        }
+
+        self.assertEqual(by_symbol["helper"].callees, ())
+        self.assertEqual(by_symbol["helper"].callers, ("load", "Service", "Service.load"))
+        self.assertEqual(by_symbol["load"].callees, ("helper",))
+        self.assertEqual(by_symbol["Service"].callees, ("Service.load", "helper"))
+        self.assertEqual(by_symbol["Service.run"].callees, ("Service.load",))
+        self.assertEqual(by_symbol["Service.load"].callees, ("helper",))
+
+    def test_extracts_decorator_calls_into_python_call_graph(self) -> None:
+        specs = chunk_python_source(
+            text=(
+                "@register(helper())\n"
+                "def load() -> int:\n"
+                "    return 1\n"
+            ),
+            file_content_type="code_context",
+            class_max_lines=20,
+        )
+
+        self.assertIsNotNone(specs)
+        assert specs is not None
+
+        by_symbol = {
+            spec.qualifiedSymbolName: spec
+            for spec in specs
+            if spec.qualifiedSymbolName is not None
+        }
+
+        self.assertEqual(by_symbol["load"].callees, ("register", "helper"))
+
+    def test_does_not_link_temporary_receiver_calls_to_local_functions(self) -> None:
+        specs = chunk_python_source(
+            text=(
+                "def load() -> int:\n"
+                "    return 1\n\n"
+                "def wrapper() -> int:\n"
+                "    return get_client().load()\n"
+            ),
+            file_content_type="code_context",
+            class_max_lines=20,
+        )
+
+        self.assertIsNotNone(specs)
+        assert specs is not None
+
+        by_symbol = {
+            spec.qualifiedSymbolName: spec
+            for spec in specs
+            if spec.qualifiedSymbolName is not None
+        }
+
+        self.assertEqual(by_symbol["load"].callers, ())
+        self.assertEqual(by_symbol["wrapper"].callees, ("get_client",))
+
+    def test_does_not_link_super_calls_to_current_class_method(self) -> None:
+        specs = chunk_python_source(
+            text=(
+                "class Base:\n"
+                "    def load(self) -> int:\n"
+                "        return 1\n\n"
+                "class Service(Base):\n"
+                "    def run(self) -> int:\n"
+                "        return super().load()\n\n"
+                "    def load(self) -> int:\n"
+                "        return 2\n"
+            ),
+            file_content_type="code_context",
+            class_max_lines=3,
+        )
+
+        self.assertIsNotNone(specs)
+        assert specs is not None
+
+        by_symbol = {
+            spec.qualifiedSymbolName: spec
+            for spec in specs
+            if spec.qualifiedSymbolName is not None
+        }
+
+        self.assertEqual(by_symbol["Service.run"].callees, ())
+        self.assertEqual(by_symbol["Service.load"].callers, ())
+
 
 if __name__ == "__main__":
     unittest.main()
