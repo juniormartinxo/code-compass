@@ -104,9 +104,9 @@ make down                      # derruba serviços
 
 O scanner em `apps/indexer/indexer` faz varreduras recursivas. Ignorados por padrão: `.git,node_modules,dist,build,.next,.qdrant_storage,.venv,venv,__pycache__`. Allowlist padrão: `.ts,.tsx,.js,.jsx,.py,.md,.json,.yaml,.yml`.
 
-O Chunking (`python -m indexer chunk`) usa `python_symbol` para arquivos Python validos e `line_window` como fallback ou para outras linguagens, com `chunkId` estrutural estavel e `contentHash` separado por conteudo.
+O Chunking (`python -m indexer chunk`) usa `python_symbol` para arquivos Python validos, `ts_symbol` para `TS / TSX / JS / JSX` validos e `line_window` como fallback, com `chunkId` estrutural estavel e `contentHash` separado por conteudo.
 
-No primeiro rollout do schema `v3`, execute **reindexacao completa obrigatoria**. Nao mantenha pontos antigos e novos misturados na mesma collection do Qdrant.
+No primeiro rollout do schema `v4`, execute **reindexacao completa obrigatoria**. Nao mantenha pontos antigos e novos misturados na mesma collection do Qdrant.
 
 ---
 
