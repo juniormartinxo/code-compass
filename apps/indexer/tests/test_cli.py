@@ -9,6 +9,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from indexer.chunk_models import CHUNK_SCHEMA_VERSION
+
 
 class ScanCliTests(unittest.TestCase):
     def test_cli_scan_outputs_json_payload(self) -> None:
@@ -115,13 +117,100 @@ class ChunkCliTests(unittest.TestCase):
             self.assertEqual(second_chunk["startLine"], 4)
             self.assertEqual(second_chunk["endLine"], 7)
             self.assertEqual(first_chunk["language"], "python")
-            self.assertEqual(first_chunk["chunkSchemaVersion"], "v2")
+            self.assertEqual(first_chunk["chunkSchemaVersion"], CHUNK_SCHEMA_VERSION)
             self.assertEqual(first_chunk["chunkStrategy"], "line_window")
             self.assertEqual(first_chunk["contentType"], "code_context")
             self.assertEqual(first_chunk["collectionContentType"], "code")
             self.assertIn("summaryText", first_chunk)
             self.assertIn("contextText", first_chunk)
             self.assertEqual(payload["warnings"], [])
+
+    def test_cli_chunk_uses_python_symbol_strategy_for_valid_python_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            file_path = repo_root / "src" / "service.py"
+            file_path.parent.mkdir(parents=True)
+            file_path.write_text(
+                "def load_data(user_id: str) -> dict[str, str]:\n"
+                "    return {'id': user_id}\n",
+                encoding="utf-8",
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "indexer",
+                    "chunk",
+                    "--file",
+                    str(file_path),
+                    "--repo-root",
+                    str(repo_root),
+                    "--chunk-lines",
+                    "10",
+                    "--overlap-lines",
+                    "0",
+                    "--as-posix",
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0)
+            payload = json.loads(completed.stdout)
+            self.assertEqual(payload["stats"]["chunks"], 1)
+
+            first_chunk = payload["chunks"][0]
+            self.assertEqual(first_chunk["chunkStrategy"], "python_symbol")
+            self.assertEqual(first_chunk["contentType"], "code_symbol")
+            self.assertEqual(first_chunk["collectionContentType"], "code")
+            self.assertEqual(first_chunk["symbolName"], "load_data")
+            self.assertEqual(first_chunk["qualifiedSymbolName"], "load_data")
+            self.assertEqual(first_chunk["symbolType"], "function")
+
+    def test_cli_chunk_falls_back_to_line_window_for_invalid_python_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            file_path = repo_root / "src" / "broken.py"
+            file_path.parent.mkdir(parents=True)
+            file_path.write_text(
+                "def broken(\n"
+                "    return 1\n",
+                encoding="utf-8",
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "indexer",
+                    "chunk",
+                    "--file",
+                    str(file_path),
+                    "--repo-root",
+                    str(repo_root),
+                    "--chunk-lines",
+                    "10",
+                    "--overlap-lines",
+                    "0",
+                    "--as-posix",
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0)
+            payload = json.loads(completed.stdout)
+            self.assertEqual(payload["stats"]["chunks"], 1)
+
+            first_chunk = payload["chunks"][0]
+            self.assertEqual(first_chunk["chunkStrategy"], "line_window")
+            self.assertEqual(first_chunk["contentType"], "code_context")
+            self.assertIsNone(first_chunk["symbolName"])
 
     def test_cli_chunk_rejects_invalid_overlap(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -253,7 +342,7 @@ class IndexPreflightTests(unittest.TestCase):
 
         self.assertEqual(store.count_points_without_payload_match.call_count, 2)
 
-    def test_preflight_allows_collections_when_only_v2_points_exist(self) -> None:
+    def test_preflight_allows_collections_when_only_current_schema_points_exist(self) -> None:
         from indexer.__main__ import _fail_if_legacy_chunk_schema_points
 
         store = mock.Mock()
