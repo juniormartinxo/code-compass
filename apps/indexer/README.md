@@ -190,7 +190,7 @@ Este comando:
 
 **IDs estáveis**: o `chunkId` representa a identidade estrutural do chunk. Em `line_window`, ele continua ancorado em `path:start:end:language`; em chunking por símbolo, passa a ancorar em metadados estruturais como `qualifiedSymbolName`. O `contentHash` representa a versão textual atual do conteúdo do chunk.
 
-**Migracao de schema**: a introducao de `chunkSchemaVersion=v4` exige **reindexacao completa obrigatoria** no rollout desta fase. Nao tente misturar pontos antigos e novos na mesma collection; descarte os pontos antigos ou recrie a collection antes do rebuild.
+**Migracao de schema**: a introducao de `chunkSchemaVersion=v5` exige **reindexacao completa obrigatoria** no rollout desta fase. Nao tente misturar pontos antigos e novos na mesma collection; descarte os pontos antigos ou recrie a collection antes do rebuild.
 
 **Saída:**
 
