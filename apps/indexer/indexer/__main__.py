@@ -325,7 +325,7 @@ def _fail_if_legacy_chunk_schema_points(
     )
     raise QdrantStoreError(
         "Collections com schema de chunk legado detectadas. "
-        "Execute reindexacao completa obrigatoria antes do rollout v2 "
+        f"Execute reindexacao completa obrigatoria antes do rollout {CHUNK_SCHEMA_VERSION} "
         f"(remova/recrie as collections antigas). Detectado: {details}"
     )
 
