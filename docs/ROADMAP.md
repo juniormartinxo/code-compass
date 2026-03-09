@@ -104,6 +104,6 @@ O ciclo será considerado concluído quando:
 
 ## Artefatos que devem acompanhar este roadmap
 
-- [docs/chuncks/plan.md](/home/junior/apps/jm/code-compass/docs/chuncks/plan.md)
-- [docs/OPERATIONS.md](/home/junior/apps/jm/code-compass/docs/OPERATIONS.md)
-- [apps/indexer/README.md](/home/junior/apps/jm/code-compass/apps/indexer/README.md)
+- [docs/chuncks/plan.md](docs/chuncks/plan.md)
+- [docs/OPERATIONS.md](docs/OPERATIONS.md)
+- [apps/indexer/README.md](apps/indexer/README.md)
