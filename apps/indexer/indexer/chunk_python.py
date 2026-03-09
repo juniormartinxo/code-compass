@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass, field
 
+from .chunk_graph import attach_call_graph
 from .chunk_models import PYTHON_SYMBOL_CHUNK_STRATEGY
 from .content_classification import CODE_CONTEXT_CONTENT_TYPE, CODE_SYMBOL_CONTENT_TYPE
 
@@ -23,6 +24,8 @@ class PythonChunkSpec:
     symbolType: str | None = None
     parentSymbol: str | None = None
     signature: str | None = None
+    callers: tuple[str, ...] = ()
+    callees: tuple[str, ...] = ()
     coveredLineRanges: tuple[tuple[int, int], ...] = field(default_factory=tuple, repr=False)
 
 
@@ -53,6 +56,7 @@ def chunk_python_source(
             content_type=file_content_type,
         )
     )
+    specs = attach_call_graph(specs)
     return tuple(
         sorted(
             specs,
@@ -196,6 +200,7 @@ def _build_function_chunk(
         symbolType=symbol_type,
         parentSymbol=parent_qualified_name,
         signature=_build_signature(node=node, source_lines=source_lines),
+        callees=_extract_function_callees(node),
         coveredLineRanges=((start_line, end_line),),
     )
 
@@ -216,6 +221,7 @@ def _build_class_chunks(
     signature = _build_signature(node=node, source_lines=source_lines)
 
     if class_span <= class_max_lines or not child_symbols:
+        class_callees = _extract_class_callees(node)
         return [
             PythonChunkSpec(
                 startLine=start_line,
@@ -227,10 +233,12 @@ def _build_class_chunks(
                 symbolType="class",
                 parentSymbol=parent_qualified_name,
                 signature=signature,
+                callees=class_callees,
                 coveredLineRanges=((start_line, end_line),),
             )
         ]
 
+    class_callees = _extract_class_callees(node)
     chunks = [
         PythonChunkSpec(
             startLine=start_line,
@@ -242,6 +250,7 @@ def _build_class_chunks(
             symbolType="class",
             parentSymbol=parent_qualified_name,
             signature=signature,
+            callees=class_callees,
         )
     ]
     chunks.extend(
@@ -255,6 +264,78 @@ def _build_class_chunks(
         )
     )
     return chunks
+
+
+def _extract_function_callees(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> tuple[str, ...]:
+    collector = _PythonCallCollector()
+    _visit_decorators(collector=collector, decorators=node.decorator_list)
+    for statement in node.body:
+        collector.visit(statement)
+    return tuple(collector.callees)
+
+
+def _extract_class_callees(node: ast.ClassDef) -> tuple[str, ...]:
+    collector = _PythonCallCollector()
+    _visit_decorators(collector=collector, decorators=node.decorator_list)
+    for child in node.body:
+        if isinstance(child, _FUNCTION_NODE_TYPES):
+            _visit_decorators(collector=collector, decorators=child.decorator_list)
+            for statement in child.body:
+                collector.visit(statement)
+            continue
+        if isinstance(child, ast.ClassDef):
+            continue
+        collector.visit(child)
+    return tuple(collector.callees)
+
+
+def _extract_callees_from_statements(statements: list[ast.stmt]) -> tuple[str, ...]:
+    collector = _PythonCallCollector()
+    for statement in statements:
+        collector.visit(statement)
+    return tuple(collector.callees)
+
+
+def _visit_decorators(
+    *,
+    collector: "_PythonCallCollector",
+    decorators: list[ast.expr],
+) -> None:
+    for decorator in decorators:
+        collector.visit(decorator)
+
+
+class _PythonCallCollector(ast.NodeVisitor):
+    def __init__(self) -> None:
+        self.callees: list[str] = []
+
+    def visit_Call(self, node: ast.Call) -> None:
+        callee = _resolve_call_target(node.func)
+        if callee is not None and callee != "super" and callee not in self.callees:
+            self.callees.append(callee)
+        self.generic_visit(node)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: ARG002
+        return
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:  # noqa: ARG002
+        return
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:  # noqa: ARG002
+        return
+
+
+def _resolve_call_target(node: ast.expr) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        base = _resolve_call_target(node.value)
+        if base is None:
+            return None
+        return f"{base}.{node.attr}"
+    return None
 
 
 def _resolve_symbol_content_type(file_content_type: str) -> str:
