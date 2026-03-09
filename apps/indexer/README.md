@@ -5,6 +5,7 @@ Pipeline de indexação de código para o Code Compass.
 ## Visão Geral
 
 O Indexer é responsável por:
+
 1. **Scan** - Escanear repositórios de código
 2. **Chunk** - Dividir arquivos em chunks semânticos
 3. **Embed** - Gerar embeddings via provider HTTP configurável
@@ -81,6 +82,7 @@ python -m indexer scan --repo-root /path/to/repo
 ```
 
 Opções:
+
 - `--repo-root` - Caminho do repositório (default: env `REPO_ROOT`)
 - `--allow-exts` - Extensões permitidas (.ts,.py,.md)
 - `--ignore-dirs` - Diretórios para ignorar
@@ -95,6 +97,7 @@ python -m indexer chunk --file /path/to/file.py
 ```
 
 Opções:
+
 - `--file` - Arquivo para chunkar (obrigatório)
 - `--chunk-lines` - Linhas por chunk (default: 120)
 - `--overlap-lines` - Overlap entre chunks (default: 20)
@@ -110,12 +113,14 @@ python -m indexer init
 ```
 
 Este comando:
+
 1. Conecta ao provider de embedding e **descobre o vector_size** de `code` e `docs` automaticamente
 2. Resolve/gera os nomes das collections de `code` e `docs`
 3. Cria/valida collections no Qdrant
 4. Garante índice payload `content_type` (`keyword`)
 
 **Saída:**
+
 ```json
 {
   "embedding": {
@@ -157,6 +162,7 @@ Este comando:
 ```
 
 Opções:
+
 - `--api-url-code` - URL da API de embedding para `code`
 - `--api-url-docs` - URL da API de embedding para `docs`
 - `--api-key-code` - API key para provider de `code` (opcional no Ollama)
@@ -176,6 +182,7 @@ python -m indexer index --repo-root /path/to/repo
 ```
 
 Este comando:
+
 1. **Scan** - Escaneia o repositório
 2. **Chunk** - Divide cada arquivo em chunks
 3. **Embed** - Gera embeddings em batches via provider por tipo de conteúdo
@@ -183,9 +190,10 @@ Este comando:
 
 **IDs estáveis**: o `chunkId` representa a identidade estrutural do chunk. Em `line_window`, ele continua ancorado em `path:start:end:language`; em chunking por símbolo, passa a ancorar em metadados estruturais como `qualifiedSymbolName`. O `contentHash` representa a versão textual atual do conteúdo do chunk.
 
-**Migracao de schema**: a introducao de `chunkSchemaVersion=v3` exige **reindexacao completa obrigatoria** no rollout desta fase. Nao tente misturar pontos antigos e novos na mesma collection; descarte os pontos antigos ou recrie a collection antes do rebuild.
+**Migracao de schema**: a introducao de `chunkSchemaVersion=v4` exige **reindexacao completa obrigatoria** no rollout desta fase. Nao tente misturar pontos antigos e novos na mesma collection; descarte os pontos antigos ou recrie a collection antes do rebuild.
 
 **Saída:**
+
 ```json
 {
   "status": "success",
@@ -231,6 +239,7 @@ Este comando:
 ```
 
 Opções:
+
 - `--repo-root` - Caminho do repositório
 - `--allow-exts` - Extensões permitidas
 - `--ignore-dirs` - Diretórios para ignorar
@@ -247,12 +256,14 @@ python -m indexer search "query de busca"
 ```
 
 **Exemplo:**
+
 ```bash
 python -m indexer search "como fazer chunking de arquivos"
 ```
 
 **Saída:**
-```
+
+```text
 🔍 Query: "como fazer chunking de arquivos"
 📊 5 resultado(s):
 
@@ -262,6 +273,7 @@ python -m indexer search "como fazer chunking de arquivos"
 ```
 
 Opções:
+
 - `query` - Texto da busca (obrigatório)
 - `-k`, `--top-k`, `--topk` - Número de resultados (default: 10)
 - `--ext` - Filtrar por extensão (ex: `.py`)
@@ -278,12 +290,14 @@ python -m indexer ask "sua pergunta aqui" --scope-repo code-compass
 ```
 
 **Exemplo:**
+
 ```bash
 python -m indexer ask "qual banco de dados vetorial é usado neste projeto?" --scope-repo code-compass --show-context
 ```
 
 **Saída:**
-```
+
+```text
 💬 **Pergunta:** qual banco de dados vetorial é usado neste projeto?
 
 🤖 **Resposta:**
@@ -297,6 +311,7 @@ O banco de dados vetorial usado neste projeto é o **Qdrant**.
 ```
 
 Opções:
+
 - `question` - Pergunta em linguagem natural (obrigatório)
 - `-k`, `--top-k` - Número de chunks de contexto (default: 5)
 - `--model` - Modelo LLM para resposta (default: `gpt-oss:latest`)
@@ -310,6 +325,7 @@ Opções:
 - `--strict` - Falha se alguma coleção estiver indisponível (sem retorno parcial)
 
 Importante:
+
 - Para `ask`, é obrigatório informar um escopo via `--scope-*`.
 
 ## Variáveis de Ambiente
@@ -317,7 +333,7 @@ Importante:
 ### Embeddings
 
 | Variável | Default | Descrição |
-|----------|---------|-----------|
+| ---------- | --------- | ----------- |
 | `EMBEDDING_PROVIDER_CODE` | `ollama` | Provider de embeddings para `code` |
 | `EMBEDDING_PROVIDER_DOCS` | `ollama` | Provider de embeddings para `docs` |
 | `EMBEDDING_PROVIDER_CODE_API_URL` | `http://localhost:11434` | URL da API para embeddings `code` |
@@ -334,7 +350,7 @@ Importante:
 ### Qdrant
 
 | Variável | Default | Descrição |
-|----------|---------|-----------|
+| ---------- | --------- | ----------- |
 | `QDRANT_URL` | `http://localhost:6333` | URL do Qdrant |
 | `QDRANT_API_KEY` | - | API key (opcional) |
 | `QDRANT_COLLECTION_BASE` | `compass_manutic_nomic_embed` | Stem para nome das collections |
@@ -348,13 +364,14 @@ Importante:
 | `CONTENT_TYPES` | `code,docs` | Tipos de conteúdo usados no split de collections |
 
 Observação sobre autenticação no Qdrant:
+
 - Se `QDRANT_API_KEY` estiver vazia (ex.: `QDRANT_API_KEY=`), o cliente é inicializado sem API key.
 - Em ambiente local com `QDRANT_URL=http://...`, isso evita o warning `Api key is used with an insecure connection`.
 
 ### Scan/Chunk
 
 | Variável | Default | Descrição |
-|----------|---------|-----------|
+| ---------- | --------- | ----------- |
 | `REPO_ROOT` | `..` | Raiz do repositório |
 | `SCAN_IGNORE_DIRS` | `.git,node_modules,dist,build,.next,.qdrant_storage,coverage,.venv,venv,__pycache__,.pytest_cache,.mypy_cache,.ruff_cache` | Diretórios a ignorar |
 | `SCAN_ALLOW_EXTS` | `.ts,.tsx,.py,.md,...` | Extensões permitidas |
@@ -365,7 +382,7 @@ Observação sobre autenticação no Qdrant:
 ### LLM (comando ask)
 
 | Variável | Default | Descrição |
-|----------|---------|-----------|
+| ---------- | --------- | ----------- |
 | `LLM_MODEL` | `gpt-oss:latest` | Modelo LLM padrão do `ask` (prioridade: `--model` > `LLM_MODEL` > default interno) |
 | `MCP_COMMAND` | `node apps/mcp-server/dist/main.js --transport stdio` | Comando usado pelo `ask` para chamar o MCP |
 
@@ -393,6 +410,7 @@ Cada ponto indexado no Qdrant contém:
 ```
 
 Observação importante:
+
 - O valor de `repo` vem do nome do `REPO_ROOT` usado na execução.
 - Em ambiente multi-repo (`code-base/`), não use `REPO_ROOT` apontando para a pasta agregadora.
 - Indexe cada subdiretório (`code-base/<repo>`) separadamente para preservar o filtro por `repo` no MCP.
@@ -402,16 +420,18 @@ Observação importante:
 
 O stem base da collection é o valor de `QDRANT_COLLECTION_BASE`.
 
-```
+```text
 {QDRANT_COLLECTION_BASE}
 ```
 
 Exemplo:
-```
+
+```text
 compass_manutic_nomic_embed
 ```
 
 Os nomes finais usados no Qdrant são:
+
 - `{QDRANT_COLLECTION_BASE}__code`
 - `{QDRANT_COLLECTION_BASE}__docs`
 
@@ -439,6 +459,7 @@ python -m pytest tests/ -v
 ### "Collection X tem vector size Y, mas embedding é size Z"
 
 O modelo de embedding mudou. Opções:
+
 1. Use outro `QDRANT_COLLECTION_BASE`
 2. Delete a collection existente via API do Qdrant
 
