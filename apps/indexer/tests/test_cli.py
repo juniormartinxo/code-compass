@@ -212,6 +212,102 @@ class ChunkCliTests(unittest.TestCase):
             self.assertEqual(first_chunk["contentType"], "code_context")
             self.assertIsNone(first_chunk["symbolName"])
 
+    def test_cli_chunk_uses_ts_symbol_strategy_for_valid_tsx_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            file_path = repo_root / "src" / "components" / "product-card.tsx"
+            file_path.parent.mkdir(parents=True)
+            file_path.write_text(
+                "import { api } from './api';\n\n"
+                "export const useProduct = (id: string) => {\n"
+                "  return api.load(id);\n"
+                "};\n\n"
+                "export function ProductCard({ title }: { title: string }) {\n"
+                "  return <section>{title}</section>;\n"
+                "}\n",
+                encoding="utf-8",
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "indexer",
+                    "chunk",
+                    "--file",
+                    str(file_path),
+                    "--repo-root",
+                    str(repo_root),
+                    "--chunk-lines",
+                    "10",
+                    "--overlap-lines",
+                    "0",
+                    "--as-posix",
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0)
+            payload = json.loads(completed.stdout)
+            self.assertEqual(payload["stats"]["chunks"], 3)
+
+            hook_chunk = next(chunk for chunk in payload["chunks"] if chunk["symbolName"] == "useProduct")
+            component_chunk = next(
+                chunk for chunk in payload["chunks"] if chunk["symbolName"] == "ProductCard"
+            )
+
+            self.assertEqual(hook_chunk["chunkStrategy"], "ts_symbol")
+            self.assertEqual(hook_chunk["contentType"], "code_symbol")
+            self.assertEqual(hook_chunk["symbolType"], "hook")
+            self.assertEqual(hook_chunk["imports"], ["./api"])
+            self.assertEqual(hook_chunk["exports"], ["useProduct", "ProductCard"])
+            self.assertEqual(component_chunk["symbolType"], "component")
+
+    def test_cli_chunk_falls_back_to_line_window_for_invalid_ts_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            file_path = repo_root / "src" / "broken.ts"
+            file_path.parent.mkdir(parents=True)
+            file_path.write_text(
+                "export const broken = () => {\n"
+                "  return 1;\n",
+                encoding="utf-8",
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "indexer",
+                    "chunk",
+                    "--file",
+                    str(file_path),
+                    "--repo-root",
+                    str(repo_root),
+                    "--chunk-lines",
+                    "10",
+                    "--overlap-lines",
+                    "0",
+                    "--as-posix",
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0)
+            payload = json.loads(completed.stdout)
+            self.assertEqual(payload["stats"]["chunks"], 1)
+
+            first_chunk = payload["chunks"][0]
+            self.assertEqual(first_chunk["chunkStrategy"], "line_window")
+            self.assertEqual(first_chunk["contentType"], "code_context")
+            self.assertIsNone(first_chunk["symbolName"])
+
     def test_cli_chunk_rejects_invalid_overlap(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir)
