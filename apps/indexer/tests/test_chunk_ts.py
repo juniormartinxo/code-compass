@@ -322,6 +322,180 @@ class TsChunkSourceTests(unittest.TestCase):
         self.assertEqual(specs[0].symbolType, "class")
         self.assertIn("export abstract class Service", specs[0].content)
 
+    def test_extracts_callees_and_reverse_callers_for_ts_symbols(self) -> None:
+        specs = chunk_ts_source(
+            text=(
+                "export function helper(): string {\n"
+                "  return 'ok';\n"
+                "}\n\n"
+                "export function load(): string {\n"
+                "  return helper();\n"
+                "}\n\n"
+                "export class Service {\n"
+                "  run(): string {\n"
+                "    return this.load();\n"
+                "  }\n\n"
+                "  load(): string {\n"
+                "    return helper();\n"
+                "  }\n"
+                "}\n"
+            ),
+            language="typescript",
+            file_content_type="code_context",
+            class_max_lines=3,
+        )
+
+        self.assertIsNotNone(specs)
+        assert specs is not None
+
+        by_symbol = {
+            spec.qualifiedSymbolName: spec
+            for spec in specs
+            if spec.qualifiedSymbolName is not None
+        }
+
+        self.assertEqual(by_symbol["helper"].callees, ())
+        self.assertEqual(by_symbol["helper"].callers, ("load", "Service", "Service.load"))
+        self.assertEqual(by_symbol["load"].callees, ("helper",))
+        self.assertEqual(by_symbol["Service"].callees, ("Service.load", "helper"))
+        self.assertEqual(by_symbol["Service.run"].callees, ("Service.load",))
+        self.assertEqual(by_symbol["Service.load"].callees, ("helper",))
+
+    def test_does_not_link_instance_method_calls_to_local_homonyms(self) -> None:
+        specs = chunk_ts_source(
+            text=(
+                "export function run(): string {\n"
+                "  return 'local';\n"
+                "}\n\n"
+                "export function load(): string {\n"
+                "  return new Client().run();\n"
+                "}\n"
+            ),
+            language="typescript",
+            file_content_type="code_context",
+            class_max_lines=12,
+        )
+
+        self.assertIsNotNone(specs)
+        assert specs is not None
+
+        by_symbol = {
+            spec.qualifiedSymbolName: spec
+            for spec in specs
+            if spec.qualifiedSymbolName is not None
+        }
+
+        self.assertEqual(by_symbol["run"].callers, ())
+        self.assertEqual(by_symbol["load"].callees, ("Client",))
+
+    def test_extracts_decorator_calls_into_ts_call_graph(self) -> None:
+        specs = chunk_ts_source(
+            text=(
+                "@Injectable(factory())\n"
+                "export class Service {\n"
+                "  @trace(buildPath())\n"
+                "  load(): string {\n"
+                "    return helper();\n"
+                "  }\n"
+                "}\n"
+            ),
+            language="typescript",
+            file_content_type="code_context",
+            class_max_lines=3,
+        )
+
+        self.assertIsNotNone(specs)
+        assert specs is not None
+
+        by_symbol = {
+            spec.qualifiedSymbolName: spec
+            for spec in specs
+            if spec.qualifiedSymbolName is not None
+        }
+
+        self.assertEqual(
+            by_symbol["Service"].callees,
+            ("Injectable", "factory", "trace", "buildPath", "helper"),
+        )
+        self.assertEqual(
+            by_symbol["Service.load"].callees,
+            ("trace", "buildPath", "helper"),
+        )
+
+    def test_handles_multiline_method_decorators_without_creating_fake_symbol(self) -> None:
+        specs = chunk_ts_source(
+            text=(
+                "@Inject(\n"
+                "  buildFactory(),\n"
+                ")\n"
+                "export class Service {\n"
+                "  @trace(\n"
+                "    buildPath(),\n"
+                "  )\n"
+                "  load(): string {\n"
+                "    return helper();\n"
+                "  }\n"
+                "}\n"
+            ),
+            language="typescript",
+            file_content_type="code_context",
+            class_max_lines=3,
+        )
+
+        self.assertIsNotNone(specs)
+        assert specs is not None
+
+        by_symbol = {
+            spec.qualifiedSymbolName: spec
+            for spec in specs
+            if spec.qualifiedSymbolName is not None
+        }
+
+        self.assertEqual(set(by_symbol), {"Service", "Service.load"})
+        self.assertIn("methods: load", by_symbol["Service"].content)
+        self.assertEqual(
+            by_symbol["Service"].callees,
+            ("Inject", "buildFactory", "trace", "buildPath", "helper"),
+        )
+        self.assertEqual(
+            by_symbol["Service.load"].callees,
+            ("trace", "buildPath", "helper"),
+        )
+
+    def test_does_not_link_super_calls_to_current_class_method(self) -> None:
+        specs = chunk_ts_source(
+            text=(
+                "export class Base {\n"
+                "  load(): string {\n"
+                "    return 'base';\n"
+                "  }\n"
+                "}\n\n"
+                "export class Service extends Base {\n"
+                "  run(): string {\n"
+                "    return super.load();\n"
+                "  }\n\n"
+                "  load(): string {\n"
+                "    return 'child';\n"
+                "  }\n"
+                "}\n"
+            ),
+            language="typescript",
+            file_content_type="code_context",
+            class_max_lines=3,
+        )
+
+        self.assertIsNotNone(specs)
+        assert specs is not None
+
+        by_symbol = {
+            spec.qualifiedSymbolName: spec
+            for spec in specs
+            if spec.qualifiedSymbolName is not None
+        }
+
+        self.assertEqual(by_symbol["Service.run"].callees, ("super.load",))
+        self.assertEqual(by_symbol["Service.load"].callers, ())
+
 
 if __name__ == "__main__":
     unittest.main()
