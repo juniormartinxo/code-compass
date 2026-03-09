@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from indexer.config import load_scan_config
 from indexer.scan import scan_repo
 
 
@@ -73,6 +74,29 @@ class ScanRepoTests(unittest.TestCase):
 
             self.assertEqual([path.as_posix() for path in files], ["src/main.ts"])
             self.assertEqual(stats["files_ignored_pattern"], 1)
+
+    def test_scan_repo_default_allow_exts_cover_phase_8_file_types(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            (repo_root / "docs").mkdir()
+            (repo_root / "infra").mkdir()
+            (repo_root / "db").mkdir()
+
+            (repo_root / "docs" / "guide.rst").write_text("Guide\n=====\n", encoding="utf-8")
+            (repo_root / "infra" / "settings.toml").write_text("[app]\n", encoding="utf-8")
+            (repo_root / "db" / "init.sql").write_text("SELECT 1;\n", encoding="utf-8")
+
+            config = load_scan_config(repo_root=str(repo_root))
+            files, _ = scan_repo(
+                repo_root=repo_root,
+                ignore_dirs=config.ignore_dirs,
+                allow_exts=config.allow_exts,
+            )
+
+            self.assertEqual(
+                [path.as_posix() for path in files],
+                ["db/init.sql", "docs/guide.rst", "infra/settings.toml"],
+            )
 
 
 if __name__ == "__main__":
