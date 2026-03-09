@@ -5,6 +5,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock, patch
 
+from indexer.chunk_models import CHUNK_SCHEMA_VERSION
 from indexer.qdrant_store import (
     CONTENT_TYPE_FIELD,
     DEFAULT_QDRANT_COLLECTION_BASE,
@@ -377,7 +378,7 @@ class TestQdrantStore(unittest.TestCase):
         result = store.count_points_without_payload_match(
             collection_name="test_collection",
             field_name="chunk_schema_version",
-            expected_value="v2",
+            expected_value=CHUNK_SCHEMA_VERSION,
         )
 
         self.assertEqual(result, 3)
@@ -389,7 +390,7 @@ class TestQdrantStore(unittest.TestCase):
         self.assertEqual(len(count_filter.must_not), 1)
         condition = count_filter.must_not[0]
         self.assertEqual(condition.key, "chunk_schema_version")
-        self.assertEqual(condition.match.value, "v2")
+        self.assertEqual(condition.match.value, CHUNK_SCHEMA_VERSION)
 
 
 if __name__ == "__main__":
