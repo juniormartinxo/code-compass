@@ -102,9 +102,9 @@ make down                      # derruba serviços
 
 ## Scanner e Chunking base
 
-O scanner em `apps/indexer/indexer` faz varreduras recursivas. Ignorados por padrão: `.git,node_modules,dist,build,.next,.qdrant_storage,.venv,venv,__pycache__`. Allowlist padrão: `.ts,.tsx,.js,.jsx,.py,.md,.json,.yaml,.yml`.
+O scanner em `apps/indexer/indexer` faz varreduras recursivas. Ignorados por padrão: `.git,node_modules,dist,build,.next,.qdrant_storage,.venv,venv,__pycache__`. Allowlist padrão: `.ts,.tsx,.js,.jsx,.py,.md,.mdx,.rst,.adoc,.txt,.json,.toml,.ini,.cfg,.conf,.yaml,.yml,.sql`.
 
-O Chunking (`python -m indexer chunk`) usa `python_symbol` para arquivos Python validos, `ts_symbol` para `TS / TSX / JS / JSX` validos, `doc_section` para docs por heading, `config_section` para configs por bloco, `sql_statement` para SQL por statement e `line_window` como fallback, com `chunkId` estrutural estavel e `contentHash` separado por conteudo.
+O Chunking (`python -m indexer chunk`) usa `python_symbol` para arquivos Python validos, `ts_symbol` para `TS / TSX / JS / JSX` validos, `doc_section` para docs por heading, `config_section` para configs por bloco, `sql_statement` para SQL por statement e `line_window` como fallback, com `chunkId` estrutural estavel e `contentHash` separado por conteudo. No `index`, o texto usado para embedding pode ser `content` ou `summaryText + content` via `--embedding-input-mode` ou `EMBEDDING_INPUT_MODE[_CODE|_DOCS]`. O cleanup incremental de pontos stale so roda em full scan; se `--max-files` truncar a lista de arquivos, o cleanup e pulado para evitar delecao parcial indevida.
 
 No primeiro rollout do schema `v5`, execute **reindexacao completa obrigatoria**. Nao mantenha pontos antigos e novos misturados na mesma collection do Qdrant.
 
