@@ -29,6 +29,12 @@ from indexer.chunk_models import (
     TS_SYMBOL_CHUNK_STRATEGY,
 )
 
+_FIXTURE_REPO_ROOT = Path(__file__).resolve().parent / "fixtures" / "chunking"
+
+
+def _fixture_path(relative_path: str) -> Path:
+    return _FIXTURE_REPO_ROOT / relative_path
+
 
 class ChunkCoreTests(unittest.TestCase):
     def test_chunk_lines_generates_expected_overlap_and_ranges(self) -> None:
@@ -961,6 +967,143 @@ class ChunkFileTests(unittest.TestCase):
             self.assertEqual(test_result.chunks[0].collectionContentType, "code")
             self.assertEqual(config_result.chunks[0].contentType, "config_block")
             self.assertEqual(config_result.chunks[0].collectionContentType, "code")
+
+
+class ChunkFixtureTests(unittest.TestCase):
+    def test_fixture_python_small_class_is_single_semantic_chunk(self) -> None:
+        result = chunk_file_documents(
+            file_path=_fixture_path("src/service_small.py"),
+            repo_root=_FIXTURE_REPO_ROOT,
+            chunk_lines=20,
+            overlap=0,
+            as_posix=True,
+        )
+
+        self.assertEqual(len(result.chunks), 1)
+        chunk = result.chunks[0]
+        self.assertEqual(chunk.chunkStrategy, PYTHON_SYMBOL_CHUNK_STRATEGY)
+        self.assertEqual(chunk.chunkSchemaVersion, CHUNK_SCHEMA_VERSION)
+        self.assertEqual(chunk.contentType, "code_symbol")
+        self.assertEqual(chunk.symbolName, "Service")
+        self.assertEqual(chunk.qualifiedSymbolName, "Service")
+        self.assertEqual(chunk.symbolType, "class")
+        self.assertIsNotNone(chunk.summaryText)
+        self.assertIsNotNone(chunk.contextText)
+
+    def test_fixture_python_large_class_splits_summary_methods_and_graph(self) -> None:
+        result = chunk_file_documents(
+            file_path=_fixture_path("src/service_large.py"),
+            repo_root=_FIXTURE_REPO_ROOT,
+            chunk_lines=3,
+            overlap=0,
+            as_posix=True,
+        )
+
+        self.assertEqual(len(result.chunks), 5)
+        by_symbol = {
+            chunk.qualifiedSymbolName: chunk
+            for chunk in result.chunks
+            if chunk.qualifiedSymbolName is not None
+        }
+        context_chunk = next(chunk for chunk in result.chunks if chunk.symbolName is None)
+
+        self.assertEqual(by_symbol["helper"].symbolType, "function")
+        self.assertEqual(by_symbol["Service"].symbolType, "class")
+        self.assertIn("methods: load, save", by_symbol["Service"].content)
+        self.assertEqual(by_symbol["Service"].callees, ("helper", "Service.load"))
+        self.assertEqual(by_symbol["Service.load"].callees, ("helper",))
+        self.assertEqual(by_symbol["Service.save"].callees, ("Service.load",))
+        self.assertEqual(by_symbol["helper"].callees, ("value.strip",))
+        self.assertEqual(by_symbol["helper"].callers, ("Service", "Service.load"))
+        self.assertEqual(by_symbol["Service.load"].callers, ("Service", "Service.save"))
+        self.assertEqual(context_chunk.contentType, "code_context")
+        self.assertIn("KIND = \"service\"", context_chunk.content)
+
+    def test_fixture_tsx_covers_helper_hook_component_and_graph(self) -> None:
+        result = chunk_file_documents(
+            file_path=_fixture_path("src/product-card.tsx"),
+            repo_root=_FIXTURE_REPO_ROOT,
+            chunk_lines=20,
+            overlap=0,
+            as_posix=True,
+        )
+
+        self.assertEqual(len(result.chunks), 4)
+        by_symbol = {
+            chunk.qualifiedSymbolName: chunk
+            for chunk in result.chunks
+            if chunk.qualifiedSymbolName is not None
+        }
+
+        self.assertEqual(by_symbol["formatPrice"].symbolType, "helper")
+        self.assertEqual(by_symbol["useProduct"].symbolType, "hook")
+        self.assertEqual(by_symbol["ProductCard"].symbolType, "component")
+        self.assertEqual(by_symbol["formatPrice"].callers, ("ProductCard",))
+        self.assertEqual(by_symbol["useProduct"].callees, ("api.load",))
+        self.assertEqual(by_symbol["ProductCard"].callees, ("formatPrice",))
+        self.assertEqual(by_symbol["useProduct"].chunkStrategy, TS_SYMBOL_CHUNK_STRATEGY)
+        self.assertEqual(by_symbol["ProductCard"].chunkSchemaVersion, CHUNK_SCHEMA_VERSION)
+
+    def test_fixture_docs_config_and_sql_use_specialized_semantic_strategies(self) -> None:
+        scenarios = (
+            ("docs/guide.md", DOC_SECTION_CHUNK_STRATEGY, "doc_section", "docs", 2),
+            ("infra/settings.yaml", CONFIG_SECTION_CHUNK_STRATEGY, "config_block", "code", 2),
+            ("db/functions.sql", SQL_STATEMENT_CHUNK_STRATEGY, "sql_block", "code", 2),
+        )
+
+        for relative_path, expected_strategy, expected_type, expected_collection, expected_chunks in scenarios:
+            with self.subTest(path=relative_path):
+                result = chunk_file_documents(
+                    file_path=_fixture_path(relative_path),
+                    repo_root=_FIXTURE_REPO_ROOT,
+                    chunk_lines=20,
+                    overlap=0,
+                    as_posix=True,
+                )
+
+                self.assertEqual(len(result.chunks), expected_chunks)
+                self.assertTrue(
+                    all(chunk.chunkSchemaVersion == CHUNK_SCHEMA_VERSION for chunk in result.chunks)
+                )
+                self.assertEqual(result.chunks[0].chunkStrategy, expected_strategy)
+                self.assertEqual(result.chunks[0].contentType, expected_type)
+                self.assertEqual(result.chunks[0].collectionContentType, expected_collection)
+
+    def test_fixture_symbol_chunk_id_stays_stable_while_content_hash_changes(self) -> None:
+        fixture_source = _fixture_path("src/service_large.py").read_text(encoding="utf-8")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            file_path = repo_root / "src" / "service_large.py"
+            file_path.parent.mkdir(parents=True)
+            file_path.write_text(fixture_source, encoding="utf-8")
+
+            initial = chunk_file_documents(
+                file_path=file_path,
+                repo_root=repo_root,
+                chunk_lines=3,
+                overlap=0,
+                as_posix=True,
+            )
+
+            file_path.write_text(
+                fixture_source.replace("return helper(value)", "return helper(value.upper())"),
+                encoding="utf-8",
+            )
+
+            updated = chunk_file_documents(
+                file_path=file_path,
+                repo_root=repo_root,
+                chunk_lines=3,
+                overlap=0,
+                as_posix=True,
+            )
+
+            initial_load = next(chunk for chunk in initial.chunks if chunk.qualifiedSymbolName == "Service.load")
+            updated_load = next(chunk for chunk in updated.chunks if chunk.qualifiedSymbolName == "Service.load")
+
+            self.assertEqual(initial_load.chunkId, updated_load.chunkId)
+            self.assertNotEqual(initial_load.contentHash, updated_load.contentHash)
 
 
 if __name__ == "__main__":
