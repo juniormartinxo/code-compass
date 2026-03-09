@@ -447,10 +447,14 @@ class ChunkFileTests(unittest.TestCase):
             self.assertEqual(hook_chunk.symbolType, "hook")
             self.assertEqual(hook_chunk.imports, ("./api",))
             self.assertEqual(hook_chunk.exports, ("useProduct", "ProductCard"))
+            self.assertEqual(hook_chunk.callers, ())
+            self.assertEqual(hook_chunk.callees, ("api.load",))
             self.assertIn("Signature: export const useProduct = (id: string) =>", hook_chunk.contextText)
 
             self.assertEqual(component_chunk.symbolName, "ProductCard")
             self.assertEqual(component_chunk.symbolType, "component")
+            self.assertEqual(component_chunk.callers, ())
+            self.assertEqual(component_chunk.callees, ())
             self.assertIn("<section>{title}</section>", component_chunk.content)
 
     def test_chunk_file_keeps_ts_symbol_chunk_id_stable_when_lines_shift(self) -> None:
