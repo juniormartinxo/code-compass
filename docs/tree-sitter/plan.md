@@ -1,113 +1,98 @@
-# Plano Completo de Integração do Tree-sitter no Code Compass
+# Plano Final de Integração do Tree-sitter no Code Compass
 
 ## Resumo
 
-Este plano substitui a base atual de parsing semântico de código por
-Tree-sitter, preservando o fluxo `scan -> chunk -> embed -> upsert -> search`,
-mantendo o payload e preparando a arquitetura para crescer além de
-Python e TypeScript.
+Este plano substitui a base atual de parsing semântico de código do indexer por Tree-sitter, preservando o pipeline `scan -> chunk -> embed -> upsert -> search`, mantendo o contrato público do payload e preparando o Code Compass para expansão multi-linguagem sem reintroduzir acoplamento em `chunk.py`.
 
 Decisões fechadas:
-
-1. rollout direto: `tree_sitter` será o backend default
-2. primeira entrega funcional cobre as linguagens já presentes no repositório:
+1. o backend final de parsing de código será `tree_sitter`
+2. a primeira entrega funcional cobre:
    - `python`
    - `typescript`
    - `typescriptreact`
    - `javascript`
    - `javascriptreact`
-3. `docs`, `config` e `sql` continuam com seus chunkers especializados atuais
-4. o índice sobe de `v5` para `v6`, com rebuild completo obrigatório
-5. o backend `legacy` será mantido temporariamente como escape hatch operacional
-6. a arquitetura deve escalar sem exigir novos conditionals em `chunk.py`
-7. a escalabilidade será feita com:
-   - `LanguageAdapter` formal
-   - `SyntaxChunkSpec` formal
-   - registry explícita e tipada
-   - dispatch genérico em `chunk.py`
-   - thresholds e query sets por adapter
+3. `docs`, `config` e `sql` permanecem com os chunkers especializados atuais
+4. o rollout sobe o schema de `v5` para `v6`, com rebuild completo obrigatório
+5. haverá backend `legacy` temporário como escape hatch operacional
+6. a arquitetura deve permitir adicionar nova linguagem sem alterar [chunk.py](/apps/indexer/indexer/chunk.py)
+7. o plano inclui baseline, benchmark, observabilidade, rollback, regressão estrutural e validação MCP
 
 ## Objetivo
 
 Trocar o parsing atual por Tree-sitter para:
-
-1. reduzir fragilidade heurística, especialmente em `TS/TSX/JS`
-2. unificar a base de parsing semântico de código
+1. reduzir fragilidade heurística, principalmente em `TS/TSX/JS`
+2. unificar a fundação de parsing semântico de código
 3. preparar expansão futura para outras linguagens
-4. preservar o contrato de chunking já consumido por indexação, busca e MCP
-5. tornar a adição da terceira linguagem barata e previsível
+4. preservar o shape do payload já usado por indexação, busca e MCP
+5. tornar a terceira linguagem barata de adicionar
 
 ## Fora de Escopo
 
 1. migrar `markdown`, `config` ou `sql` para Tree-sitter neste ciclo
-2. entregar suporte semântico completo a Go, Rust ou Java nesta primeira implementação
-3. mudar o contrato público do MCP
-4. redesenhar o payload do Qdrant além do necessário para schema `v6`
+2. entregar suporte semântico completo a Go, Rust ou Java neste ciclo
+3. alterar contrato público do MCP
+4. redesenhar o payload do Qdrant além do necessário para `v6`
 5. remover o backend `legacy` neste mesmo trabalho
 
 ## Estado Atual
 
 Hoje o indexer usa:
-
-1. `ast` nativo em [chunk_python.py](../../apps/indexer/indexer/chunk_python.py)
-2. parser heurístico com regex e balanceamento estrutural em [chunk_ts.py](../../apps/indexer/indexer/chunk_ts.py)
-3. dispatch manual por linguagem em [chunk.py](../../apps/indexer/indexer/chunk.py)
-4. schema atual `v5` em [chunk_models.py](../../apps/indexer/indexer/chunk_models.py)
+1. `ast` nativo para Python em [chunk_python.py](/apps/indexer/indexer/chunk_python.py)
+2. parser heurístico com regex e balanceamento estrutural para TS/TSX/JS em [chunk_ts.py](/apps/indexer/indexer/chunk_ts.py)
+3. dispatch manual por linguagem em [chunk.py](/apps/indexer/indexer/chunk.py)
+4. schema atual `v5` em [chunk_models.py](/apps/indexer/indexer/chunk_models.py)
 
 Problemas atuais:
-
-1. manutenção alta do parser heurístico
-2. acoplamento do dispatch a linguagens específicas
-3. pouca previsibilidade para adicionar novas linguagens
-4. baixa observabilidade sobre fallback, cobertura e custo do parsing
-5. falta de protocolo formal para adapters
+1. alto custo de manutenção do parser heurístico
+2. acoplamento de `chunk.py` a linguagens específicas
+3. baixa previsibilidade para adicionar novas linguagens
+4. pouca observabilidade sobre fallback, cobertura e custo do parsing
+5. falta de contrato formal para adapters
 
 ## Mudanças de Interface e Contrato
 
 ### Mudanças explícitas
 
-1. adicionar `CODE_CHUNK_PARSER_BACKEND=tree_sitter|legacy` em
-   [config.py](../../apps/indexer/indexer/config.py), padrão `tree_sitter`
-2. subir `CHUNK_SCHEMA_VERSION` de `v5` para `v6` em [chunk_models.py](../../apps/indexer/indexer/chunk_models.py)
+1. adicionar `CODE_CHUNK_PARSER_BACKEND=tree_sitter|legacy` em [config.py](/apps/indexer/indexer/config.py)
+2. subir `CHUNK_SCHEMA_VERSION` de `v5` para `v6` em [chunk_models.py](/apps/indexer/indexer/chunk_models.py)
 3. adicionar logs estruturados de parsing e fallback no runtime do indexer
 4. documentar rebuild completo obrigatório e rollback operacional
 
 ### Mudanças que não serão feitas
 
-1. não renomear estratégias já públicas:
+1. não renomear estratégias públicas existentes:
    - `python_symbol`
    - `ts_symbol`
    - `line_window`
 2. não remover campos atuais do payload
-3. não adicionar estado de fallback ao payload do Qdrant
-4. não mudar a forma como `ChunkDocument` é serializado externamente
+3. não persistir estado de fallback no Qdrant
+4. não usar auto-discovery de adapters nesta primeira versão
+5. não adicionar novo comando público de benchmark ao CLI do indexer
 
 ## Estratégia de Dependências e Compatibilidade
 
 ### Dependências novas
 
-Adicionar em [requirements.txt](../../apps/indexer/requirements.txt):
+Adicionar em [requirements.txt](/apps/indexer/requirements.txt):
+1. binding principal do Tree-sitter
+2. grammar package de Python
+3. grammar package de TypeScript/TSX
+4. grammar package de JavaScript/JSX, se separado
 
-1. binding principal de Tree-sitter
-2. grammar package Python
-3. grammar package TypeScript
-4. grammar package JavaScript, se separado
+### Política de versionamento
 
-### Regra de versionamento
+1. fixar versões exatas dos bindings e grammars
+2. documentar matriz de compatibilidade mínima em [apps/indexer/README.md](/apps/indexer/README.md)
+3. validar em runtime:
+   - grammar presente
+   - versão instalada igual à versão pinada
+   - linguagem esperada carregável
+4. falhar cedo se backend `tree_sitter` estiver ativo e alguma grammar estiver ausente ou incompatível
 
-1. fixar versões exatas dos bindings e grammars na primeira entrega
-2. documentar matriz de compatibilidade mínima em [apps/indexer/README.md](../../apps/indexer/README.md)
-3. não permitir upgrades implícitos amplos neste ciclo
-4. qualquer upgrade futuro exige benchmark + regressão de fixtures
+### Decisão sobre versionamento
 
-### Matriz mínima documentada
-
-Documentar:
-
-1. versão do binding Tree-sitter Python
-2. versão das grammars Python/TypeScript/JavaScript
-3. linguagens suportadas semanticamente nesta entrega
-4. linguagens que continuam no parser atual ou no fallback linear
+Não haverá política de “versão mínima aberta”. O plano usa pinagem exata por ciclo para reduzir drift.
 
 ## Arquitetura Proposta
 
@@ -117,10 +102,12 @@ Criar `apps/indexer/indexer/tree_sitter/` com:
 
 1. `runtime.py`
    - carrega grammars
-   - instancia `Language`
+   - instancia e reutiliza `Language`
    - instancia e reutiliza `Parser`
-   - compila e reutiliza `Query`
-   - expõe helpers de range, bytes e texto
+   - compila e reutiliza queries
+   - valida registry e compatibilidade de versions
+   - expõe helpers de bytes, ranges e texto
+   - expõe helper de debug de queries para testes e troubleshooting
 
 2. `types.py`
    - define `SyntaxChunkSpec`
@@ -128,20 +115,19 @@ Criar `apps/indexer/indexer/tree_sitter/` com:
    - define `QuerySet`
 
 3. `registry.py`
-   - mantém mapeamento explícito de linguagens para adapters
-   - não usa auto-discovery
+   - registry explícita e tipada de linguagens para adapters
 
 4. `adapters/python.py`
    - adapter Tree-sitter para Python
 
 5. `adapters/typescript.py`
-   - adapter Tree-sitter para `typescript`, `typescriptreact`, `javascript`, `javascriptreact`
+   - adapter Tree-sitter para TS/TSX/JS/JSX
 
-6. `queries/python.scm`
-7. `queries/typescript.scm`
-8. `queries/tsx.scm`
-9. `queries/javascript.scm`
-10. `queries/jsx.scm`
+6. `queries/python/`
+7. `queries/typescript/`
+8. `queries/tsx/`
+9. `queries/javascript/`
+10. `queries/jsx/`
 
 ## 2. Contrato formal do adapter
 
@@ -150,12 +136,18 @@ Definir em `tree_sitter/types.py`:
 ```python
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Mapping, Protocol
+from typing import Mapping, Protocol, runtime_checkable
 
 @dataclass(frozen=True, slots=True)
 class QuerySet:
     language: str
-    query_file: str
+    queries: Mapping[str, str]
+    # Exemplo:
+    # {
+    #   "symbols": "queries/python/symbols.scm",
+    #   "calls": "queries/python/calls.scm",
+    #   "metadata": "queries/python/metadata.scm",
+    # }
 
 @dataclass(frozen=True, slots=True)
 class SyntaxChunkSpec:
@@ -178,6 +170,7 @@ class SyntaxChunkSpec:
         default_factory=lambda: MappingProxyType({})
     )
 
+@runtime_checkable
 class LanguageAdapter(Protocol):
     adapter_name: str
     supported_languages: tuple[str, ...]
@@ -196,15 +189,36 @@ class LanguageAdapter(Protocol):
 
 ### Regras do contrato
 
-1. todo adapter deve suportar uma ou mais linguagens lógicas do indexer
-2. todo adapter deve resolver seu próprio `QuerySet`
-3. todo adapter deve expor threshold mínimo de cobertura por linguagem
+1. todo adapter suporta uma ou mais linguagens lógicas do indexer
+2. todo adapter define `QuerySet` por linguagem
+3. todo adapter define threshold de cobertura por linguagem
 4. só `chunk.py` converte `SyntaxChunkSpec -> ChunkDocument`
-5. `languageMetadata` é opcional e não entra automaticamente no payload externo
+5. `SyntaxChunkSpec` deve ser compatível com o protocolo usado por [chunk_graph.py](/apps/indexer/indexer/chunk_graph.py)
+6. `languageMetadata` é exclusivamente interna
 
-## 3. Registry explícita e tipada
+## 3. Uso de `languageMetadata`
 
-Implementar em `registry.py`:
+### Uso permitido
+
+1. logging de debug
+2. troubleshooting
+3. observabilidade interna
+4. testes de adapter/query
+
+### Uso proibido
+
+1. não entra automaticamente em `ChunkDocument`
+2. não entra no payload do Qdrant
+3. não participa de `chunkId`
+4. não pode ser usada para dependência funcional do MCP
+
+### Requisito de implementação
+
+Na conversão de `SyntaxChunkSpec -> ChunkDocument`, se `languageMetadata` existir, ela só pode ser registrada em log estruturado de debug.
+
+## 4. Registry explícita e validada
+
+Implementar em `registry.py` algo equivalente a:
 
 ```python
 LANGUAGE_TO_ADAPTER = {
@@ -216,71 +230,67 @@ LANGUAGE_TO_ADAPTER = {
 }
 ```
 
-### Regras
+### Validação obrigatória da registry
 
-1. registry explícita, sem auto-discovery nesta primeira versão
-2. nenhuma nova linguagem exigirá mudança em `chunk.py`
-3. adicionar nova linguagem exigirá:
-   - grammar dependency
-   - adapter novo ou ampliação de adapter existente
-   - mapeamento em `registry.py`
-   - query set correspondente
-   - testes e fixtures
+Adicionar `_validate_registry()` chamado na inicialização do backend `tree_sitter`.
 
-## 4. Dispatch genérico em `chunk.py`
+Validações:
+1. todo valor implementa `LanguageAdapter`
+2. toda chave está listada em `adapter.supported_languages`
+3. não há linguagem sem adapter
+4. `query_set_for(language)` funciona para toda linguagem suportada
+5. todo `QuerySet` retornado contém ao menos `symbols`
+6. todos os caminhos de query existem em disco
+
+## 5. QuerySet multipropósito
+
+### Decisão
+
+`QuerySet` já nasce multipropósito.
+
+### Grupos padronizados
+
+1. `symbols`
+2. `calls`
+3. `metadata`
+
+Se a linguagem não precisar de um grupo, o adapter pode omitir esse grupo.
+
+### Benefício
+
+Evita refactor futuro ao adicionar linguagens mais complexas.
+
+## 6. Dispatch genérico em `chunk.py`
 
 ### Regra obrigatória
 
-Eliminar conditionals específicos por linguagem em [chunk.py](../../apps/indexer/indexer/chunk.py).
+Eliminar conditionals específicos por linguagem em [chunk.py](/apps/indexer/indexer/chunk.py).
 
 ### Novo fluxo
 
 1. classificar `content_type`
-2. se for `doc_section`, `config_block` ou `sql_block`, manter os chunkers atuais
+2. se for `doc_section`, `config_block` ou `sql_block`, usar chunkers atuais
 3. se for coleção `code`, consultar `registry.get_adapter(language)`
 4. se houver adapter:
    - chamar `adapter.chunk_source(...)`
+   - validar cobertura
    - converter `SyntaxChunkSpec` em `ChunkDocument`
-5. se não houver adapter ou houver fallback, usar `line_window`
+5. se não houver adapter ou se houver fallback, usar `line_window`
 
 ### Proibição
 
-Não deixar `chunk.py` conhecer:
-
-- `_should_use_python_symbol_chunking()`
-- `_should_use_ts_symbol_chunking()`
+`chunk.py` não pode conhecer:
+- `_should_use_python_symbol_chunking`
+- `_should_use_ts_symbol_chunking`
 - imports específicos de linguagem no fluxo principal
 
-## 5. Query resolution por linguagem
+## 7. Convenção de `symbolType`
 
-A decisão de query file não fica no registry; fica no adapter.
+### Decisão
 
-### Exemplo
+`symbolType` permanece string aberta e documentada por linguagem.
 
-No adapter TypeScript:
-
-- `typescript` -> `typescript.scm`
-- `typescriptreact` -> `tsx.scm`
-- `javascript` -> `javascript.scm`
-- `javascriptreact` -> `jsx.scm`
-
-No adapter Python:
-
-- `python` -> `python.scm`
-
-### Regra
-
-A registry escolhe o adapter. O adapter escolhe a query e a grammar correta.
-
-## 6. Convenção de `symbolType`
-
-### Regra escolhida
-
-`s`ymbolType continua sendo string aberta e documentada, sem enum rígido global.
-
-### Núcleo comum
-
-Valores comuns desta entrega:
+### Núcleo comum desta entrega
 
 - `function`
 - `method`
@@ -289,33 +299,22 @@ Valores comuns desta entrega:
 - `hook`
 - `helper`
 
-### Extensibilidade futura
+### Regra
 
-Permitir valores novos por linguagem futura, por exemplo:
-
-- Rust: `trait`, `impl`, `mod`
-- Go: `interface`, `struct`, `receiver_method`
-
-### Regra de payload
-
-O payload já suporta string livre, não haverá bloqueio por schema para valores
-novos de `symbolType`.
+Novos `symbolType` futuros são permitidos sem alterar schema público.
 
 ## Estratégia de Migração do Código Atual
 
 ### Congelar parsers atuais
 
 Criar:
-
 - `chunk_python_legacy.py`
 - `chunk_ts_legacy.py`
 
-Esses módulos recebem a implementação atual sem mudança funcional.
-
 ### Wrappers públicos
 
-- [chunk_python.py](../../apps/indexer/indexer/chunk_python.py) vira wrapper
-- [chunk_ts.py](../../apps/indexer/indexer/chunk_ts.py) vira wrapper de backend
+- [chunk_python.py](/apps/indexer/indexer/chunk_python.py) vira wrapper de backend
+- [chunk_ts.py](/apps/indexer/indexer/chunk_ts.py) vira wrapper de backend
 
 ### Seleção de backend
 
@@ -323,71 +322,119 @@ Esses módulos recebem a implementação atual sem mudança funcional.
    - usa Tree-sitter
 2. `CODE_CHUNK_PARSER_BACKEND=legacy`
    - usa parser congelado anterior
-3. default:
+3. default final:
    - `tree_sitter`
+
+## Estratégia de Migração dos Testes
+
+### Decisão
+
+Não reaproveitar os testes atuais de parser como se nada tivesse mudado.
+
+### Mudanças
+
+1. copiar os testes atuais específicos de parser para:
+   - `test_chunk_python_legacy.py`
+   - `test_chunk_ts_legacy.py`
+2. adaptar [test_chunk_python.py](/apps/indexer/tests/test_chunk_python.py) para o adapter/wrapper novo
+3. adaptar [test_chunk_ts.py](/apps/indexer/tests/test_chunk_ts.py) para o adapter/wrapper novo
+4. manter testes de contrato nos wrappers públicos
+5. legacy e tree-sitter devem coexistir durante o ciclo de estabilização
+
+### Regra de aceite
+
+Antes de remover o legacy no futuro:
+1. testes do backend `legacy` continuam verdes
+2. testes do backend `tree_sitter` continuam verdes
+3. smoke do pipeline passa com os dois modos
 
 ## Fase 0 — Baseline e Benchmark Pré-Migração
 
-### Objetivo da Fase 0
+### Objetivo
 
 Criar baseline comparável antes da troca do parser.
 
-### Entregas do Baseline
+### Entregas
 
 1. benchmark do backend atual em:
-   - fixture repo em [fixtures/chunking](../../apps/indexer/tests/fixtures/chunking)
+   - fixture repo em [fixtures/chunking](/apps/indexer/tests/fixtures/chunking)
    - amostra do repo real
-2. salvar baseline de:
+2. baseline de:
    - tempo de `indexer chunk`
    - tempo de `index`
    - quantidade de chunks por arquivo
    - distribuição de `chunkStrategy`
    - taxa de fallback
    - cobertura estrutural útil
-3. registrar baseline em documentação técnica em `docs/tree-sitter/`
+3. benchmark por tamanho:
+   - pequeno `<100 linhas`
+   - médio `100-500`
+   - grande `500-2000`
+   - muito grande `5000+`
+4. benchmark de carga:
+   - 1000 arquivos sintéticos ou amostra equivalente de carga
+
+### Calibração de thresholds
+
+Para cada linguagem suportada:
+1. medir cobertura estrutural útil em amostra conhecida
+2. calcular P10 da cobertura
+3. comparar com o threshold provisório definido abaixo
+4. se a diferença for maior que `0.05`, ajustar a constante do adapter antes do rollout final
+
+### Thresholds provisórios iniciais
+
+- `python -> 0.70`
+- `typescript -> 0.85`
+- `typescriptreact -> 0.80`
+- `javascript -> 0.80`
+- `javascriptreact -> 0.75`
 
 ### Critério de saída
 
-Ter números reais antes de implementar Tree-sitter.
+Ter números reais antes da implementação final e thresholds calibrados para o rollout.
 
 ## Fase 1 — Fundação Tree-sitter
 
-### Arquivos da Fase 1
+### Arquivos
 
-- [requirements.txt](../../apps/indexer/requirements.txt)
-- [config.py](../../apps/indexer/indexer/config.py)
+- [requirements.txt](/apps/indexer/requirements.txt)
+- [config.py](/apps/indexer/indexer/config.py)
 - `apps/indexer/indexer/tree_sitter/`
 
-### Implementação da Fase 1
+### Implementação
 
 1. adicionar dependências fixadas
 2. adicionar `CODE_CHUNK_PARSER_BACKEND`
 3. implementar cache de:
    - `Language`
    - `Parser`
-   - `Query`
+   - queries compiladas
 4. implementar `LanguageAdapter`, `SyntaxChunkSpec` e `QuerySet`
 5. implementar registry explícita
-6. falhar cedo se backend for `tree_sitter` e grammar não carregar
+6. implementar `_validate_registry()`
+7. validar grammars instaladas contra versions pinadas
+8. implementar `debug_query_matches(...)` em `runtime.py`
 
 ### Testes
 
-1. load de grammar por linguagem
-2. cache de parser
-3. cache de query
-4. contrato do adapter
-5. registry resolvendo adapter por linguagem
+1. grammar loading por linguagem
+2. version validation
+3. registry validation
+4. parser cache
+5. query cache
+6. helper de debug de query
 
 ## Fase 2 — Python com Tree-sitter
 
-### Arquivos da Fase 2
+### Arquivos
 
-- [chunk_python.py](../../apps/indexer/indexer/chunk_python.py)
+- [chunk_python.py](/apps/indexer/indexer/chunk_python.py)
 - `chunk_python_legacy.py`
 - `tree_sitter/adapters/python.py`
-- [chunk_graph.py](../../apps/indexer/indexer/chunk_graph.py)
+- [chunk_graph.py](/apps/indexer/indexer/chunk_graph.py)
 
-### Implementação da Fase 2
+### Implementação
 
 1. capturar:
    - `function_definition`
@@ -408,23 +455,20 @@ Ter números reais antes de implementar Tree-sitter.
 5. grafo:
    - chamadas no subtree do símbolo
    - decorators entram em `callees`
-   - preservar correções já existentes:
+   - manter proteções já conquistadas:
      - `get_client().load()` não vira símbolo local
      - `super.load()` não vira método da classe atual
 
-### Fallback do Python Adapter
+### Fallback por adapter
 
-Python define seu próprio threshold:
-
-- `min_coverage_threshold("python") -> 0.70`
+Usar threshold calibrado na Fase 0, com default provisório `0.70`.
 
 Volta para `line_window` se:
-
 1. houver erro sintático relevante
 2. houver nós missing/error em símbolo emitido
 3. cobertura útil ficar abaixo do threshold do adapter
 
-### Testes obrigatórios Python
+### Testes obrigatórios
 
 1. função simples
 2. `async def`
@@ -435,17 +479,30 @@ Volta para `line_window` se:
 7. `get_client().load()`
 8. `super.load()`
 9. arquivo inválido com fallback
+10. golden tests estruturais de casos sensíveis
+
+### Regressão estrutural
+
+Os golden tests validam:
+- `symbolName`
+- `qualifiedSymbolName`
+- `symbolType`
+- `chunkStrategy`
+- faixa de linhas com tolerância pequena quando o caso envolver decorator/whitespace
+
+Regra:
+- não usar snapshot textual bruto do conteúdo completo como gate principal
 
 ## Fase 3 — TypeScript / TSX / JS / JSX com Tree-sitter
 
-### Arquivos da Fase 3
+### Arquivos
 
-- [chunk_ts.py](../../apps/indexer/indexer/chunk_ts.py)
+- [chunk_ts.py](/apps/indexer/indexer/chunk_ts.py)
 - `chunk_ts_legacy.py`
 - `tree_sitter/adapters/typescript.py`
-- [chunk_graph.py](../../apps/indexer/indexer/chunk_graph.py)
+- [chunk_graph.py](/apps/indexer/indexer/chunk_graph.py)
 
-### Implementação da Fase 3
+### Implementação
 
 1. capturar:
    - `class_declaration`
@@ -454,7 +511,7 @@ Volta para `line_window` se:
    - `lexical_declaration` com `arrow_function` ou `function`
    - `export default` nomeado e anônimo
    - getters e setters
-2. classificar semântica:
+2. classificar:
    - `hook`
    - `component`
    - `helper`
@@ -464,6 +521,7 @@ Volta para `line_window` se:
    - decorators multiline
    - `export default memo(function Name() {})`
    - `export default forwardRef(function Name() {})`
+   - `export default memo(forwardRef(function Name() {}))`
    - `export default () => ...`
    - `export default async () => ...`
    - `export default function() {}`
@@ -471,28 +529,36 @@ Volta para `line_window` se:
    - `abstract class`
    - fragments JSX
    - JSX condicional e aninhado
-4. grafo:
+
+4. regra para wrappers compostos:
+   - capturar primeiro a função/componente mais interna
+   - descartar `memo`, `forwardRef` e wrappers equivalentes como candidatos a `symbolName`
+   - se não for possível extrair nome confiável, usar `default`
+   - nunca emitir `memo` ou `forwardRef` como `symbolName`
+
+5. grafo:
    - chamadas só no subtree do símbolo
    - incluir decorators
-   - preservar correções já conquistadas:
+   - manter correções existentes:
      - `new Client().run()` não vira símbolo local
      - `super.load()` não vira método da classe atual
 
 ### Compatibilidade de decorators
 
 Documentar e testar:
-
 1. decorators legacy
 2. decorators Stage-3 suportados pela grammar usada
-3. explicitar no README qual variante é suportada nesta entrega
+3. explicitar no README qual variante está suportada na entrega
 
-### Fallback do TS Adapter
+### Fallback por adapter
 
-TypeScript adapter define:
+Usar thresholds calibrados na Fase 0, com defaults provisórios:
+- `typescript -> 0.85`
+- `typescriptreact -> 0.80`
+- `javascript -> 0.80`
+- `javascriptreact -> 0.75`
 
-- `typescript` / `javascript` (e extensões com react) -> threshold `0.80`
-
-### Testes obrigatórios TS
+### Testes obrigatórios
 
 1. helper
 2. hook
@@ -504,21 +570,23 @@ TypeScript adapter define:
 8. default export nomeado
 9. default export anônimo
 10. wrappers `memo` / `forwardRef`
-11. decorators multiline
-12. JSX fragment
-13. JSX condicional aninhado
-14. arquivo inválido com fallback
+11. wrappers compostos `memo(forwardRef(...))`
+12. decorators multiline
+13. JSX fragment
+14. JSX condicional aninhado
+15. arquivo inválido com fallback
+16. golden tests estruturais dos casos críticos acima
 
-## Fase 4 — Integração do Pipeline
+## Fase 4 — Integração no Pipeline
 
-### Arquivos da Fase 4
+### Arquivos
 
-- [chunk.py](../../apps/indexer/indexer/chunk.py)
-- [__main__.py](../../apps/indexer/indexer/__main__.py)
+- [chunk.py](/apps/indexer/indexer/chunk.py)
+- [__main__.py](/apps/indexer/indexer/__main__.py)
 
-### Implementação da Fase 4
+### Implementação
 
-1. [chunk.py](../../apps/indexer/indexer/chunk.py) usa registry genérico
+1. [chunk.py](/apps/indexer/indexer/chunk.py) passa a usar dispatch genérico via registry
 2. `docs`, `config` e `sql` permanecem como estão
 3. manter:
    - `ChunkDocument`
@@ -547,7 +615,7 @@ Adicionar log estruturado por arquivo com shape mínimo:
   "parser_backend": "tree_sitter",
   "adapter": "typescript",
   "language": "typescriptreact",
-  "query_file": "tsx.scm",
+  "queries": ["symbols", "calls", "metadata"],
   "fallback": false,
   "fallback_reason": null,
   "chunk_count": 4,
@@ -556,27 +624,10 @@ Adicionar log estruturado por arquivo com shape mínimo:
 }
 ```
 
-Em fallback:
-
-```json
-{
-  "event": "chunk_parse",
-  "parser_backend": "tree_sitter",
-  "adapter": "python",
-  "language": "python",
-  "query_file": "python.scm",
-  "fallback": true,
-  "fallback_reason": "coverage_below_threshold",
-  "chunk_count": 1,
-  "coverage": 0.48,
-  "duration_ms": 3
-}
-```
-
 ### Métricas mínimas
 
 1. arquivos parseados por backend
-2. taxa de fallback por linguagem e por adapter
+2. taxa de fallback por linguagem e adapter
 3. duração média e p95 por linguagem
 4. chunks gerados por linguagem
 5. erros de grammar loading
@@ -588,41 +639,40 @@ Fallback não entra no payload do Qdrant.
 
 ## Fase 6 — Escalabilidade para Novas Linguagens
 
-### Objetivo de Escalabilidade
+### Objetivo
 
-Garantir que a terceira linguagem seja fácil de adicionar, não só a segunda.
+Garantir que a terceira linguagem seja barata de adicionar.
 
-### Entregas de Escalabilidade
+### Entregas
 
 1. template oficial de adapter em `tree_sitter/adapters/_template.py`
-2. guia de adição de linguagem em `docs/tree-sitter/`
+2. guia `docs/tree-sitter/adding-language.md`
 3. teste de contrato para adapters
-4. documentação de query set por linguagem
-5. checklist de inclusão de nova linguagem
+4. checklist de inclusão de nova linguagem
+5. documentação de `languageMetadata`
+6. documentação de `QuerySet` multipropósito
 
-### Checklist de nova linguagem
-
-Para adicionar uma linguagem futura:
+### Checklist oficial de nova linguagem
 
 1. adicionar grammar dependency fixada
 2. criar adapter implementando `LanguageAdapter`
-3. definir query file(s)
-4. registrar linguagem em `registry.py`
-5. definir threshold de cobertura por adapter
-6. adicionar fixtures
+3. definir `QuerySet`
+4. registrar em `registry.py`
+5. definir `min_coverage_threshold`
+6. criar fixtures
 7. adicionar testes unitários e de integração
-8. validar benchmark e smoke
+8. adicionar golden tests estruturais
+9. validar benchmark e smoke
 
 ### Regra de escalabilidade
 
-A inclusão de nova linguagem futura não pode exigir mudança em [chunk.py](../../apps/indexer/indexer/chunk.py).
+Adicionar nova linguagem futura não pode exigir modificação em [chunk.py](/apps/indexer/indexer/chunk.py).
 
-## Fase 7 — Benchmark Pós-Migração e Gate de Qualidade
+## Fase 7 — Validação Final, MCP e Gate de Qualidade
 
-### Comparação obrigatória
+### Comparação obrigatória `legacy vs tree_sitter`
 
-Comparar `legacy` vs `tree_sitter` em:
-
+Comparar:
 1. tempo de `indexer chunk`
 2. tempo de `index`
 3. número de chunks por arquivo
@@ -630,86 +680,107 @@ Comparar `legacy` vs `tree_sitter` em:
 5. taxa de fallback
 6. preservação dos campos do payload
 
+### Validação MCP
+
+Adicionar validação de retrieval com o MCP sobre índice gerado por Tree-sitter.
+
+Regras:
+1. indexar coleção temporária com backend `tree_sitter`
+2. executar consultas reais via MCP/serviço de busca
+3. comparar com backend `legacy` pelo menos:
+   - shape dos resultados
+   - presença de evidências relevantes
+   - não degradação clara de retrieval
+4. não exigir igualdade de ranking exata nem igualdade literal de resposta natural
+
 ### Gate de qualidade
 
 1. 100% dos campos de payload preservados
 2. smoke `index -> search` aprovado
-3. taxa de fallback em repos conhecidos abaixo do threshold documentado
-4. parsing `tree_sitter` não pode degradar sem explicação documentada
+3. validação MCP aprovada
+4. taxa de fallback em repos conhecidos abaixo do threshold documentado
+5. parsing Tree-sitter não pode degradar severamente sem explicação documentada
+
+### Meta inicial de performance
 
 Meta inicial:
+- Tree-sitter até `2x` do legacy em parsing puro nos cenários conhecidos
+- benchmark de carga de 1000 arquivos não pode ultrapassar `3x` o tempo do legacy sem investigação formal
 
-- custo de parsing Tree-sitter até `1.5x` do legacy em cenários conhecidos
+## Estratégia de Fixtures
 
-Isso é meta de engenharia, não contrato público.
+### Base principal
+
+Usar:
+- [fixtures/chunking](/apps/indexer/tests/fixtures/chunking)
+
+### Expandir com fixtures novas
+
+Adicionar:
+1. `src/complex-component.tsx`
+   - `memo + forwardRef`
+   - component default export
+   - hook/helper internos
+2. `src/overloads.ts`
+3. `src/stage3-decorators.ts`
+4. `src/legacy-decorators.ts`
+5. `src/very-large-module.ts`
+6. `src/very-large-module.py`
 
 ## Estratégia de Regressão
 
-### Base principal de fixtures
+### Comparação
+
+Não usar diff textual bruto como verdade única.
 
 Usar:
-
-- [fixtures/chunking](../../apps/indexer/tests/fixtures/chunking)
-
-Expandir com:
-
-1. Python com decorators complexos
-2. TS com overloads
-3. TSX com wrappers
-4. TSX com JSX fragment e JSX aninhado
-5. default exports anônimos
-6. decorators Stage-3 e legacy
-7. arquivos inválidos para fallback
-
-### Estratégia de comparação
-
-Não usar diff textual cego como verdade absoluta.
-
-Usar:
-
 1. invariantes obrigatórios
 2. regressão estrutural
-3. revisão manual só para divergências relevantes
+3. golden tests aprovados
+4. revisão manual só de divergências relevantes
 
 ## Testes e Cenários
 
 ### Testes unitários
 
 Arquivos:
-
-- [test_chunk_python.py](../../apps/indexer/tests/test_chunk_python.py)
-- [test_chunk_ts.py](../../apps/indexer/tests/test_chunk_ts.py)
-- [test_chunk.py](../../apps/indexer/tests/test_chunk.py)
-- [test_config.py](../../apps/indexer/tests/test_config.py)
+- [test_chunk_python.py](/apps/indexer/tests/test_chunk_python.py)
+- [test_chunk_ts.py](/apps/indexer/tests/test_chunk_ts.py)
+- [test_chunk.py](/apps/indexer/tests/test_chunk.py)
+- [test_config.py](/apps/indexer/tests/test_config.py)
+- `test_chunk_python_legacy.py`
+- `test_chunk_ts_legacy.py`
 
 Cobertura mínima:
-
 1. grammar loading
-2. query loading
+2. version validation
 3. adapter contract
-4. registry resolution
-5. parsing por linguagem
-6. fallback por parse error e coverage
-7. `chunkId` estável
-8. `contentHash` mutável
-9. `summaryText` e `contextText`
-10. `callers` e `callees`
-11. casos de borda já corrigidos historicamente
+4. registry validation
+5. query loading
+6. query debug helper
+7. parsing por linguagem
+8. fallback por parse error e coverage
+9. `chunkId` estável
+10. `contentHash` mutável
+11. `summaryText` e `contextText`
+12. `callers` e `callees`
+13. edge cases historicamente sensíveis
+14. golden tests estruturais
 
 ### Testes de integração
 
 Arquivos:
-
-- [test_cli.py](../../apps/indexer/tests/test_cli.py)
+- [test_cli.py](/apps/indexer/tests/test_cli.py)
 - smoke do indexer
+- testes MCP relevantes
 
 Cobertura mínima:
-
 1. `indexer chunk` com backend default
 2. `indexer chunk` com backend `legacy`
 3. `indexer index` em collection temporária
 4. `indexer search` após indexação
 5. bloqueio de mistura `v5/v6`
+6. validação MCP
 
 ## Runbook Operacional
 
@@ -717,11 +788,11 @@ Cobertura mínima:
 
 1. backup lógico do estado atual
 2. atualizar dependências do indexer
-3. validar grammar loading
+3. validar grammars e versions
 4. recriar ou limpar collections antigas
 5. rodar rebuild completo
 6. rodar smoke `index -> search`
-7. validar taxa de fallback, cobertura e cardinalidade
+7. validar fallback, coverage, cardinalidade, tempo e MCP
 8. liberar `tree_sitter` como backend default
 
 ### Sequência documentada
@@ -738,63 +809,65 @@ Cobertura mínima:
 1. setar `CODE_CHUNK_PARSER_BACKEND=legacy`
 2. recriar/reindexar conforme backend selecionado
 3. repetir smoke `index -> search`
-4. usar rollback só como estabilização temporária
+4. usar rollback apenas como estabilização temporária
 
 ### Remoção do legacy
 
 Follow-up separado.
 
 Critério:
-
 1. 2 sprints de estabilização
 2. zero incidente crítico de parsing
 3. taxa de fallback controlada
-4. smoke e benchmark estáveis
+4. smoke, benchmark e validação MCP estáveis
 
 ## Critérios de Aceitação Finais
 
-1. `tree_sitter` é o backend default para código
-2. `legacy` continua disponível temporariamente
-3. `chunk.py` não conhece linguagens específicas
-4. `registry.py` resolve adapters explicitamente
-5. `LanguageAdapter` e `SyntaxChunkSpec` estão formalizados
-6. Python e TS/TSX/JS/JSX continuam emitindo payload compatível
-7. `index -> search` funciona ponta a ponta
-8. existem métricas e logs suficientes para fallback e degradação
-9. benchmark antes/depois está documentado
-10. não pode exigir modificações em [chunk.py](../../apps/indexer/indexer/chunk.py)
+1. `tree_sitter` é o backend default para código.
+2. `legacy` permanece disponível temporariamente.
+3. `chunk.py` não conhece linguagens específicas.
+4. registry explícita resolve adapters e é validada na inicialização.
+5. `LanguageAdapter`, `SyntaxChunkSpec` e `QuerySet` estão formalizados.
+6. Python e TS/TSX/JS/JSX continuam emitindo payload compatível.
+7. `index -> search` funciona ponta a ponta.
+8. a validação MCP não mostra degradação evidente de retrieval.
+9. existem métricas e logs suficientes para diagnosticar fallback e degradação.
+10. benchmark antes/depois está documentado.
+11. adicionar nova linguagem não exige mexer em [chunk.py](/apps/indexer/indexer/chunk.py).
 
 ## Assunções e Defaults
 
-1. a primeira entrega semanticamente suportada foca nas linguagens já
-   presentes no repositório
+1. a primeira entrega Tree-sitter cobre apenas linguagens de código já presentes no repositório
 2. `docs`, `config` e `sql` continuam fora desta migração
 3. `symbolType` permanece string aberta e documentada
 4. `languageMetadata` é interna e não entra automaticamente no payload
 5. registry explícita é preferida a auto-discovery nesta primeira versão
-6. thresholds de cobertura são por adapter, não globais
+6. thresholds de cobertura são calibrados na Fase 0, com defaults provisórios já definidos
 7. a troca de parser é mudança estrutural suficiente para exigir `v6`
 
 ## Arquivos-Alvo
 
-1. [apps/indexer/requirements.txt](../../apps/indexer/requirements.txt)
-2. [apps/indexer/indexer/config.py](../../apps/indexer/indexer/config.py)
-3. [apps/indexer/indexer/chunk.py](../../apps/indexer/indexer/chunk.py)
-4. [apps/indexer/indexer/chunk_python.py](../../apps/indexer/indexer/chunk_python.py)
-5. [apps/indexer/indexer/chunk_ts.py](../../apps/indexer/indexer/chunk_ts.py)
-6. [apps/indexer/indexer/chunk_graph.py](../../apps/indexer/indexer/chunk_graph.py)
-7. [apps/indexer/indexer/chunk_models.py](../../apps/indexer/indexer/chunk_models.py)
-8. [apps/indexer/indexer/__main__.py](../../apps/indexer/indexer/__main__.py)
+1. [apps/indexer/requirements.txt](/apps/indexer/requirements.txt)
+2. [apps/indexer/indexer/config.py](/apps/indexer/indexer/config.py)
+3. [apps/indexer/indexer/chunk.py](/apps/indexer/indexer/chunk.py)
+4. [apps/indexer/indexer/chunk_python.py](/apps/indexer/indexer/chunk_python.py)
+5. [apps/indexer/indexer/chunk_ts.py](/apps/indexer/indexer/chunk_ts.py)
+6. [apps/indexer/indexer/chunk_graph.py](/apps/indexer/indexer/chunk_graph.py)
+7. [apps/indexer/indexer/chunk_models.py](/apps/indexer/indexer/chunk_models.py)
+8. [apps/indexer/indexer/__main__.py](/apps/indexer/indexer/__main__.py)
 9. `apps/indexer/indexer/tree_sitter/`
 10. `apps/indexer/indexer/chunk_python_legacy.py`
 11. `apps/indexer/indexer/chunk_ts_legacy.py`
-12. [apps/indexer/tests/test_chunk_python.py](../../apps/indexer/tests/test_chunk_python.py)
-13. [apps/indexer/tests/test_chunk_ts.py](../../apps/indexer/tests/test_chunk_ts.py)
-14. [apps/indexer/tests/test_chunk.py](../../apps/indexer/tests/test_chunk.py)
-15. [apps/indexer/tests/test_cli.py](../../apps/indexer/tests/test_cli.py)
-16. [apps/indexer/tests/test_config.py](../../apps/indexer/tests/test_config.py)
-17. [apps/indexer/tests/fixtures/chunking](../../apps/indexer/tests/fixtures/chunking)
-18. [apps/indexer/README.md](../../apps/indexer/README.md)
-19. [docs/OPERATIONS.md](../../docs/OPERATIONS.md)
-20. [docs/ROADMAP.md](../../docs/ROADMAP.md)
-21. [docs/tree-sitter/plan.md](../../docs/tree-sitter/plan.md)
+12. [apps/indexer/tests/test_chunk_python.py](/apps/indexer/tests/test_chunk_python.py)
+13. [apps/indexer/tests/test_chunk_ts.py](/apps/indexer/tests/test_chunk_ts.py)
+14. [apps/indexer/tests/test_chunk.py](/apps/indexer/tests/test_chunk.py)
+15. [apps/indexer/tests/test_cli.py](/apps/indexer/tests/test_cli.py)
+16. [apps/indexer/tests/test_config.py](/apps/indexer/tests/test_config.py)
+17. `apps/indexer/tests/test_chunk_python_legacy.py`
+18. `apps/indexer/tests/test_chunk_ts_legacy.py`
+19. [apps/indexer/tests/fixtures/chunking](/apps/indexer/tests/fixtures/chunking)
+20. [apps/indexer/README.md](/apps/indexer/README.md)
+21. [docs/OPERATIONS.md](/docs/OPERATIONS.md)
+22. [docs/ROADMAP.md](/docs/ROADMAP.md)
+23. [docs/tree-sitter/plan.md](/docs/tree-sitter/plan.md)
+24. [docs/tree-sitter/adding-language.md](/docs/tree-sitter/adding-language.md)
