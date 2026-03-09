@@ -18,7 +18,12 @@ from indexer.chunk import (
     normalize_path,
     read_text,
 )
-from indexer.chunk_models import CHUNK_SCHEMA_VERSION, IndexedChunk, LINE_WINDOW_CHUNK_STRATEGY
+from indexer.chunk_models import (
+    CHUNK_SCHEMA_VERSION,
+    IndexedChunk,
+    LINE_WINDOW_CHUNK_STRATEGY,
+    PYTHON_SYMBOL_CHUNK_STRATEGY,
+)
 
 
 class ChunkCoreTests(unittest.TestCase):
@@ -65,6 +70,55 @@ class ChunkCoreTests(unittest.TestCase):
         self.assertNotEqual(chunk_id, different_path)
         self.assertNotEqual(chunk_id, different_range)
         self.assertNotEqual(chunk_id, different_language)
+
+        anchored_symbol = make_chunk_id(
+            "apps/indexer/file.py",
+            10,
+            20,
+            "python",
+            qualified_symbol_name="Service.run",
+            symbol_type="method",
+        )
+        moved_symbol = make_chunk_id(
+            "apps/indexer/file.py",
+            30,
+            40,
+            "python",
+            qualified_symbol_name="Service.run",
+            symbol_type="method",
+        )
+        renamed_symbol = make_chunk_id(
+            "apps/indexer/file.py",
+            30,
+            40,
+            "python",
+            qualified_symbol_name="Service.execute",
+            symbol_type="method",
+        )
+
+        self.assertEqual(anchored_symbol, moved_symbol)
+        self.assertNotEqual(anchored_symbol, renamed_symbol)
+
+        property_getter = make_chunk_id(
+            "apps/indexer/file.py",
+            10,
+            20,
+            "python",
+            qualified_symbol_name="Service.value",
+            symbol_type="method",
+            signature="def value(self) -> str:",
+        )
+        property_setter = make_chunk_id(
+            "apps/indexer/file.py",
+            21,
+            30,
+            "python",
+            qualified_symbol_name="Service.value",
+            symbol_type="method",
+            signature="def value(self, new_value: str) -> None:",
+        )
+
+        self.assertNotEqual(property_getter, property_setter)
 
     def test_normalize_path_relative_and_absolute_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -223,15 +277,30 @@ class ChunkFileTests(unittest.TestCase):
                 as_posix=True,
             )
 
+            self.assertEqual(len(result.chunks), 1)
             chunk = result.chunks[0]
+            self.assertEqual(chunk.startLine, 3)
+            self.assertEqual(chunk.endLine, 4)
+            self.assertEqual(chunk.contentType, "code_symbol")
+            self.assertEqual(chunk.chunkStrategy, PYTHON_SYMBOL_CHUNK_STRATEGY)
+            self.assertEqual(chunk.symbolName, "load_data")
+            self.assertEqual(chunk.qualifiedSymbolName, "load_data")
+            self.assertEqual(chunk.symbolType, "function")
             self.assertEqual(
                 chunk.summaryText,
                 (
-                    "src/service.py | python | lines 1-4 | type=code_context "
+                    "src/service.py | python | lines 3-4 | type=code_symbol | symbol=load_data "
+                    "| symbol_type=function "
                     "| first_line=def load_data(user_id: str) -> dict[str, str]:"
                 ),
             )
-            self.assertIn("Chunk strategy: line_window", chunk.contextText)
+            self.assertIn("Chunk strategy: python_symbol", chunk.contextText)
+            self.assertIn("Symbol: load_data", chunk.contextText)
+            self.assertIn("Symbol type: function", chunk.contextText)
+            self.assertIn(
+                "Signature: def load_data(user_id: str) -> dict[str, str]:",
+                chunk.contextText,
+            )
             self.assertNotIn("Summary:", chunk.contextText)
             self.assertIn(
                 "Preview: def load_data(user_id: str) -> dict[str, str]: return {'id': user_id}",
@@ -261,14 +330,84 @@ class ChunkFileTests(unittest.TestCase):
         self.assertEqual(payload["chunk_id"], document.chunkId)
         self.assertEqual(payload["content_hash"], document.contentHash)
         self.assertEqual(payload["chunk_schema_version"], CHUNK_SCHEMA_VERSION)
-        self.assertEqual(payload["chunk_strategy"], LINE_WINDOW_CHUNK_STRATEGY)
-        self.assertEqual(payload["content_type"], "code")
+        self.assertEqual(payload["chunk_strategy"], document.chunkStrategy)
+        self.assertEqual(payload["content_type"], document.collectionContentType)
         self.assertEqual(payload["chunk_content_type"], document.contentType)
         self.assertEqual(payload["start_line"], document.startLine)
         self.assertEqual(payload["end_line"], document.endLine)
         self.assertEqual(payload["text"], document.content)
         self.assertEqual(payload["summary_text"], document.summaryText)
         self.assertEqual(payload["context_text"], document.contextText)
+
+    def test_chunk_file_keeps_symbol_chunk_id_stable_when_lines_shift(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            file_path = repo_root / "src" / "service.py"
+            file_path.parent.mkdir(parents=True)
+            file_path.write_text(
+                "def load_data(user_id: str) -> dict[str, str]:\n"
+                "    return {'id': user_id}\n",
+                encoding="utf-8",
+            )
+
+            initial = chunk_file_documents(
+                file_path=file_path,
+                repo_root=repo_root,
+                chunk_lines=10,
+                overlap=0,
+                as_posix=True,
+            )
+
+            file_path.write_text(
+                "# comment added above\n\n"
+                "def load_data(user_id: str) -> dict[str, str]:\n"
+                "    return {'id': user_id}\n",
+                encoding="utf-8",
+            )
+
+            updated = chunk_file_documents(
+                file_path=file_path,
+                repo_root=repo_root,
+                chunk_lines=10,
+                overlap=0,
+                as_posix=True,
+            )
+
+            self.assertEqual(len(initial.chunks), 1)
+            self.assertEqual(len(updated.chunks), 2)
+            updated_symbol = next(chunk for chunk in updated.chunks if chunk.symbolName == "load_data")
+            context_chunk = next(chunk for chunk in updated.chunks if chunk.symbolName is None)
+
+            self.assertEqual(initial.chunks[0].chunkId, updated_symbol.chunkId)
+            self.assertNotEqual(initial.chunks[0].startLine, updated_symbol.startLine)
+            self.assertEqual(context_chunk.contentType, "code_context")
+            self.assertIn("# comment added above", context_chunk.content)
+
+    def test_chunk_file_falls_back_to_line_window_when_python_parse_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            file_path = repo_root / "src" / "broken.py"
+            file_path.parent.mkdir(parents=True)
+            file_path.write_text(
+                "def broken(\n"
+                "    return 1\n",
+                encoding="utf-8",
+            )
+
+            result = chunk_file_documents(
+                file_path=file_path,
+                repo_root=repo_root,
+                chunk_lines=10,
+                overlap=0,
+                as_posix=True,
+            )
+
+            self.assertEqual(len(result.chunks), 1)
+            chunk = result.chunks[0]
+            self.assertEqual(chunk.chunkStrategy, LINE_WINDOW_CHUNK_STRATEGY)
+            self.assertEqual(chunk.contentType, "code_context")
+            self.assertIsNone(chunk.symbolName)
+            self.assertIn("def broken(", chunk.content)
 
     def test_indexed_chunk_serializes_doc_payload_to_docs_collection(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
