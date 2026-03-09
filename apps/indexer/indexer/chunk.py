@@ -3,8 +3,11 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+from .chunk_config import chunk_config_source
+from .chunk_docs import chunk_docs_source
 from .config import RuntimeConfig
 from .content_classification import (
+    DOC_SECTION_CONTENT_TYPE,
     CONFIG_BLOCK_CONTENT_TYPE,
     SQL_BLOCK_CONTENT_TYPE,
     classify_content_type,
@@ -13,9 +16,13 @@ from .content_classification import (
 from .chunk_models import (
     ChunkDocument,
     ChunkFileResult,
+    CONFIG_SECTION_CHUNK_STRATEGY,
+    DOC_SECTION_CHUNK_STRATEGY,
     LINE_WINDOW_CHUNK_STRATEGY,
+    SQL_STATEMENT_CHUNK_STRATEGY,
 )
 from .chunk_python import PythonChunkSpec, chunk_python_source
+from .chunk_sql import chunk_sql_source
 from .chunk_ts import TsChunkSpec, chunk_ts_source
 
 _LANGUAGE_BY_SUFFIX: dict[str, str] = {
@@ -25,9 +32,18 @@ _LANGUAGE_BY_SUFFIX: dict[str, str] = {
     ".jsx": "javascriptreact",
     ".py": "python",
     ".md": "markdown",
+    ".mdx": "markdown",
+    ".rst": "rst",
+    ".adoc": "asciidoc",
+    ".txt": "text",
     ".json": "json",
+    ".toml": "toml",
+    ".ini": "ini",
+    ".cfg": "ini",
+    ".conf": "ini",
     ".yaml": "yaml",
     ".yml": "yaml",
+    ".sql": "sql",
 }
 _SUMMARY_FIRST_LINE_MAX_CHARS = 120
 _CONTEXT_PREVIEW_MAX_CHARS = 280
@@ -253,6 +269,30 @@ def _should_use_python_symbol_chunking(
     return content_type not in {CONFIG_BLOCK_CONTENT_TYPE, SQL_BLOCK_CONTENT_TYPE}
 
 
+def _build_generic_chunks(
+    *,
+    blocks: tuple[tuple[int, int, str], ...],
+    path: str,
+    language: str,
+    content_type: str,
+    chunk_strategy: str,
+    collection_content_type: str,
+) -> list[ChunkDocument]:
+    return [
+        _build_chunk_document(
+            path=path,
+            language=language,
+            content=content,
+            start_line=start_line,
+            end_line=end_line,
+            content_type=content_type,
+            chunk_strategy=chunk_strategy,
+            collection_content_type=collection_content_type,
+        )
+        for start_line, end_line, content in blocks
+    ]
+
+
 def _build_chunk_document(
     *,
     path: str,
@@ -377,7 +417,40 @@ def chunk_file_documents(
 
     python_specs: tuple[PythonChunkSpec, ...] | None = None
     ts_specs: tuple[TsChunkSpec, ...] | None = None
-    if _should_use_python_symbol_chunking(
+    if content_type == DOC_SECTION_CONTENT_TYPE:
+        chunks_list.extend(
+            _build_generic_chunks(
+                blocks=chunk_docs_source(text=text, path=resolved_file),
+                path=normalized_path,
+                language=language,
+                content_type=content_type,
+                chunk_strategy=DOC_SECTION_CHUNK_STRATEGY,
+                collection_content_type=collection_content_type,
+            )
+        )
+    elif content_type == CONFIG_BLOCK_CONTENT_TYPE:
+        chunks_list.extend(
+            _build_generic_chunks(
+                blocks=chunk_config_source(text=text, path=resolved_file),
+                path=normalized_path,
+                language=language,
+                content_type=content_type,
+                chunk_strategy=CONFIG_SECTION_CHUNK_STRATEGY,
+                collection_content_type=collection_content_type,
+            )
+        )
+    elif content_type == SQL_BLOCK_CONTENT_TYPE:
+        chunks_list.extend(
+            _build_generic_chunks(
+                blocks=chunk_sql_source(text),
+                path=normalized_path,
+                language=language,
+                content_type=content_type,
+                chunk_strategy=SQL_STATEMENT_CHUNK_STRATEGY,
+                collection_content_type=collection_content_type,
+            )
+        )
+    elif _should_use_python_symbol_chunking(
         language=language,
         content_type=content_type,
         collection_content_type=collection_content_type,
@@ -399,7 +472,9 @@ def chunk_file_documents(
             class_max_lines=chunk_lines,
         )
 
-    if python_specs is not None and (python_specs or not text.strip()):
+    if chunks_list:
+        pass
+    elif python_specs is not None and (python_specs or not text.strip()):
         for spec in python_specs:
             chunks_list.append(
                 _build_chunk_document(
