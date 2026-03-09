@@ -23,6 +23,7 @@ from indexer.chunk_models import (
     IndexedChunk,
     LINE_WINDOW_CHUNK_STRATEGY,
     PYTHON_SYMBOL_CHUNK_STRATEGY,
+    TS_SYMBOL_CHUNK_STRATEGY,
 )
 
 
@@ -408,6 +409,165 @@ class ChunkFileTests(unittest.TestCase):
             self.assertEqual(chunk.contentType, "code_context")
             self.assertIsNone(chunk.symbolName)
             self.assertIn("def broken(", chunk.content)
+
+    def test_chunk_file_uses_ts_symbol_strategy_for_valid_tsx_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            file_path = repo_root / "src" / "components" / "product-card.tsx"
+            file_path.parent.mkdir(parents=True)
+            file_path.write_text(
+                "import { api } from './api';\n\n"
+                "export const useProduct = (id: string) => {\n"
+                "  return api.load(id);\n"
+                "};\n\n"
+                "export function ProductCard({ title }: { title: string }) {\n"
+                "  return <section>{title}</section>;\n"
+                "}\n",
+                encoding="utf-8",
+            )
+
+            result = chunk_file_documents(
+                file_path=file_path,
+                repo_root=repo_root,
+                chunk_lines=10,
+                overlap=0,
+                as_posix=True,
+            )
+
+            self.assertEqual(len(result.chunks), 3)
+            import_chunk = result.chunks[0]
+            hook_chunk = result.chunks[1]
+            component_chunk = result.chunks[2]
+
+            self.assertEqual(import_chunk.contentType, "code_context")
+            self.assertEqual(hook_chunk.chunkStrategy, TS_SYMBOL_CHUNK_STRATEGY)
+            self.assertEqual(hook_chunk.contentType, "code_symbol")
+            self.assertEqual(hook_chunk.collectionContentType, "code")
+            self.assertEqual(hook_chunk.symbolName, "useProduct")
+            self.assertEqual(hook_chunk.symbolType, "hook")
+            self.assertEqual(hook_chunk.imports, ("./api",))
+            self.assertEqual(hook_chunk.exports, ("useProduct", "ProductCard"))
+            self.assertIn("Signature: export const useProduct = (id: string) =>", hook_chunk.contextText)
+
+            self.assertEqual(component_chunk.symbolName, "ProductCard")
+            self.assertEqual(component_chunk.symbolType, "component")
+            self.assertIn("<section>{title}</section>", component_chunk.content)
+
+    def test_chunk_file_keeps_ts_symbol_chunk_id_stable_when_lines_shift(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            file_path = repo_root / "src" / "service.ts"
+            file_path.parent.mkdir(parents=True)
+            file_path.write_text(
+                "export const loadData = (id: string) => {\n"
+                "  return id;\n"
+                "};\n",
+                encoding="utf-8",
+            )
+
+            initial = chunk_file_documents(
+                file_path=file_path,
+                repo_root=repo_root,
+                chunk_lines=10,
+                overlap=0,
+                as_posix=True,
+            )
+
+            file_path.write_text(
+                "// comment added above\n\n"
+                "export const loadData = (id: string) => {\n"
+                "  return id;\n"
+                "};\n",
+                encoding="utf-8",
+            )
+
+            updated = chunk_file_documents(
+                file_path=file_path,
+                repo_root=repo_root,
+                chunk_lines=10,
+                overlap=0,
+                as_posix=True,
+            )
+
+            self.assertEqual(len(initial.chunks), 1)
+            self.assertEqual(len(updated.chunks), 2)
+
+            updated_symbol = next(chunk for chunk in updated.chunks if chunk.symbolName == "loadData")
+            context_chunk = next(chunk for chunk in updated.chunks if chunk.symbolName is None)
+
+            self.assertEqual(initial.chunks[0].chunkId, updated_symbol.chunkId)
+            self.assertNotEqual(initial.chunks[0].startLine, updated_symbol.startLine)
+            self.assertEqual(updated_symbol.chunkStrategy, TS_SYMBOL_CHUNK_STRATEGY)
+            self.assertIn("// comment added above", context_chunk.content)
+
+    def test_chunk_file_keeps_anonymous_default_ts_export_chunk_id_stable_when_lines_shift(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            file_path = repo_root / "src" / "components" / "product-card.tsx"
+            file_path.parent.mkdir(parents=True)
+            file_path.write_text(
+                "export default () => <section />;\n",
+                encoding="utf-8",
+            )
+
+            initial = chunk_file_documents(
+                file_path=file_path,
+                repo_root=repo_root,
+                chunk_lines=10,
+                overlap=0,
+                as_posix=True,
+            )
+
+            file_path.write_text(
+                "// comment added above\n"
+                "export default () => <section />;\n",
+                encoding="utf-8",
+            )
+
+            updated = chunk_file_documents(
+                file_path=file_path,
+                repo_root=repo_root,
+                chunk_lines=10,
+                overlap=0,
+                as_posix=True,
+            )
+
+            self.assertEqual(len(initial.chunks), 1)
+            self.assertEqual(len(updated.chunks), 2)
+
+            updated_symbol = next(chunk for chunk in updated.chunks if chunk.symbolName == "default")
+            context_chunk = next(chunk for chunk in updated.chunks if chunk.symbolName is None)
+
+            self.assertEqual(initial.chunks[0].chunkId, updated_symbol.chunkId)
+            self.assertEqual(updated_symbol.chunkStrategy, TS_SYMBOL_CHUNK_STRATEGY)
+            self.assertEqual(updated_symbol.symbolType, "component")
+            self.assertIn("// comment added above", context_chunk.content)
+
+    def test_chunk_file_falls_back_to_line_window_when_ts_parse_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            file_path = repo_root / "src" / "broken.ts"
+            file_path.parent.mkdir(parents=True)
+            file_path.write_text(
+                "export const broken = () => {\n"
+                "  return 1;\n",
+                encoding="utf-8",
+            )
+
+            result = chunk_file_documents(
+                file_path=file_path,
+                repo_root=repo_root,
+                chunk_lines=10,
+                overlap=0,
+                as_posix=True,
+            )
+
+            self.assertEqual(len(result.chunks), 1)
+            chunk = result.chunks[0]
+            self.assertEqual(chunk.chunkStrategy, LINE_WINDOW_CHUNK_STRATEGY)
+            self.assertEqual(chunk.contentType, "code_context")
+            self.assertIsNone(chunk.symbolName)
+            self.assertIn("export const broken", chunk.content)
 
     def test_indexed_chunk_serializes_doc_payload_to_docs_collection(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
