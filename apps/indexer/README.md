@@ -181,9 +181,9 @@ Este comando:
 3. **Embed** - Gera embeddings em batches via provider por tipo de conteúdo
 4. **Upsert** - Armazena vetores no Qdrant com IDs estáveis
 
-**IDs estáveis**: o `chunkId` agora representa a identidade estrutural do chunk (`path:start:end:language`) e o `contentHash` representa a versão textual atual do conteúdo do chunk. Reindexar o mesmo bloco estrutural não duplica pontos; mudanças de texto atualizam o payload, mas preservam a identidade do ponto.
+**IDs estáveis**: o `chunkId` representa a identidade estrutural do chunk. Em `line_window`, ele continua ancorado em `path:start:end:language`; em chunking por símbolo, passa a ancorar em metadados estruturais como `qualifiedSymbolName`. O `contentHash` representa a versão textual atual do conteúdo do chunk.
 
-**Migracao de schema**: a introducao de `chunkSchemaVersion=v2` exige **reindexacao completa obrigatoria** no primeiro rollout. Nao tente misturar pontos antigos e novos na mesma collection; descarte os pontos antigos ou recrie a collection antes do rebuild.
+**Migracao de schema**: a introducao de `chunkSchemaVersion=v3` exige **reindexacao completa obrigatoria** no rollout desta fase. Nao tente misturar pontos antigos e novos na mesma collection; descarte os pontos antigos ou recrie a collection antes do rebuild.
 
 **Saída:**
 ```json
