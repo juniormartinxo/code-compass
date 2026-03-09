@@ -11,6 +11,8 @@ from unittest import mock
 
 from indexer.chunk_models import CHUNK_SCHEMA_VERSION
 
+_FIXTURE_REPO_ROOT = Path(__file__).resolve().parent / "fixtures" / "chunking"
+
 
 class ScanCliTests(unittest.TestCase):
     def test_cli_scan_outputs_json_payload(self) -> None:
@@ -372,6 +374,60 @@ class ChunkCliTests(unittest.TestCase):
                 self.assertEqual(payload["stats"]["chunks"], expected_chunks)
                 self.assertEqual(payload["chunks"][0]["chunkStrategy"], expected_strategy)
                 self.assertEqual(payload["chunks"][0]["contentType"], expected_type)
+
+    def test_cli_chunk_uses_semantic_fixture_repo_for_python_and_tsx(self) -> None:
+        scenarios = (
+            (
+                _FIXTURE_REPO_ROOT / "src" / "service_large.py",
+                3,
+                5,
+                {"helper", "Service", "Service.load", "Service.save"},
+            ),
+            (
+                _FIXTURE_REPO_ROOT / "src" / "product-card.tsx",
+                20,
+                4,
+                {"formatPrice", "useProduct", "ProductCard"},
+            ),
+        )
+
+        for file_path, chunk_lines, expected_chunks, expected_symbols in scenarios:
+            with self.subTest(file=file_path.name):
+                completed = subprocess.run(
+                    [
+                        sys.executable,
+                        "-m",
+                        "indexer",
+                        "chunk",
+                        "--file",
+                        str(file_path),
+                        "--repo-root",
+                        str(_FIXTURE_REPO_ROOT),
+                        "--chunk-lines",
+                        str(chunk_lines),
+                        "--overlap-lines",
+                        "0",
+                        "--as-posix",
+                    ],
+                    cwd=Path(__file__).resolve().parents[1],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+
+                self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+                payload = json.loads(completed.stdout)
+
+                self.assertEqual(payload["stats"]["chunks"], expected_chunks)
+                self.assertTrue(
+                    all(chunk["chunkSchemaVersion"] == CHUNK_SCHEMA_VERSION for chunk in payload["chunks"])
+                )
+                symbol_names = {
+                    chunk["qualifiedSymbolName"]
+                    for chunk in payload["chunks"]
+                    if chunk["qualifiedSymbolName"] is not None
+                }
+                self.assertEqual(symbol_names, expected_symbols)
 
     def test_cli_chunk_rejects_invalid_overlap(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
