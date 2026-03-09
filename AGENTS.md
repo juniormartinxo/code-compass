@@ -7,6 +7,7 @@
 - Nunca commitar segredos, chaves ou tokens.
 - Se houver ambiguidade com risco de breaking change, parar e perguntar.
 - Só implemente código após receber aprovação do usuário com o comando `implemente`.
+- NUNCA documente o path completo do arquivo-alvo. Use apenas o path relativo ao root do repo.
 
 ## Skills
 
