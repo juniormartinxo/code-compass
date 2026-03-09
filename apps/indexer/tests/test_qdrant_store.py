@@ -268,6 +268,51 @@ class TestQdrantStore(unittest.TestCase):
         self.assertEqual(mock_client.upsert.call_count, 4)
 
     @patch("indexer.qdrant_store.QdrantClient")
+    def test_scroll_points_returns_id_and_payload(self, mock_client_class: MagicMock) -> None:
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+
+        first = MagicMock()
+        first.id = "a"
+        first.payload = {"chunk_id": "c1"}
+        second = MagicMock()
+        second.id = "b"
+        second.payload = {"chunk_id": "c2"}
+        mock_client.scroll.side_effect = [
+            ([first], "next"),
+            ([second], None),
+        ]
+
+        store = QdrantStore(self._make_config())
+        result = store.scroll_points(
+            collection_name="chunks",
+            payload_fields=["chunk_id"],
+        )
+
+        self.assertEqual(
+            result,
+            [
+                {"id": "a", "payload": {"chunk_id": "c1"}},
+                {"id": "b", "payload": {"chunk_id": "c2"}},
+            ],
+        )
+
+    @patch("indexer.qdrant_store.QdrantClient")
+    def test_delete_points_uses_point_ids_selector(self, mock_client_class: MagicMock) -> None:
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+
+        store = QdrantStore(self._make_config())
+        deleted = store.delete_points(
+            collection_name="chunks",
+            point_ids=["p1", "p2"],
+        )
+
+        self.assertEqual(deleted, 2)
+        selector = mock_client.delete.call_args.kwargs["points_selector"]
+        self.assertEqual(selector.points, ["p1", "p2"])
+
+    @patch("indexer.qdrant_store.QdrantClient")
     def test_search_basic(self, mock_client_class: MagicMock) -> None:
         """Deve buscar vetores similares."""
         mock_client = MagicMock()
