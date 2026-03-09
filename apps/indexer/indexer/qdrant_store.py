@@ -413,6 +413,67 @@ class QdrantStore:
             count_filter=mismatch_filter,
         )
 
+    def scroll_points(
+        self,
+        *,
+        collection_name: str,
+        scroll_filter: models.Filter | None = None,
+        payload_fields: list[str] | bool | None = None,
+        limit: int = 256,
+    ) -> list[dict[str, Any]]:
+        """Percorre pontos de uma collection retornando id e payload."""
+        results: list[dict[str, Any]] = []
+        offset: Any = None
+
+        try:
+            while True:
+                points, offset = self.client.scroll(
+                    collection_name=collection_name,
+                    scroll_filter=scroll_filter,
+                    limit=limit,
+                    with_payload=payload_fields if payload_fields is not None else True,
+                    with_vectors=False,
+                    offset=offset,
+                )
+                for point in points:
+                    results.append(
+                        {
+                            "id": point.id,
+                            "payload": point.payload or {},
+                        }
+                    )
+                if offset is None:
+                    break
+        except Exception as exc:
+            raise QdrantStoreError(
+                f"Erro ao percorrer pontos da collection '{collection_name}': {exc}"
+            ) from exc
+
+        return results
+
+    def delete_points(
+        self,
+        *,
+        collection_name: str,
+        point_ids: list[str | int],
+    ) -> int:
+        """Remove pontos explicitamente por id."""
+        if not point_ids:
+            return 0
+
+        try:
+            self.client.delete(
+                collection_name=collection_name,
+                points_selector=models.PointIdsList(points=point_ids),
+                wait=True,
+            )
+        except Exception as exc:
+            raise QdrantStoreError(
+                f"Erro ao deletar pontos da collection '{collection_name}': {exc}"
+            ) from exc
+
+        return len(point_ids)
+
     def upsert(
         self,
         points: list[dict[str, Any]],
