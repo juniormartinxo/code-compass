@@ -270,6 +270,8 @@ def _build_chunk_document(
     signature: str | None = None,
     imports: tuple[str, ...] = (),
     exports: tuple[str, ...] = (),
+    callers: tuple[str, ...] = (),
+    callees: tuple[str, ...] = (),
 ) -> ChunkDocument:
     summary_text = _build_summary_text(
         path=path,
@@ -321,6 +323,8 @@ def _build_chunk_document(
         signature=signature,
         imports=imports,
         exports=exports,
+        callers=callers,
+        callees=callees,
         summaryText=summary_text,
         contextText=context_text,
         chunkStrategy=chunk_strategy,
@@ -412,6 +416,8 @@ def chunk_file_documents(
                     symbol_type=spec.symbolType,
                     parent_symbol=spec.parentSymbol,
                     signature=spec.signature,
+                    callers=spec.callers,
+                    callees=spec.callees,
                 )
             )
     elif ts_specs is not None and (ts_specs or not text.strip()):
@@ -433,6 +439,8 @@ def chunk_file_documents(
                     signature=spec.signature,
                     imports=spec.imports,
                     exports=spec.exports,
+                    callers=spec.callers,
+                    callees=spec.callees,
                 )
             )
     else:
