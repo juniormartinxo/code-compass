@@ -20,9 +20,12 @@ from indexer.chunk import (
 )
 from indexer.chunk_models import (
     CHUNK_SCHEMA_VERSION,
+    CONFIG_SECTION_CHUNK_STRATEGY,
+    DOC_SECTION_CHUNK_STRATEGY,
     IndexedChunk,
     LINE_WINDOW_CHUNK_STRATEGY,
     PYTHON_SYMBOL_CHUNK_STRATEGY,
+    SQL_STATEMENT_CHUNK_STRATEGY,
     TS_SYMBOL_CHUNK_STRATEGY,
 )
 
@@ -139,6 +142,7 @@ class ChunkCoreTests(unittest.TestCase):
     def test_detect_language_uses_extension_map(self) -> None:
         self.assertEqual(detect_language(Path("a.tsx")), "typescriptreact")
         self.assertEqual(detect_language(Path("a.yml")), "yaml")
+        self.assertEqual(detect_language(Path("a.sql")), "sql")
         self.assertEqual(detect_language(Path("a.unknown")), "text")
 
     def test_read_text_supports_utf8_sig_fallback(self) -> None:
@@ -603,6 +607,190 @@ class ChunkFileTests(unittest.TestCase):
             self.assertEqual(document.collectionContentType, "docs")
             self.assertEqual(payload["content_type"], "docs")
             self.assertEqual(payload["chunk_content_type"], "doc_section")
+
+    def test_chunk_file_uses_doc_section_strategy_for_markdown_headings(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            file_path = repo_root / "docs" / "guide.md"
+            file_path.parent.mkdir(parents=True)
+            file_path.write_text(
+                "# Guide\n"
+                "intro\n\n"
+                "## Install\n"
+                "step 1\n",
+                encoding="utf-8",
+            )
+
+            result = chunk_file_documents(
+                file_path=file_path,
+                repo_root=repo_root,
+                chunk_lines=40,
+                overlap=0,
+                as_posix=True,
+            )
+
+            self.assertEqual(len(result.chunks), 2)
+            self.assertEqual(result.chunks[0].chunkStrategy, DOC_SECTION_CHUNK_STRATEGY)
+            self.assertEqual(result.chunks[0].contentType, "doc_section")
+            self.assertEqual(result.chunks[0].startLine, 1)
+            self.assertEqual(result.chunks[0].endLine, 2)
+            self.assertEqual(result.chunks[1].startLine, 4)
+            self.assertEqual(result.chunks[1].endLine, 5)
+            self.assertIn("## Install", result.chunks[1].content)
+
+    def test_chunk_file_does_not_split_markdown_inside_fenced_code_block(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            file_path = repo_root / "docs" / "guide.md"
+            file_path.parent.mkdir(parents=True)
+            file_path.write_text(
+                "# Guide\n"
+                "\n"
+                "```sh\n"
+                "# comment inside code\n"
+                "echo ok\n"
+                "```\n"
+                "\n"
+                "## Next\n"
+                "body\n",
+                encoding="utf-8",
+            )
+
+            result = chunk_file_documents(
+                file_path=file_path,
+                repo_root=repo_root,
+                chunk_lines=40,
+                overlap=0,
+                as_posix=True,
+            )
+
+            self.assertEqual(len(result.chunks), 2)
+            self.assertEqual(result.chunks[0].startLine, 1)
+            self.assertEqual(result.chunks[0].endLine, 6)
+            self.assertIn("# comment inside code", result.chunks[0].content)
+            self.assertEqual(result.chunks[1].startLine, 8)
+            self.assertEqual(result.chunks[1].endLine, 9)
+
+    def test_chunk_file_uses_doc_section_strategy_for_rst_headings(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            file_path = repo_root / "docs" / "guide.rst"
+            file_path.parent.mkdir(parents=True)
+            file_path.write_text(
+                "Guide\n"
+                "=====\n"
+                "intro\n"
+                "\n"
+                "Install\n"
+                "-------\n"
+                "step 1\n",
+                encoding="utf-8",
+            )
+
+            result = chunk_file_documents(
+                file_path=file_path,
+                repo_root=repo_root,
+                chunk_lines=40,
+                overlap=0,
+                as_posix=True,
+            )
+
+            self.assertEqual(len(result.chunks), 2)
+            self.assertEqual(result.chunks[0].chunkStrategy, DOC_SECTION_CHUNK_STRATEGY)
+            self.assertEqual(result.chunks[0].contentType, "doc_section")
+            self.assertEqual(result.chunks[0].startLine, 1)
+            self.assertEqual(result.chunks[0].endLine, 3)
+            self.assertEqual(result.chunks[1].startLine, 5)
+            self.assertEqual(result.chunks[1].endLine, 7)
+            self.assertIn("Install", result.chunks[1].content)
+
+    def test_chunk_file_uses_config_section_strategy_for_yaml_blocks(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            file_path = repo_root / "infra" / "settings.yaml"
+            file_path.parent.mkdir(parents=True)
+            file_path.write_text(
+                "app:\n"
+                "  debug: true\n\n"
+                "db:\n"
+                "  host: localhost\n",
+                encoding="utf-8",
+            )
+
+            result = chunk_file_documents(
+                file_path=file_path,
+                repo_root=repo_root,
+                chunk_lines=40,
+                overlap=0,
+                as_posix=True,
+            )
+
+            self.assertEqual(len(result.chunks), 2)
+            self.assertEqual(result.chunks[0].chunkStrategy, CONFIG_SECTION_CHUNK_STRATEGY)
+            self.assertEqual(result.chunks[0].contentType, "config_block")
+            self.assertEqual(result.chunks[0].collectionContentType, "code")
+            self.assertEqual(result.chunks[0].startLine, 1)
+            self.assertEqual(result.chunks[0].endLine, 2)
+            self.assertEqual(result.chunks[1].startLine, 4)
+            self.assertEqual(result.chunks[1].endLine, 5)
+
+    def test_chunk_file_uses_sql_statement_strategy_for_multiple_queries(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            file_path = repo_root / "db" / "queries.sql"
+            file_path.parent.mkdir(parents=True)
+            file_path.write_text(
+                "SELECT 1;\n\n"
+                "SELECT 2;\n",
+                encoding="utf-8",
+            )
+
+            result = chunk_file_documents(
+                file_path=file_path,
+                repo_root=repo_root,
+                chunk_lines=40,
+                overlap=0,
+                as_posix=True,
+            )
+
+            self.assertEqual(len(result.chunks), 2)
+            self.assertEqual(result.chunks[0].chunkStrategy, SQL_STATEMENT_CHUNK_STRATEGY)
+            self.assertEqual(result.chunks[0].contentType, "sql_block")
+            self.assertEqual(result.chunks[0].language, "sql")
+            self.assertEqual(result.chunks[0].content, "SELECT 1;")
+            self.assertEqual(result.chunks[1].content, "SELECT 2;")
+
+    def test_chunk_file_keeps_dollar_quoted_sql_function_as_single_statement(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            file_path = repo_root / "db" / "functions.sql"
+            file_path.parent.mkdir(parents=True)
+            file_path.write_text(
+                "CREATE FUNCTION demo() RETURNS void AS $$\n"
+                "BEGIN\n"
+                "  RAISE NOTICE 'x';\n"
+                "END;\n"
+                "$$ LANGUAGE plpgsql;\n"
+                "\n"
+                "SELECT 1;\n",
+                encoding="utf-8",
+            )
+
+            result = chunk_file_documents(
+                file_path=file_path,
+                repo_root=repo_root,
+                chunk_lines=80,
+                overlap=0,
+                as_posix=True,
+            )
+
+            self.assertEqual(len(result.chunks), 2)
+            self.assertEqual(result.chunks[0].chunkStrategy, SQL_STATEMENT_CHUNK_STRATEGY)
+            self.assertEqual(result.chunks[0].startLine, 1)
+            self.assertEqual(result.chunks[0].endLine, 5)
+            self.assertIn("RAISE NOTICE 'x';", result.chunks[0].content)
+            self.assertIn("$$ LANGUAGE plpgsql;", result.chunks[0].content)
+            self.assertEqual(result.chunks[1].content, "SELECT 1;")
 
     def test_chunk_document_to_dict_serializes_tuple_fields_as_lists(self) -> None:
         document = chunk_file_documents(
