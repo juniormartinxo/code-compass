@@ -1,0 +1,7 @@
+CREATE FUNCTION demo() RETURNS void AS $$
+BEGIN
+  RAISE NOTICE 'x';
+END;
+$$ LANGUAGE plpgsql;
+
+SELECT 1;
