@@ -16,6 +16,7 @@ from .chunk_models import (
     LINE_WINDOW_CHUNK_STRATEGY,
 )
 from .chunk_python import PythonChunkSpec, chunk_python_source
+from .chunk_ts import TsChunkSpec, chunk_ts_source
 
 _LANGUAGE_BY_SUFFIX: dict[str, str] = {
     ".ts": "typescript",
@@ -267,6 +268,8 @@ def _build_chunk_document(
     symbol_type: str | None = None,
     parent_symbol: str | None = None,
     signature: str | None = None,
+    imports: tuple[str, ...] = (),
+    exports: tuple[str, ...] = (),
 ) -> ChunkDocument:
     summary_text = _build_summary_text(
         path=path,
@@ -316,6 +319,8 @@ def _build_chunk_document(
         symbolType=symbol_type,
         parentSymbol=parent_symbol,
         signature=signature,
+        imports=imports,
+        exports=exports,
         summaryText=summary_text,
         contextText=context_text,
         chunkStrategy=chunk_strategy,
@@ -367,6 +372,7 @@ def chunk_file_documents(
     chunks_list: list[ChunkDocument] = []
 
     python_specs: tuple[PythonChunkSpec, ...] | None = None
+    ts_specs: tuple[TsChunkSpec, ...] | None = None
     if _should_use_python_symbol_chunking(
         language=language,
         content_type=content_type,
@@ -374,6 +380,17 @@ def chunk_file_documents(
     ):
         python_specs = chunk_python_source(
             text=text,
+            file_content_type=content_type,
+            class_max_lines=chunk_lines,
+        )
+    elif _should_use_ts_symbol_chunking(
+        language=language,
+        content_type=content_type,
+        collection_content_type=collection_content_type,
+    ):
+        ts_specs = chunk_ts_source(
+            text=text,
+            language=language,
             file_content_type=content_type,
             class_max_lines=chunk_lines,
         )
@@ -395,6 +412,27 @@ def chunk_file_documents(
                     symbol_type=spec.symbolType,
                     parent_symbol=spec.parentSymbol,
                     signature=spec.signature,
+                )
+            )
+    elif ts_specs is not None and (ts_specs or not text.strip()):
+        for spec in ts_specs:
+            chunks_list.append(
+                _build_chunk_document(
+                    path=normalized_path,
+                    language=language,
+                    content=spec.content,
+                    start_line=spec.startLine,
+                    end_line=spec.endLine,
+                    content_type=spec.contentType,
+                    chunk_strategy=spec.chunkStrategy,
+                    collection_content_type=resolve_collection_content_type(spec.contentType),
+                    symbol_name=spec.symbolName,
+                    qualified_symbol_name=spec.qualifiedSymbolName,
+                    symbol_type=spec.symbolType,
+                    parent_symbol=spec.parentSymbol,
+                    signature=spec.signature,
+                    imports=spec.imports,
+                    exports=spec.exports,
                 )
             )
     else:
@@ -445,3 +483,21 @@ def chunk_file(
         as_posix=as_posix,
         runtime_config=runtime_config,
     ).to_dict()
+
+
+def _should_use_ts_symbol_chunking(
+    *,
+    language: str,
+    content_type: str,
+    collection_content_type: str,
+) -> bool:
+    if language not in {
+        "typescript",
+        "typescriptreact",
+        "javascript",
+        "javascriptreact",
+    }:
+        return False
+    if collection_content_type != "code":
+        return False
+    return content_type not in {CONFIG_BLOCK_CONTENT_TYPE, SQL_BLOCK_CONTENT_TYPE}
