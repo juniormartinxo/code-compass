@@ -9,6 +9,7 @@ from unittest.mock import patch
 from indexer.config import (
     DEFAULT_CHUNK_LINES,
     DEFAULT_CHUNK_OVERLAP_LINES,
+    DEFAULT_ALLOW_EXTS,
     DEFAULT_CONTENT_TYPES,
     DEFAULT_DOC_EXTENSIONS,
     DEFAULT_DOC_PATH_HINTS,
@@ -77,6 +78,12 @@ class ScanConfigTests(unittest.TestCase):
             self.assertIn("venv", config.ignore_dirs)
             self.assertIn("__pycache__", config.ignore_dirs)
             self.assertIn(".pytest_cache", config.ignore_dirs)
+
+    def test_load_scan_config_defaults_include_phase_8_extensions(self) -> None:
+        self.assertTrue(
+            {".mdx", ".rst", ".adoc", ".txt", ".toml", ".ini", ".cfg", ".conf", ".sql"}
+            <= DEFAULT_ALLOW_EXTS
+        )
 
 
 class ChunkConfigTests(unittest.TestCase):
