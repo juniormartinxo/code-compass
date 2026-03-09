@@ -564,5 +564,116 @@ class IndexPreflightTests(unittest.TestCase):
         self.assertEqual(store.count_points.call_count, 2)
 
 
+class IndexIncrementalCleanupTests(unittest.TestCase):
+    def test_should_run_stale_cleanup_skips_partial_scan_from_max_files(self) -> None:
+        from indexer.__main__ import _should_run_stale_cleanup
+
+        self.assertFalse(
+            _should_run_stale_cleanup(
+                max_files=1,
+                returned_file_count=1,
+                kept_file_count=3,
+            )
+        )
+
+    def test_should_run_stale_cleanup_allows_full_scan(self) -> None:
+        from indexer.__main__ import _should_run_stale_cleanup
+
+        self.assertTrue(
+            _should_run_stale_cleanup(
+                max_files=None,
+                returned_file_count=3,
+                kept_file_count=3,
+            )
+        )
+        self.assertTrue(
+            _should_run_stale_cleanup(
+                max_files=10,
+                returned_file_count=3,
+                kept_file_count=3,
+            )
+        )
+
+    def test_build_current_chunk_ids_by_path_and_type_groups_payloads(self) -> None:
+        from indexer.__main__ import _build_current_chunk_ids_by_path_and_type
+
+        grouped = _build_current_chunk_ids_by_path_and_type(
+            {
+                "code": [
+                    {"payload": {"path": "src/a.py", "chunk_id": "c1"}},
+                    {"payload": {"path": "src/a.py", "chunk_id": "c2"}},
+                ],
+                "docs": [
+                    {"payload": {"path": "docs/guide.md", "chunk_id": "d1"}},
+                ],
+            },
+            content_types=("code", "docs"),
+        )
+
+        self.assertEqual(grouped["src/a.py"]["code"], {"c1", "c2"})
+        self.assertEqual(grouped["docs/guide.md"]["docs"], {"d1"})
+
+    def test_delete_stale_repo_points_removes_deleted_changed_and_reclassified_points(self) -> None:
+        from indexer.__main__ import _delete_stale_repo_points
+
+        store = mock.Mock()
+        store.scroll_points.side_effect = [
+            [
+                {"id": "keep-code", "payload": {"path": "src/keep.py", "chunk_id": "k1"}},
+                {"id": "stale-code", "payload": {"path": "src/keep.py", "chunk_id": "old"}},
+                {"id": "deleted-file", "payload": {"path": "src/removed.py", "chunk_id": "r1"}},
+                {"id": "chunk-error", "payload": {"path": "src/broken.py", "chunk_id": "b1"}},
+            ],
+            [
+                {"id": "old-doc", "payload": {"path": "src/keep.py", "chunk_id": "k1"}},
+            ],
+        ]
+        store.delete_points.side_effect = [2, 1]
+
+        deleted = _delete_stale_repo_points(
+            store=store,
+            collection_names={"code": "repo__code", "docs": "repo__docs"},
+            content_types=("code", "docs"),
+            repo="repo",
+            repo_root=Path("/tmp/repo"),
+            scanned_file_paths={"src/keep.py", "src/broken.py"},
+            indexed_file_paths={"src/keep.py"},
+            current_chunk_ids_by_path_and_type={"src/keep.py": {"code": {"k1"}}},
+        )
+
+        self.assertEqual(deleted, {"code": 2, "docs": 1})
+        self.assertEqual(store.delete_points.call_args_list[0].kwargs["point_ids"], ["stale-code", "deleted-file"])
+        self.assertEqual(store.delete_points.call_args_list[1].kwargs["point_ids"], ["old-doc"])
+
+    def test_delete_stale_repo_points_removes_all_repo_points_when_full_scan_returns_no_files(self) -> None:
+        from indexer.__main__ import _delete_stale_repo_points
+
+        store = mock.Mock()
+        store.scroll_points.side_effect = [
+            [
+                {"id": "code-1", "payload": {"path": "src/keep.py", "chunk_id": "k1"}},
+            ],
+            [
+                {"id": "docs-1", "payload": {"path": "docs/guide.md", "chunk_id": "d1"}},
+            ],
+        ]
+        store.delete_points.side_effect = [1, 1]
+
+        deleted = _delete_stale_repo_points(
+            store=store,
+            collection_names={"code": "repo__code", "docs": "repo__docs"},
+            content_types=("code", "docs"),
+            repo="repo",
+            repo_root=Path("/tmp/repo"),
+            scanned_file_paths=set(),
+            indexed_file_paths=set(),
+            current_chunk_ids_by_path_and_type={},
+        )
+
+        self.assertEqual(deleted, {"code": 1, "docs": 1})
+        self.assertEqual(store.delete_points.call_args_list[0].kwargs["point_ids"], ["code-1"])
+        self.assertEqual(store.delete_points.call_args_list[1].kwargs["point_ids"], ["docs-1"])
+
+
 if __name__ == "__main__":
     unittest.main()
