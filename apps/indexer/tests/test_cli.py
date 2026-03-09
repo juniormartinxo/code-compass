@@ -264,7 +264,11 @@ class ChunkCliTests(unittest.TestCase):
             self.assertEqual(hook_chunk["symbolType"], "hook")
             self.assertEqual(hook_chunk["imports"], ["./api"])
             self.assertEqual(hook_chunk["exports"], ["useProduct", "ProductCard"])
+            self.assertEqual(hook_chunk["callers"], [])
+            self.assertEqual(hook_chunk["callees"], ["api.load"])
             self.assertEqual(component_chunk["symbolType"], "component")
+            self.assertEqual(component_chunk["callers"], [])
+            self.assertEqual(component_chunk["callees"], [])
 
     def test_cli_chunk_falls_back_to_line_window_for_invalid_ts_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
