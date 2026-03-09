@@ -22,6 +22,7 @@ DEFAULT_EMBEDDING_MAX_RETRIES = 5
 DEFAULT_EMBEDDING_BACKOFF_BASE_MS = 500
 DEFAULT_TIMEOUT_SECONDS = 120
 DEFAULT_EMBEDDING_INPUT_MODE = "content"
+_VALID_EMBEDDING_INPUT_MODES = {"content", "summary_content"}
 
 
 def _normalize_content_type(content_type: str) -> str:
@@ -31,13 +32,20 @@ def _normalize_content_type(content_type: str) -> str:
     return normalized
 
 
+def _normalize_embedding_input_mode(mode: str) -> str:
+    normalized = mode.strip().lower()
+    if normalized not in _VALID_EMBEDDING_INPUT_MODES:
+        raise ValueError("mode deve ser 'content' ou 'summary_content'")
+    return normalized
+
+
 def build_embedding_text(
     *,
     content: str,
     summary_text: str | None = None,
     mode: str = DEFAULT_EMBEDDING_INPUT_MODE,
 ) -> str:
-    normalized_mode = mode.strip().lower()
+    normalized_mode = _normalize_embedding_input_mode(mode)
     if normalized_mode == "content":
         return content
     if normalized_mode == "summary_content":
@@ -47,7 +55,6 @@ def build_embedding_text(
         if not content:
             return normalized_summary
         return f"{normalized_summary}\n\n{content}"
-    raise ValueError("mode deve ser 'content' ou 'summary_content'")
 
 
 @dataclass(frozen=True)
@@ -63,6 +70,7 @@ class EmbedderConfig:
     max_retries: int
     backoff_base_ms: int
     timeout_seconds: int
+    input_mode: str
 
 
 def load_embedder_config(
@@ -71,6 +79,7 @@ def load_embedder_config(
     api_key: str | None = None,
     model: str | None = None,
     provider: str | None = None,
+    input_mode: str | None = None,
     batch_size: int | None = None,
     max_retries: int | None = None,
     backoff_base_ms: int | None = None,
@@ -135,6 +144,14 @@ def load_embedder_config(
             f"'{resolved_provider}'."
         )
 
+    resolved_input_mode_raw = (
+        input_mode
+        or os.getenv(f"EMBEDDING_INPUT_MODE_{suffix}")
+        or os.getenv("EMBEDDING_INPUT_MODE")
+        or DEFAULT_EMBEDDING_INPUT_MODE
+    )
+    resolved_input_mode = _normalize_embedding_input_mode(resolved_input_mode_raw)
+
     return EmbedderConfig(
         content_type=resolved_content_type,
         provider=resolved_provider,
@@ -151,6 +168,7 @@ def load_embedder_config(
         ),
         timeout_seconds=timeout_seconds
         or int(os.getenv("EMBEDDING_TIMEOUT_SECONDS", str(DEFAULT_TIMEOUT_SECONDS))),
+        input_mode=resolved_input_mode,
     )
 
 
