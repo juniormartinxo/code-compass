@@ -421,6 +421,108 @@ def _build_ask_scope_payload(args: argparse.Namespace) -> dict[str, object]:
     )
 
 
+def _build_current_chunk_ids_by_path_and_type(
+    points_by_type: dict[str, list[dict[str, object]]],
+    *,
+    content_types: tuple[str, ...],
+) -> dict[str, dict[str, set[str]]]:
+    current: dict[str, dict[str, set[str]]] = {}
+
+    for content_type in content_types:
+        for point in points_by_type.get(content_type, []):
+            payload = point.get("payload", {})
+            if not isinstance(payload, dict):
+                continue
+            path = payload.get("path")
+            chunk_id = payload.get("chunk_id")
+            if not isinstance(path, str) or not path:
+                continue
+            if not isinstance(chunk_id, str) or not chunk_id:
+                continue
+
+            current.setdefault(path, {}).setdefault(content_type, set()).add(chunk_id)
+
+    return current
+
+
+def _should_run_stale_cleanup(
+    *,
+    max_files: int | None,
+    returned_file_count: int,
+    kept_file_count: int,
+) -> bool:
+    if max_files is None:
+        return True
+    return returned_file_count >= kept_file_count
+
+
+def _delete_stale_repo_points(
+    *,
+    store: QdrantStore,
+    collection_names: dict[str, str],
+    content_types: tuple[str, ...],
+    repo: str,
+    repo_root: Path,
+    scanned_file_paths: set[str],
+    indexed_file_paths: set[str],
+    current_chunk_ids_by_path_and_type: dict[str, dict[str, set[str]]],
+) -> dict[str, int]:
+    repo_filter = models.Filter(
+        must=[
+            models.FieldCondition(
+                key="repo",
+                match=models.MatchValue(value=repo),
+            ),
+            models.FieldCondition(
+                key="repo_root",
+                match=models.MatchValue(value=str(repo_root)),
+            ),
+        ]
+    )
+
+    deleted_by_type: dict[str, int] = {}
+
+    for content_type in content_types:
+        collection_name = collection_names[content_type]
+        existing_points = store.scroll_points(
+            collection_name=collection_name,
+            scroll_filter=repo_filter,
+            payload_fields=["path", "chunk_id"],
+        )
+
+        stale_point_ids: list[str | int] = []
+        for point in existing_points:
+            payload = point.get("payload", {})
+            if not isinstance(payload, dict):
+                continue
+
+            path = payload.get("path")
+            chunk_id = payload.get("chunk_id")
+            if not isinstance(path, str) or not path:
+                continue
+
+            if path not in scanned_file_paths:
+                stale_point_ids.append(point["id"])
+                continue
+
+            if path not in indexed_file_paths:
+                continue
+
+            expected_ids = current_chunk_ids_by_path_and_type.get(path, {}).get(
+                content_type,
+                set(),
+            )
+            if not isinstance(chunk_id, str) or chunk_id not in expected_ids:
+                stale_point_ids.append(point["id"])
+
+        deleted_by_type[content_type] = store.delete_points(
+            collection_name=collection_name,
+            point_ids=stale_point_ids,
+        )
+
+    return deleted_by_type
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m indexer")
     subparsers = parser.add_subparsers(dest="command")
@@ -515,6 +617,17 @@ def _build_parser() -> argparse.ArgumentParser:
     index_parser.add_argument("--max-files", dest="max_files", type=int, default=None)
     index_parser.add_argument("--chunk-lines", dest="chunk_lines", type=int, default=None)
     index_parser.add_argument("--overlap-lines", dest="overlap_lines", type=int, default=None)
+    index_parser.add_argument(
+        "--embedding-input-mode",
+        dest="embedding_input_mode",
+        choices=["content", "summary_content"],
+        default=None,
+        help=(
+            "Modo de texto para embedding no index: 'content' ou "
+            "'summary_content'. Prioridade: CLI > EMBEDDING_INPUT_MODE_<TYPE> > "
+            "EMBEDDING_INPUT_MODE > default."
+        ),
+    )
     index_parser.add_argument(
         "--ignore-patterns", dest="ignore_patterns", default=None,
         help="Padrões glob para ignorar arquivos (CSV). Ex: '*.md,docs/*'. Prioridade: CLI > Env (SCAN_IGNORE_PATTERNS) > Default.",
@@ -865,7 +978,10 @@ def _index_command(args: argparse.Namespace) -> int:
         scan_config = _resolve_scan_config(args)
         chunk_config = _resolve_chunk_config(args)
         embedder_configs: dict[str, EmbedderConfig] = {
-            content_type: load_embedder_config(content_type=content_type)
+            content_type: load_embedder_config(
+                content_type=content_type,
+                input_mode=args.embedding_input_mode,
+            )
             for content_type in runtime_config.content_types
         }
         qdrant_config = load_qdrant_config()
@@ -981,27 +1097,18 @@ def _index_command(args: argparse.Namespace) -> int:
                             fileSize=file_size,
                         )
                     )
-                indexed_files.add(str(file_path))
+                indexed_files.add(file_path.as_posix())
             except Exception as exc:
                 logger.warning(f"Erro ao chunkar {file_path}: {exc}")
                 chunk_errors += 1
 
         logger.info(f"Total de chunks: {len(all_chunks)}")
         file_coverage = (len(indexed_files) / len(files)) if files else 1.0
-
-        if not all_chunks:
-            logger.warning("Nenhum chunk gerado. Encerrando.")
-            output = {
-                "status": "empty",
-                "files_scanned": len(files),
-                "files_indexed": len(indexed_files),
-                "file_coverage": round(file_coverage, 4),
-                "chunks_total": 0,
-                "points_upserted": 0,
-                "elapsed_ms": int((perf_counter() - started) * 1000),
-            }
-            print(json.dumps(output, ensure_ascii=False, indent=2))
-            return 0
+        stale_cleanup_enabled = _should_run_stale_cleanup(
+            max_files=args.max_files,
+            returned_file_count=len(files),
+            kept_file_count=scan_stats.get("files_kept", len(files)),
+        )
 
         if file_coverage < min_coverage:
             output = {
@@ -1048,11 +1155,11 @@ def _index_command(args: argparse.Namespace) -> int:
                 continue
 
             config = embedder_configs[content_type]
-            # TODO(phase-9): support switching between content and summary_content.
             texts = [
                 build_embedding_text(
                     content=chunk.document.content,
                     summary_text=chunk.document.summaryText,
+                    mode=config.input_mode,
                 )
                 for chunk in target_chunks
             ]
@@ -1087,10 +1194,18 @@ def _index_command(args: argparse.Namespace) -> int:
                         vector=embedding,
                     )
                 )
+        current_chunk_ids_by_path_and_type = _build_current_chunk_ids_by_path_and_type(
+            points_by_type,
+            content_types=runtime_config.content_types,
+        )
 
         # 6. Upsert no Qdrant
         logger.info("Iniciando upsert no Qdrant...")
         upsert_results: dict[str, dict[str, int]] = {}
+        stale_points_deleted_by_type: dict[str, int] = {
+            content_type: 0
+            for content_type in runtime_config.content_types
+        }
         with QdrantStore(qdrant_config) as store:
             for content_type in runtime_config.content_types:
                 target_points = points_by_type[content_type]
@@ -1099,13 +1214,25 @@ def _index_command(args: argparse.Namespace) -> int:
                     points=target_points,
                     collection_name=target_collection,
                 )
+            if stale_cleanup_enabled:
+                stale_points_deleted_by_type = _delete_stale_repo_points(
+                    store=store,
+                    collection_names=collection_names,
+                    content_types=runtime_config.content_types,
+                    repo=scan_config.repo_root.name,
+                    repo_root=scan_config.repo_root,
+                    scanned_file_paths={path.as_posix() for path in files},
+                    indexed_file_paths=indexed_files,
+                    current_chunk_ids_by_path_and_type=current_chunk_ids_by_path_and_type,
+                )
 
         elapsed_ms = int((perf_counter() - started) * 1000)
         total_points_upserted = sum(item["points_upserted"] for item in upsert_results.values())
+        total_stale_points_deleted = sum(stale_points_deleted_by_type.values())
 
         # Output
         output = {
-            "status": "success",
+            "status": "empty" if not all_chunks else "success",
             "repo_root": str(scan_config.repo_root),
             "collections": collection_names,
             "files_scanned": len(files),
@@ -1125,17 +1252,23 @@ def _index_command(args: argparse.Namespace) -> int:
             },
             "points_upserted": total_points_upserted,
             "upsert_by_type": upsert_results,
+            "stale_points_deleted": total_stale_points_deleted,
+            "stale_points_deleted_by_type": stale_points_deleted_by_type,
+            "stale_cleanup_enabled": stale_cleanup_enabled,
             "embedding": {
                 content_type: {
                     "provider": embedder_configs[content_type].provider,
                     "model": embedder_configs[content_type].model,
                     "vector_size": vector_sizes[content_type],
+                    "input_mode": embedder_configs[content_type].input_mode,
                 }
                 for content_type in runtime_config.content_types
             },
             "elapsed_ms": elapsed_ms,
             "elapsed_sec": round(elapsed_ms / 1000, 2),
         }
+        if not stale_cleanup_enabled:
+            output["stale_cleanup_reason"] = "partial_scan_max_files"
 
         logger.info(
             f"Indexação concluída: {output['points_upserted']} pontos "
