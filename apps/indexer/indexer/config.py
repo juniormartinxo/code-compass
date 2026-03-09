@@ -28,9 +28,18 @@ DEFAULT_ALLOW_EXTS: set[str] = {
     ".jsx",
     ".py",
     ".md",
+    ".mdx",
+    ".rst",
+    ".adoc",
+    ".txt",
     ".json",
+    ".toml",
+    ".ini",
+    ".cfg",
+    ".conf",
     ".yaml",
     ".yml",
+    ".sql",
 }
 
 DEFAULT_IGNORE_PATTERNS: list[str] = []
