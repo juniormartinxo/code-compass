@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field, replace
 
+from .chunk_graph import attach_call_graph
 from .chunk_models import TS_SYMBOL_CHUNK_STRATEGY
 from .content_classification import CODE_CONTEXT_CONTENT_TYPE, CODE_SYMBOL_CONTENT_TYPE
 
@@ -33,6 +34,21 @@ _DEFAULT_WRAPPED_FUNCTION_RE = re.compile(
     rf"^export\s+default\s+.*?function\s+(?P<name>{_IDENTIFIER_RE})\s*(?:<[^{{(]+>\s*)?\("
 )
 _DEFAULT_ANONYMOUS_FUNCTION_RE = re.compile(r"^export\s+default\s+(?:async\s+)?function\s*\(")
+_CALL_TARGET_RE = re.compile(
+    rf"(?<![\w$.])(?P<target>{_IDENTIFIER_RE}(?:\.[A-Za-z_$][\w$]*)*)\s*\("
+)
+_NON_CALL_TARGETS = {
+    "catch",
+    "class",
+    "for",
+    "function",
+    "if",
+    "import",
+    "return",
+    "switch",
+    "typeof",
+    "while",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +65,8 @@ class TsChunkSpec:
     signature: str | None = None
     imports: tuple[str, ...] = ()
     exports: tuple[str, ...] = ()
+    callers: tuple[str, ...] = ()
+    callees: tuple[str, ...] = ()
     coveredLineRanges: tuple[tuple[int, int], ...] = field(default_factory=tuple, repr=False)
 
 
@@ -107,6 +125,7 @@ def chunk_ts_source(
             content_type=file_content_type,
         )
     )
+    specs = attach_call_graph(specs)
     enriched_specs = [
         replace(
             spec,
@@ -332,6 +351,13 @@ def _build_module_chunks(
                 qualifiedSymbolName=declaration.name,
                 symbolType=symbol_type,
                 signature=declaration.signature,
+                callees=_extract_declaration_callees(
+                    sanitized_lines=sanitized_lines,
+                    decorator_start_index=declaration_start_index,
+                    start_index=line_index,
+                    end_index=declaration_end,
+                    uses_block=declaration.uses_block,
+                ),
                 coveredLineRanges=((declaration_start_index + 1, declaration_end + 1),),
             )
         )
@@ -369,6 +395,15 @@ def _build_class_chunks(
         if not stripped or stripped in {"}", "};"}:
             line_index += 1
             continue
+        if stripped.startswith("@"):
+            decorated_member_index = _find_decorated_member_declaration_index(
+                start_index=line_index,
+                sanitized_lines=sanitized_lines,
+                depth_by_line=depth_by_line,
+            )
+            if decorated_member_index > line_index:
+                line_index = decorated_member_index
+                continue
 
         _, _, header_sanitized = _collect_header(
             source_lines=source_lines,
@@ -407,12 +442,29 @@ def _build_class_chunks(
                 symbolType="method",
                 parentSymbol=class_name,
                 signature=declaration.signature,
+                callees=_extract_declaration_callees(
+                    sanitized_lines=sanitized_lines,
+                    decorator_start_index=declaration_start_index,
+                    start_index=line_index,
+                    end_index=method_end,
+                    uses_block=declaration.uses_block,
+                ),
                 coveredLineRanges=((declaration_start_index + 1, method_end + 1),),
             )
         )
         line_index = method_end + 1
 
+    class_decorator_callees = _extract_class_decorator_callees(
+        sanitized_lines=sanitized_lines,
+        class_declaration_start_index=class_declaration_start_index,
+        class_start_index=class_start_index,
+    )
+
     if class_span <= class_max_lines or not method_chunks:
+        class_callees = _collect_class_callees(
+            class_decorator_callees=class_decorator_callees,
+            method_chunks=method_chunks,
+        )
         return [
             TsChunkSpec(
                 startLine=class_declaration_start_index + 1,
@@ -427,10 +479,15 @@ def _build_class_chunks(
                 qualifiedSymbolName=class_name,
                 symbolType="class",
                 signature=class_signature,
+                callees=class_callees,
                 coveredLineRanges=((class_declaration_start_index + 1, class_end_index + 1),),
             )
         ]
 
+    class_callees = _collect_class_callees(
+        class_decorator_callees=class_decorator_callees,
+        method_chunks=method_chunks,
+    )
     return [
         TsChunkSpec(
             startLine=class_declaration_start_index + 1,
@@ -457,6 +514,7 @@ def _build_class_chunks(
             qualifiedSymbolName=class_name,
             symbolType="class",
             signature=class_signature,
+            callees=class_callees,
             coveredLineRanges=((class_declaration_start_index + 1, class_header_end_index + 1),),
         ),
         *method_chunks,
@@ -510,6 +568,147 @@ def _build_uncovered_source_chunks(
         )
 
     return chunks
+
+def _extract_declaration_callees(
+    *,
+    sanitized_lines: list[str],
+    decorator_start_index: int,
+    start_index: int,
+    end_index: int,
+    uses_block: bool,
+) -> tuple[str, ...]:
+    segments = _collect_decorator_segments(
+        sanitized_lines=sanitized_lines,
+        decorator_start_index=decorator_start_index,
+        declaration_start_index=start_index,
+    )
+    segments.extend(
+        _collect_declaration_body_segments(
+            sanitized_lines=sanitized_lines,
+            start_index=start_index,
+            end_index=end_index,
+            uses_block=uses_block,
+        )
+    )
+    callees: list[str] = []
+    for segment in segments:
+        normalized = segment.replace("?.", ".").replace("!.", ".")
+        for match in _CALL_TARGET_RE.finditer(normalized):
+            target = match.group("target")
+            root = target.split(".", 1)[0]
+            if root in _NON_CALL_TARGETS:
+                continue
+            if target not in callees:
+                callees.append(target)
+    return tuple(callees)
+
+
+def _collect_decorator_segments(
+    *,
+    sanitized_lines: list[str],
+    decorator_start_index: int,
+    declaration_start_index: int,
+) -> list[str]:
+    if decorator_start_index >= declaration_start_index:
+        return []
+    return sanitized_lines[decorator_start_index:declaration_start_index]
+
+
+def _collect_declaration_body_segments(
+    *,
+    sanitized_lines: list[str],
+    start_index: int,
+    end_index: int,
+    uses_block: bool,
+) -> list[str]:
+    body_segments: list[str] = []
+    body_marker = "{" if uses_block else "=>"
+    marker_consumed = False
+
+    for line_index in range(start_index, end_index + 1):
+        line = sanitized_lines[line_index]
+        if not marker_consumed:
+            marker_index = line.find(body_marker)
+            if marker_index < 0:
+                continue
+            marker_consumed = True
+            body_segments.append(line[marker_index + len(body_marker) :])
+            continue
+        body_segments.append(line)
+
+    return body_segments
+
+
+def _collect_class_callees(
+    *,
+    class_decorator_callees: tuple[str, ...],
+    method_chunks: list[TsChunkSpec],
+) -> tuple[str, ...]:
+    callees: list[str] = list(class_decorator_callees)
+    for chunk in method_chunks:
+        for callee in chunk.callees:
+            if callee not in callees:
+                callees.append(callee)
+    return tuple(callees)
+
+
+def _extract_class_decorator_callees(
+    *,
+    sanitized_lines: list[str],
+    class_declaration_start_index: int,
+    class_start_index: int,
+) -> tuple[str, ...]:
+    return _extract_declaration_callees(
+        sanitized_lines=sanitized_lines,
+        decorator_start_index=class_declaration_start_index,
+        start_index=class_start_index,
+        end_index=class_start_index,
+        uses_block=True,
+    )
+
+
+def _find_decorated_member_declaration_index(
+    *,
+    start_index: int,
+    sanitized_lines: list[str],
+    depth_by_line: list[int],
+) -> int:
+    line_index = start_index
+    decorator_paren_depth = 0
+    in_decorator_block = False
+
+    while line_index < len(sanitized_lines):
+        if depth_by_line[line_index] != 1:
+            return start_index
+
+        stripped = sanitized_lines[line_index].strip()
+        if not stripped:
+            return start_index
+
+        if stripped.startswith("@"):
+            in_decorator_block = True
+        elif not in_decorator_block:
+            return start_index
+
+        decorator_paren_depth += stripped.count("(") - stripped.count(")")
+        line_index += 1
+
+        if decorator_paren_depth > 0:
+            continue
+
+        while line_index < len(sanitized_lines) and not sanitized_lines[line_index].strip():
+            line_index += 1
+
+        if line_index >= len(sanitized_lines):
+            return start_index
+
+        if sanitized_lines[line_index].strip().startswith("@"):
+            in_decorator_block = False
+            continue
+
+        return line_index
+
+    return start_index
 
 
 def _extract_imports(
