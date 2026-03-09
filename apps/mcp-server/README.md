@@ -234,7 +234,7 @@ No bootstrap, o MCP server tenta carregar automaticamente (nesta ordem):
 3. `.env.local` na raiz do monorepo
 4. `.env` na raiz do monorepo
 
-Isso permite usar `QDRANT_COLLECTION_BASE=goapice_3584_manutic_nomic_embed_code` em `.env.local` sem precisar exportar no comando.
+Isso permite usar `QDRANT_COLLECTION_BASE=codecompass_3584_manutic_nomic_embed_code` em `.env.local` sem precisar exportar no comando.
 
 ## Testes
 
