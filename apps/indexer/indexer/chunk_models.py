@@ -4,10 +4,13 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-CHUNK_SCHEMA_VERSION = "v4"
+CHUNK_SCHEMA_VERSION = "v5"
 LINE_WINDOW_CHUNK_STRATEGY = "line_window"
 PYTHON_SYMBOL_CHUNK_STRATEGY = "python_symbol"
 TS_SYMBOL_CHUNK_STRATEGY = "ts_symbol"
+DOC_SECTION_CHUNK_STRATEGY = "doc_section"
+CONFIG_SECTION_CHUNK_STRATEGY = "config_section"
+SQL_STATEMENT_CHUNK_STRATEGY = "sql_statement"
 
 
 def _normalize_serialized_value(value: object) -> object:
