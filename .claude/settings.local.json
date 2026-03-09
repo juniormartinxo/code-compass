@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(make py-test:*)",
+      "Bash(git status:*)",
+      "Bash(pnpm:*)",
+      "Bash(xxd:*)",
+      "Bash(make py-lint:*)"
+    ]
+  }
+}
