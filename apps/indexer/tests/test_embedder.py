@@ -41,10 +41,12 @@ class TestEmbedderConfig(unittest.TestCase):
             self.assertEqual(config.batch_size, DEFAULT_EMBEDDING_BATCH_SIZE)
             self.assertEqual(config.max_retries, DEFAULT_EMBEDDING_MAX_RETRIES)
             self.assertEqual(config.backoff_base_ms, DEFAULT_EMBEDDING_BACKOFF_BASE_MS)
+            self.assertEqual(config.input_mode, DEFAULT_EMBEDDING_INPUT_MODE)
             docs_config = load_embedder_config(content_type="docs")
             self.assertEqual(docs_config.api_url, DEFAULT_EMBEDDING_API_URL)
             self.assertEqual(docs_config.provider, DEFAULT_EMBEDDING_PROVIDER_DOCS)
             self.assertEqual(docs_config.model, DEFAULT_EMBEDDING_MODEL_DOCS)
+            self.assertEqual(docs_config.input_mode, DEFAULT_EMBEDDING_INPUT_MODE)
 
     def test_load_embedder_config_from_env(self) -> None:
         """Deve carregar valores de variáveis de ambiente."""
@@ -58,6 +60,7 @@ class TestEmbedderConfig(unittest.TestCase):
             "EMBEDDING_BATCH_SIZE": "32",
             "EMBEDDING_MAX_RETRIES": "10",
             "EMBEDDING_BACKOFF_BASE_MS": "1000",
+            "EMBEDDING_INPUT_MODE": "summary_content",
         }
         with patch.dict("os.environ", env, clear=True):
             config = load_embedder_config(content_type="code")
@@ -67,10 +70,12 @@ class TestEmbedderConfig(unittest.TestCase):
             self.assertEqual(config.batch_size, 32)
             self.assertEqual(config.max_retries, 10)
             self.assertEqual(config.backoff_base_ms, 1000)
+            self.assertEqual(config.input_mode, "summary_content")
             docs_config = load_embedder_config(content_type="docs")
             self.assertEqual(docs_config.api_url, "http://custom-docs:11434")
             self.assertEqual(docs_config.provider, "ollama")
             self.assertEqual(docs_config.model, "custom-model-docs")
+            self.assertEqual(docs_config.input_mode, "summary_content")
 
     def test_load_embedder_config_from_args(self) -> None:
         """Args devem ter precedência sobre env vars."""
@@ -81,10 +86,26 @@ class TestEmbedderConfig(unittest.TestCase):
                 api_url="http://arg:11434",
                 provider="ollama",
                 model="arg-model",
+                input_mode="summary_content",
             )
             self.assertEqual(config.api_url, "http://arg:11434")
             self.assertEqual(config.provider, "ollama")
             self.assertEqual(config.model, "arg-model")
+            self.assertEqual(config.input_mode, "summary_content")
+
+    def test_load_embedder_config_prefers_type_specific_input_mode_env(self) -> None:
+        env = {
+            "EMBEDDING_PROVIDER_CODE_API_URL": "http://env:11434",
+            "EMBEDDING_PROVIDER_DOCS_API_URL": "http://env:11434",
+            "EMBEDDING_INPUT_MODE": "content",
+            "EMBEDDING_INPUT_MODE_DOCS": "summary_content",
+        }
+        with patch.dict("os.environ", env, clear=True):
+            code_config = load_embedder_config(content_type="code")
+            docs_config = load_embedder_config(content_type="docs")
+
+        self.assertEqual(code_config.input_mode, "content")
+        self.assertEqual(docs_config.input_mode, "summary_content")
 
     def test_load_embedder_config_invalid_provider(self) -> None:
         with self.assertRaises(ValueError):
@@ -216,6 +237,7 @@ class TestOllamaEmbedder(unittest.TestCase):
             max_retries=3,
             backoff_base_ms=10,  # Reduzir para testes rápidos
             timeout_seconds=5,
+            input_mode="content",
         )
 
     def test_probe_vector_size(self) -> None:
