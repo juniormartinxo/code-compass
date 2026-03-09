@@ -4,8 +4,18 @@ import hashlib
 from pathlib import Path
 
 from .config import RuntimeConfig
-from .content_classification import classify_content_type, resolve_collection_content_type
-from .chunk_models import ChunkDocument, ChunkFileResult, LINE_WINDOW_CHUNK_STRATEGY
+from .content_classification import (
+    CONFIG_BLOCK_CONTENT_TYPE,
+    SQL_BLOCK_CONTENT_TYPE,
+    classify_content_type,
+    resolve_collection_content_type,
+)
+from .chunk_models import (
+    ChunkDocument,
+    ChunkFileResult,
+    LINE_WINDOW_CHUNK_STRATEGY,
+)
+from .chunk_python import PythonChunkSpec, chunk_python_source
 
 _LANGUAGE_BY_SUFFIX: dict[str, str] = {
     ".ts": "typescript",
@@ -92,8 +102,23 @@ def hash_content(content: str) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
-def make_chunk_id(path: str, start: int, end: int, language: str) -> str:
-    composed = f"{path}:{start}:{end}:{language}"
+def make_chunk_id(
+    path: str,
+    start: int,
+    end: int,
+    language: str,
+    *,
+    qualified_symbol_name: str | None = None,
+    symbol_type: str | None = None,
+    signature: str | None = None,
+) -> str:
+    if qualified_symbol_name:
+        composed = (
+            f"{path}:{language}:{qualified_symbol_name}:{symbol_type or 'symbol'}:"
+            f"{signature or 'no-signature'}"
+        )
+    else:
+        composed = f"{path}:{start}:{end}:{language}"
     return hashlib.sha256(composed.encode("utf-8")).hexdigest()
 
 
@@ -157,6 +182,9 @@ def _build_summary_text(
     end_line: int,
     content_type: str | None,
     content: str,
+    symbol_name: str | None = None,
+    qualified_symbol_name: str | None = None,
+    symbol_type: str | None = None,
 ) -> str:
     parts = [
         path,
@@ -164,6 +192,12 @@ def _build_summary_text(
         _format_line_range(start_line, end_line),
         f"type={content_type or 'unknown'}",
     ]
+    if qualified_symbol_name:
+        parts.append(f"symbol={qualified_symbol_name}")
+    elif symbol_name:
+        parts.append(f"symbol={symbol_name}")
+    if symbol_type:
+        parts.append(f"symbol_type={symbol_type}")
     first_line = _first_useful_line(content)
     if first_line:
         parts.append(f"first_line={first_line}")
@@ -179,6 +213,10 @@ def _build_context_text(
     content_type: str | None,
     chunk_strategy: str,
     content: str,
+    qualified_symbol_name: str | None = None,
+    symbol_type: str | None = None,
+    parent_symbol: str | None = None,
+    signature: str | None = None,
 ) -> str:
     lines = [
         f"Path: {path}",
@@ -187,10 +225,101 @@ def _build_context_text(
         f"Type: {content_type or 'unknown'}",
         f"Chunk strategy: {chunk_strategy}",
     ]
+    if qualified_symbol_name:
+        lines.append(f"Symbol: {qualified_symbol_name}")
+    if symbol_type:
+        lines.append(f"Symbol type: {symbol_type}")
+    if parent_symbol:
+        lines.append(f"Parent symbol: {parent_symbol}")
+    if signature:
+        lines.append(f"Signature: {signature}")
     preview = _content_preview(content)
     if preview:
         lines.append(f"Preview: {preview}")
     return "\n".join(lines)
+
+
+def _should_use_python_symbol_chunking(
+    *,
+    language: str,
+    content_type: str,
+    collection_content_type: str,
+) -> bool:
+    if language != "python":
+        return False
+    if collection_content_type != "code":
+        return False
+    return content_type not in {CONFIG_BLOCK_CONTENT_TYPE, SQL_BLOCK_CONTENT_TYPE}
+
+
+def _build_chunk_document(
+    *,
+    path: str,
+    language: str,
+    content: str,
+    start_line: int,
+    end_line: int,
+    content_type: str,
+    chunk_strategy: str,
+    collection_content_type: str,
+    symbol_name: str | None = None,
+    qualified_symbol_name: str | None = None,
+    symbol_type: str | None = None,
+    parent_symbol: str | None = None,
+    signature: str | None = None,
+) -> ChunkDocument:
+    summary_text = _build_summary_text(
+        path=path,
+        language=language,
+        start_line=start_line,
+        end_line=end_line,
+        content_type=content_type,
+        content=content,
+        symbol_name=symbol_name,
+        qualified_symbol_name=qualified_symbol_name,
+        symbol_type=symbol_type,
+    )
+    context_text = _build_context_text(
+        path=path,
+        language=language,
+        start_line=start_line,
+        end_line=end_line,
+        content_type=content_type,
+        chunk_strategy=chunk_strategy,
+        content=content,
+        qualified_symbol_name=qualified_symbol_name,
+        symbol_type=symbol_type,
+        parent_symbol=parent_symbol,
+        signature=signature,
+    )
+
+    return ChunkDocument(
+        chunkId=make_chunk_id(
+            path,
+            start_line,
+            end_line,
+            language,
+            qualified_symbol_name=qualified_symbol_name,
+            symbol_type=symbol_type,
+            signature=signature,
+        ),
+        contentHash=hash_content(content),
+        path=path,
+        startLine=start_line,
+        endLine=end_line,
+        language=language,
+        content=content,
+        contentType=content_type,
+        collectionContentType=collection_content_type,
+        symbolName=symbol_name,
+        qualifiedSymbolName=qualified_symbol_name,
+        symbolType=symbol_type,
+        parentSymbol=parent_symbol,
+        signature=signature,
+        summaryText=summary_text,
+        contextText=context_text,
+        chunkStrategy=chunk_strategy,
+    )
 
 
 def chunk_file_documents(
@@ -235,48 +364,58 @@ def chunk_file_documents(
     language = detect_language(resolved_file)
     content_type, _ = classify_content_type(normalized_path, runtime_config=runtime_config)
     collection_content_type = resolve_collection_content_type(content_type)
-
-    blocks = _chunk_lines_impl(
-        lines=lines,
-        chunk_lines=chunk_lines,
-        overlap=overlap,
-    )
-
     chunks_list: list[ChunkDocument] = []
-    for start, end, chunk_content in blocks:
-        content = "\n".join(chunk_content)
-        summary_text = _build_summary_text(
-            path=normalized_path,
-            language=language,
-            start_line=start,
-            end_line=end,
-            content_type=content_type,
-            content=content,
+
+    python_specs: tuple[PythonChunkSpec, ...] | None = None
+    if _should_use_python_symbol_chunking(
+        language=language,
+        content_type=content_type,
+        collection_content_type=collection_content_type,
+    ):
+        python_specs = chunk_python_source(
+            text=text,
+            file_content_type=content_type,
+            class_max_lines=chunk_lines,
         )
-        context_text = _build_context_text(
-            path=normalized_path,
-            language=language,
-            start_line=start,
-            end_line=end,
-            content_type=content_type,
-            chunk_strategy=LINE_WINDOW_CHUNK_STRATEGY,
-            content=content,
-        )
-        chunks_list.append(
-            ChunkDocument(
-                chunkId=make_chunk_id(normalized_path, start, end, language),
-                contentHash=hash_content(content),
-                path=normalized_path,
-                startLine=start,
-                endLine=end,
-                language=language,
-                content=content,
-                contentType=content_type,
-                collectionContentType=collection_content_type,
-                summaryText=summary_text,
-                contextText=context_text,
+
+    if python_specs is not None and (python_specs or not text.strip()):
+        for spec in python_specs:
+            chunks_list.append(
+                _build_chunk_document(
+                    path=normalized_path,
+                    language=language,
+                    content=spec.content,
+                    start_line=spec.startLine,
+                    end_line=spec.endLine,
+                    content_type=spec.contentType,
+                    chunk_strategy=spec.chunkStrategy,
+                    collection_content_type=resolve_collection_content_type(spec.contentType),
+                    symbol_name=spec.symbolName,
+                    qualified_symbol_name=spec.qualifiedSymbolName,
+                    symbol_type=spec.symbolType,
+                    parent_symbol=spec.parentSymbol,
+                    signature=spec.signature,
+                )
             )
+    else:
+        blocks = _chunk_lines_impl(
+            lines=lines,
+            chunk_lines=chunk_lines,
+            overlap=overlap,
         )
+        for start, end, chunk_content in blocks:
+            chunks_list.append(
+                _build_chunk_document(
+                    path=normalized_path,
+                    language=language,
+                    content="\n".join(chunk_content),
+                    start_line=start,
+                    end_line=end,
+                    content_type=content_type,
+                    chunk_strategy=LINE_WINDOW_CHUNK_STRATEGY,
+                    collection_content_type=collection_content_type,
+                )
+            )
 
     chunks = tuple(chunks_list)
 
