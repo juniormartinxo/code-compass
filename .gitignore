@@ -103,3 +103,4 @@ code-base/**
 
 qdrant_data/
 apps/acp/.data/
+.seshat
