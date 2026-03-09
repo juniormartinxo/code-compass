@@ -7,9 +7,9 @@ Pipeline de indexação de código para o Code Compass.
 O Indexer é responsável por:
 
 1. **Scan** - Escanear repositórios de código
-2. **Chunk** - Dividir arquivos em chunks semânticos
+2. **Chunk** - Dividir arquivos em chunks semânticos (por símbolo, seção ou janela de linhas)
 3. **Embed** - Gerar embeddings via provider HTTP configurável
-4. **Upsert** - Armazenar vetores no Qdrant
+4. **Upsert** - Armazenar vetores no Qdrant com payload rico
 5. **Search** - Busca semântica nos chunks indexados
 6. **Ask** - Perguntas em linguagem natural via RAG
 
@@ -71,6 +71,54 @@ export REPO_ROOT=/path/to/your/repository
 
 Ou copie e edite o `.env.example` na raiz do projeto (inclui `LLM_MODEL` para o comando `ask`).
 
+## Chunking Semântico
+
+O indexer utiliza **estratégias de chunking adaptadas por tipo de arquivo**, respeitando a estrutura sintática e semântica de cada linguagem. O campo `chunk_strategy` no payload do Qdrant indica qual estratégia foi utilizada.
+
+### Estratégias disponíveis
+
+| Estratégia | Arquivos | Descrição |
+| ---------- | -------- | --------- |
+| `python_symbol` | `.py` | Extrai funções, métodos e classes via AST nativo do Python |
+| `ts_symbol` | `.ts`, `.tsx`, `.js`, `.jsx` | Extrai funções, componentes React, hooks e classes via parser TS |
+| `doc_section` | `.md`, `.mdx`, `.rst` etc. | Divide por heading/subheading |
+| `config_section` | `.env`, `.toml`, `.yaml`, `.json`, `.ini` | Divide por seção/bloco de configuração |
+| `sql_statement` | `.sql` | Divide por statement SQL ou bloco coerente |
+| `line_window` | Qualquer arquivo | Fallback por janela de linhas (usado quando parse falha ou a extensão não tem parser dedicado) |
+
+**Fallback automático**: se o parse sintático falhar para Python ou TS, o chunker recai silenciosamente para `line_window`, registrando um warning no resultado.
+
+### Classificação de conteúdo (`chunk_content_type`)
+
+Além da estratégia de chunking, cada ponto recebe uma classificação semântica interna (`chunk_content_type`):
+
+| Valor | Descrição |
+| ----- | --------- |
+| `code_symbol` | Bloco de código com símbolo identificado (função, classe, componente) |
+| `code_context` | Bloco de código genérico sem símbolo identificado |
+| `doc_section` | Seção de documentação (`.md`, `.rst`, etc.) |
+| `config_block` | Bloco de arquivo de configuração |
+| `sql_block` | Bloco SQL |
+| `test_case` | Arquivo ou bloco de teste (detectado por path/nome) |
+
+O campo `content_type` (de coleção) continua sendo `code` ou `docs` para roteamento entre collections do Qdrant.
+
+### Metadados semânticos por linguagem
+
+Quando o parser extrai um símbolo (Python ou TypeScript), os seguintes campos ficam disponíveis no payload:
+
+- `symbol_name` — nome simples do símbolo (ex: `parse_chunk`)
+- `qualified_symbol_name` — nome qualificado com contexto (ex: `ChunkParser.parse_chunk`)
+- `symbol_type` — tipo: `function`, `method`, `class`, `component`, `hook`, `arrow_function`, etc.
+- `parent_symbol` — símbolo pai (para métodos dentro de uma classe)
+- `signature` — assinatura completa do símbolo (parâmetros e tipo de retorno quando disponível)
+- `imports` — importações relevantes do arquivo (lista)
+- `exports` — exportações do arquivo (lista)
+- `callers` — símbolos que chamam este (grafo de 1 salto aproximado, lista)
+- `callees` — símbolos chamados por este (lista)
+- `summary_text` — resumo gerado com path, language, range e nome de símbolo
+- `context_text` — contexto expandido do chunk
+
 ## Comandos
 
 ### Scan
@@ -99,8 +147,8 @@ python -m indexer chunk --file /path/to/file.py
 Opções:
 
 - `--file` - Arquivo para chunkar (obrigatório)
-- `--chunk-lines` - Linhas por chunk (default: 120)
-- `--overlap-lines` - Overlap entre chunks (default: 20)
+- `--chunk-lines` - Linhas por chunk no fallback `line_window` (default: 120)
+- `--overlap-lines` - Overlap entre chunks no fallback `line_window` (default: 20)
 - `--repo-root` - Raiz do repositório
 - `--as-posix` / `--no-as-posix` - Usar paths POSIX
 
@@ -184,13 +232,13 @@ python -m indexer index --repo-root /path/to/repo
 Este comando:
 
 1. **Scan** - Escaneia o repositório
-2. **Chunk** - Divide cada arquivo em chunks
+2. **Chunk** - Divide cada arquivo em chunks usando a estratégia semântica adequada
 3. **Embed** - Gera embeddings em batches via provider por tipo de conteúdo
-4. **Upsert** - Armazena vetores no Qdrant com IDs estáveis
+4. **Upsert** - Armazena vetores no Qdrant com IDs estáveis e payload rico
 
-**IDs estáveis**: o `chunkId` representa a identidade estrutural do chunk. Em `line_window`, ele continua ancorado em `path:start:end:language`; em chunking por símbolo, passa a ancorar em metadados estruturais como `qualifiedSymbolName`. O `contentHash` representa a versão textual atual do conteúdo do chunk.
+**IDs estáveis**: o `chunk_id` representa a identidade estrutural do chunk. Em `line_window`, ele é ancorado em `path:start:end:language`; em chunking por símbolo, passa a ser ancorado em metadados estruturais como `qualifiedSymbolName`. O `content_hash` representa a versão textual atual do conteúdo do chunk.
 
-**Migracao de schema**: a introducao de `chunkSchemaVersion=v5` exige **reindexacao completa obrigatoria** no rollout desta fase. Nao tente misturar pontos antigos e novos na mesma collection; descarte os pontos antigos ou recrie a collection antes do rebuild.
+**Migração de schema**: a introdução de `chunk_schema_version=v5` exige **reindexação completa obrigatória** no rollout desta fase. Não tente misturar pontos antigos e novos na mesma collection; descarte os pontos antigos ou recrie a collection antes do rebuild.
 
 **Saída:**
 
@@ -244,8 +292,8 @@ Opções:
 - `--allow-exts` - Extensões permitidas
 - `--ignore-dirs` - Diretórios para ignorar
 - `--max-files` - Limite máximo de arquivos
-- `--chunk-lines` - Linhas por chunk (default: 120)
-- `--overlap-lines` - Overlap entre chunks (default: 20)
+- `--chunk-lines` - Linhas por chunk no fallback `line_window` (default: 120)
+- `--overlap-lines` - Overlap entre chunks no fallback `line_window` (default: 20)
 
 ### Search
 
@@ -342,9 +390,6 @@ Importante:
 | `EMBEDDING_PROVIDER_DOCS_API_KEY` | vazio | API key do provider para `docs` (opcional no `ollama`) |
 | `EMBEDDING_MODEL_CODE` | `manutic/nomic-embed-code` | Modelo de embedding para `code` |
 | `EMBEDDING_MODEL_DOCS` | `bge-m3` | Modelo de embedding para `docs` |
-| `EMBEDDING_INPUT_MODE` | `content` | Modo global do texto de embedding: `content` ou `summary_content` |
-| `EMBEDDING_INPUT_MODE_CODE` | herda de `EMBEDDING_INPUT_MODE` | Override do modo de embedding para `code` |
-| `EMBEDDING_INPUT_MODE_DOCS` | herda de `EMBEDDING_INPUT_MODE` | Override do modo de embedding para `docs` |
 | `EMBEDDING_BATCH_SIZE` | `16` | Textos por batch de embedding |
 | `EMBEDDING_MAX_RETRIES` | `5` | Máximo de tentativas em caso de erro |
 | `EMBEDDING_BACKOFF_BASE_MS` | `500` | Base para backoff exponencial (ms) |
@@ -379,8 +424,8 @@ Observação sobre autenticação no Qdrant:
 | `SCAN_IGNORE_DIRS` | `.git,node_modules,dist,build,.next,.qdrant_storage,coverage,.venv,venv,__pycache__,.pytest_cache,.mypy_cache,.ruff_cache` | Diretórios a ignorar |
 | `SCAN_ALLOW_EXTS` | `.ts,.tsx,.py,.md,...` | Extensões permitidas |
 | `SCAN_IGNORE_PATTERNS` | vazio | Padrões glob para ignorar arquivos específicos (ex.: `docs/**`, `**/*.test.ts`). Prioridade: CLI (`--ignore-patterns`) > Env > Default. |
-| `CHUNK_LINES` | `120` | Linhas por chunk |
-| `CHUNK_OVERLAP_LINES` | `20` | Overlap entre chunks |
+| `CHUNK_LINES` | `120` | Linhas por chunk no fallback `line_window` |
+| `CHUNK_OVERLAP_LINES` | `20` | Overlap entre chunks no fallback `line_window` |
 
 ### LLM (comando ask)
 
@@ -398,28 +443,42 @@ Cada ponto indexado no Qdrant contém:
   "repo": "my-project",
   "path": "src/main.py",
   "chunk_index": 0,
+  "chunk_id": "a1b2c3d4...",
   "content_hash": "abc123...",
+  "chunk_schema_version": "v5",
+  "chunk_strategy": "python_symbol",
   "ext": ".py",
   "mtime": 1707456789.123,
   "size_bytes": 1234,
   "text_len": 500,
   "start_line": 1,
-  "end_line": 120,
+  "end_line": 45,
   "language": "python",
   "content_type": "code",
+  "chunk_content_type": "code_symbol",
   "source": "repo",
-  "repo_root": "/home/user/project"
+  "repo_root": "/home/user/project",
+  "text": "def parse_chunk(...): ...",
+  "symbol_name": "parse_chunk",
+  "qualified_symbol_name": "ChunkParser.parse_chunk",
+  "symbol_type": "method",
+  "parent_symbol": "ChunkParser",
+  "signature": "def parse_chunk(self, text: str) -> list[ChunkDocument]:",
+  "imports": ["from .models import ChunkDocument"],
+  "exports": [],
+  "callers": ["ChunkParser.index_file"],
+  "callees": ["tokenize", "split_by_symbol"],
+  "summary_text": "python · src/main.py · lines 1-45 · method ChunkParser.parse_chunk",
+  "context_text": "..."
 }
 ```
-
-O comando `index` agora tambem remove pontos stale do mesmo `repo`/`repo_root` quando um arquivo muda de chunks, muda de collection (`code/docs`) ou sai do scan atual, preservando pontos de arquivos que falharam no chunking da rodada. Em execucoes parciais com `--max-files` que truncam o scan, esse cleanup e desabilitado para evitar apagar pontos validos fora da amostra.
 
 Observação importante:
 
 - O valor de `repo` vem do nome do `REPO_ROOT` usado na execução.
 - Em ambiente multi-repo (`code-base/`), não use `REPO_ROOT` apontando para a pasta agregadora.
 - Indexe cada subdiretório (`code-base/<repo>`) separadamente para preservar o filtro por `repo` no MCP.
-- O basename de cada repo indexado precisa ser único dentro da mesma base; se houver dois roots diferentes com o mesmo nome, o indexer rejeita a operação para evitar ambiguidade no escopo público atual.
+- O basename de cada repo indexado precisa ser único dentro da mesma base; se houver dois roots diferentes com o mesmo nome, o indexer rejeita a operação para evitar ambiguidade.
 
 ## Nome Automático de Collection
 
@@ -440,10 +499,11 @@ Os nomes finais usados no Qdrant são:
 - `{QDRANT_COLLECTION_BASE}__code`
 - `{QDRANT_COLLECTION_BASE}__docs`
 
-## Idempotência
+## Idempotência e Migração de Schema
 
 - `init`: Pode ser executado múltiplas vezes. Se a collection já existir com o mesmo vector_size, apenas valida.
 - `index`: IDs são determinísticos. Reindexar o mesmo conteúdo não duplica pontos.
+- **Reindexação obrigatória ao mudar schema**: ao fazer upgrade de `chunk_schema_version`, os pontos antigos devem ser descartados ou a collection recriada. Não tente mesclar pontos de versões diferentes.
 
 ## Testes
 
@@ -477,3 +537,8 @@ O modelo de embedding mudou. Opções:
 - Confirme que `QDRANT_COLLECTION_BASE` no indexer e no MCP server é o mesmo valor.
 - Verifique se o `repo` informado no comando bate com `payload.repo` indexado.
 - Reindexe para atualizar payloads antigos sem `repo`.
+
+### "chunk_strategy sempre retorna line_window"
+
+- Verifique se a extensão do arquivo está entre as suportadas pelos parsers semânticos (`.py`, `.ts`, `.tsx`, `.js`, `.jsx`, `.md`, `.sql`, `.toml`, `.yaml`, `.json`, etc.).
+- Verifique o campo `warnings` na saída do comando `chunk` para mensagens de fallback.
