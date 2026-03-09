@@ -342,6 +342,9 @@ Importante:
 | `EMBEDDING_PROVIDER_DOCS_API_KEY` | vazio | API key do provider para `docs` (opcional no `ollama`) |
 | `EMBEDDING_MODEL_CODE` | `manutic/nomic-embed-code` | Modelo de embedding para `code` |
 | `EMBEDDING_MODEL_DOCS` | `bge-m3` | Modelo de embedding para `docs` |
+| `EMBEDDING_INPUT_MODE` | `content` | Modo global do texto de embedding: `content` ou `summary_content` |
+| `EMBEDDING_INPUT_MODE_CODE` | herda de `EMBEDDING_INPUT_MODE` | Override do modo de embedding para `code` |
+| `EMBEDDING_INPUT_MODE_DOCS` | herda de `EMBEDDING_INPUT_MODE` | Override do modo de embedding para `docs` |
 | `EMBEDDING_BATCH_SIZE` | `16` | Textos por batch de embedding |
 | `EMBEDDING_MAX_RETRIES` | `5` | Máximo de tentativas em caso de erro |
 | `EMBEDDING_BACKOFF_BASE_MS` | `500` | Base para backoff exponencial (ms) |
@@ -408,6 +411,8 @@ Cada ponto indexado no Qdrant contém:
   "repo_root": "/home/user/project"
 }
 ```
+
+O comando `index` agora tambem remove pontos stale do mesmo `repo`/`repo_root` quando um arquivo muda de chunks, muda de collection (`code/docs`) ou sai do scan atual, preservando pontos de arquivos que falharam no chunking da rodada. Em execucoes parciais com `--max-files` que truncam o scan, esse cleanup e desabilitado para evitar apagar pontos validos fora da amostra.
 
 Observação importante:
 
