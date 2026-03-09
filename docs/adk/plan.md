@@ -186,22 +186,22 @@ Evoluir o `apps/acp` para Google ADK com adaptação controlada do motor atual, 
 ## Implementação (Arquivo a Arquivo)
 
 1. Dependências ACP:
-   - Atualizar [apps/acp/pyproject.toml](/home/junior/apps/jm/code-compass/apps/acp/pyproject.toml) com `google-adk[vertexai]`, `qdrant-client`, `httpx`.
+   - Atualizar [apps/acp/pyproject.toml](apps/acp/pyproject.toml) com `google-adk[vertexai]`, `qdrant-client`, `httpx`.
 
 2. Fachada de compatibilidade ACP:
-   - Refatorar [apps/acp/src/code_compass_acp/agent.py](/home/junior/apps/jm/code-compass/apps/acp/src/code_compass_acp/agent.py).
+   - Refatorar [apps/acp/src/code_compass_acp/agent.py](apps/acp/src/code_compass_acp/agent.py).
    - Manter contratos ACP e streaming.
    - Delegar runtime/orquestração para módulos dedicados.
    - Implementar `set_config_option` com `user.id`, `user.tenant`, `memory.long_term.enabled`, `memory.scope.mode`, `app.name`.
    - Registrar e rotear comandos `/memory`.
 
 3. Builder e runtime ADK:
-   - Criar [apps/acp/src/code_compass_acp/adk_agent_builder.py](/home/junior/apps/jm/code-compass/apps/acp/src/code_compass_acp/adk_agent_builder.py).
-   - Criar [apps/acp/src/code_compass_acp/adk_runtime.py](/home/junior/apps/jm/code-compass/apps/acp/src/code_compass_acp/adk_runtime.py).
+   - Criar [apps/acp/src/code_compass_acp/adk_agent_builder.py](apps/acp/src/code_compass_acp/adk_agent_builder.py).
+   - Criar [apps/acp/src/code_compass_acp/adk_runtime.py](apps/acp/src/code_compass_acp/adk_runtime.py).
    - Descrever migração como adaptação controlada: manter via feature flag temporária caminho legado de execução para rollback rápido.
 
 4. Sessão local persistente:
-   - Criar [apps/acp/src/code_compass_acp/memory/local_session_store.py](/home/junior/apps/jm/code-compass/apps/acp/src/code_compass_acp/memory/local_session_store.py).
+   - Criar [apps/acp/src/code_compass_acp/memory/local_session_store.py](apps/acp/src/code_compass_acp/memory/local_session_store.py).
    - Persistir histórico imediato em SQLite por padrão (`ACP_SESSION_BACKEND=sqlite`).
    - Persistir `app_name` e `environment` em todos os turnos; persistir `tenant_id` e `memory_user_id` quando disponíveis no contexto autenticado.
    - Criar índices de suporte para leitura por `session_id` e para investigação/limpeza por `app_name + environment + tenant_id + memory_user_id`.
@@ -209,30 +209,30 @@ Evoluir o `apps/acp` para Google ADK com adaptação controlada do motor atual, 
    - Manter backend `memory` apenas como fallback secundário.
 
 5. Store SQLite de memória:
-   - Criar [apps/acp/src/code_compass_acp/memory/local_sqlite_store.py](/home/junior/apps/jm/code-compass/apps/acp/src/code_compass_acp/memory/local_sqlite_store.py).
+   - Criar [apps/acp/src/code_compass_acp/memory/local_sqlite_store.py](apps/acp/src/code_compass_acp/memory/local_sqlite_store.py).
    - Implementar schema/índices acima.
    - Implementar cálculo de `memory_user_id = sha256(tenant + \":\" + user.id)` e chaves de isolamento por `app_name` e `environment`.
    - Documentar no código (comentário e validação de query builder) que `scope_id` não deve ser usado sem `app_name + environment + tenant_id` para evitar colisões entre tenants/ambientes.
 
 6. Índice semântico opcional de memória:
-   - Criar [apps/acp/src/code_compass_acp/memory/local_memory_qdrant_index.py](/home/junior/apps/jm/code-compass/apps/acp/src/code_compass_acp/memory/local_memory_qdrant_index.py).
+   - Criar [apps/acp/src/code_compass_acp/memory/local_memory_qdrant_index.py](apps/acp/src/code_compass_acp/memory/local_memory_qdrant_index.py).
    - Sincronizar apenas entradas ativas.
    - Nunca usar Qdrant como fonte final de verdade.
 
 7. Decay e conflito:
-   - Criar [apps/acp/src/code_compass_acp/memory/memory_decay.py](/home/junior/apps/jm/code-compass/apps/acp/src/code_compass_acp/memory/memory_decay.py).
-   - Criar [apps/acp/src/code_compass_acp/memory/conflict_resolver.py](/home/junior/apps/jm/code-compass/apps/acp/src/code_compass_acp/memory/conflict_resolver.py).
+   - Criar [apps/acp/src/code_compass_acp/memory/memory_decay.py](apps/acp/src/code_compass_acp/memory/memory_decay.py).
+   - Criar [apps/acp/src/code_compass_acp/memory/conflict_resolver.py](apps/acp/src/code_compass_acp/memory/conflict_resolver.py).
    - Implementar classificação explícita: `reinforcement`, `complement`, `contradiction`.
 
 8. Service de memória unificada:
-   - Criar [apps/acp/src/code_compass_acp/memory/memory_service.py](/home/junior/apps/jm/code-compass/apps/acp/src/code_compass_acp/memory/memory_service.py).
+   - Criar [apps/acp/src/code_compass_acp/memory/memory_service.py](apps/acp/src/code_compass_acp/memory/memory_service.py).
    - Expor operações para:
       - preload e retrieval ranqueado
       - `list`, `forget`, `clear`, `enable`, `disable`, `why`, `confirm`
    - Implementar `LocalMemoryService` e `CloudMemoryService` com comportamento equivalente de ranking.
 
 9. Extração de memória:
-   - Criar [apps/acp/src/code_compass_acp/memory/memory_extractor.py](/home/junior/apps/jm/code-compass/apps/acp/src/code_compass_acp/memory/memory_extractor.py).
+   - Criar [apps/acp/src/code_compass_acp/memory/memory_extractor.py](apps/acp/src/code_compass_acp/memory/memory_extractor.py).
    - Extrair somente fatos/preferências técnicas de longo prazo.
    - Não extrair: contexto efêmero de ticket, conteúdo recuperável da codebase, detalhes transitórios da conversa.
    - Separar explicitamente contexto imediato de sessão (curto prazo) de memória longa do usuário.
@@ -245,15 +245,15 @@ Evoluir o `apps/acp` para Google ADK com adaptação controlada do motor atual, 
       - reconciliação/deduplicação obrigatória para evitar duplicação entre fontes
 
 10. Tools ADK:
-    - Criar [apps/acp/src/code_compass_acp/tools/preload_memory_tool.py](/home/junior/apps/jm/code-compass/apps/acp/src/code_compass_acp/tools/preload_memory_tool.py).
+    - Criar [apps/acp/src/code_compass_acp/tools/preload_memory_tool.py](apps/acp/src/code_compass_acp/tools/preload_memory_tool.py).
     - Default: no máximo 20 entradas e 1.500 tokens por sessão.
     - Seleção por maior `effective_confidence` e recência.
     - Limites existem para evitar degradação de qualidade do contexto em sessões longas e usuários com histórico extenso.
     - Entradas excedentes não são injetadas no contexto, mas permanecem no SQLite.
-    - Criar [apps/acp/src/code_compass_acp/tools/search_code_qdrant_tool.py](/home/junior/apps/jm/code-compass/apps/acp/src/code_compass_acp/tools/search_code_qdrant_tool.py) para retrieval técnico.
+    - Criar [apps/acp/src/code_compass_acp/tools/search_code_qdrant_tool.py](apps/acp/src/code_compass_acp/tools/search_code_qdrant_tool.py) para retrieval técnico.
 
 11. Comandos `/memory`:
-    - Criar [apps/acp/src/code_compass_acp/memory/memory_commands.py](/home/junior/apps/jm/code-compass/apps/acp/src/code_compass_acp/memory/memory_commands.py).
+    - Criar [apps/acp/src/code_compass_acp/memory/memory_commands.py](apps/acp/src/code_compass_acp/memory/memory_commands.py).
     - Regras mínimas:
        - `/memory list`: lista entradas do usuário/escopo atual.
        - `/memory forget <termo>`: desativa entradas relacionadas.
@@ -263,7 +263,7 @@ Evoluir o `apps/acp` para Google ADK com adaptação controlada do motor atual, 
        - `/memory confirm <id>`: reforça entrada (`last_confirmed_at`, `times_reinforced`).
 
 12. Bootstrap e documentação:
-    - Ajustar [bin/dev-chat](/home/junior/apps/jm/code-compass/bin/dev-chat), [.env.example](/home/junior/apps/jm/code-compass/.env.example), [apps/acp/README.md](/home/junior/apps/jm/code-compass/apps/acp/README.md), [apps/docs/pages/acp-agent.md](/home/junior/apps/jm/code-compass/apps/docs/pages/acp-agent.md).
+    - Ajustar [bin/dev-chat](bin/dev-chat), [.env.example](.env.example), [apps/acp/README.md](apps/acp/README.md), [apps/docs/pages/acp-agent.md](apps/docs/pages/acp-agent.md).
 
 ## Testes e Cenários de Aceitação
 
